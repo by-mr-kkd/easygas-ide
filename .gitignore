@@ -1,0 +1,15 @@
+node_modules/
+.next/
+out/
+dist/
+.env*
+!.env.example
+*.log
+next-env.d.ts
+*.tsbuildinfo
+tmp-test-data/
+# signing keys must never be committed (the rulebook key lives outside the repo)
+*.pem
+*.key
+# generated for the installer by scripts/build-desktop.mjs
+/build/

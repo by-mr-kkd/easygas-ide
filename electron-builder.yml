@@ -1,0 +1,42 @@
+# Packaging for the Windows desktop app. Run through scripts/build-desktop.mjs, which stages the folders
+# named here first (npm run desktop:build).
+appId: com.mrkkd.easygas-ide
+productName: EasyGAS IDE
+copyright: Copyright (c) 2026 Mr.KKD
+
+directories:
+  app: dist/desktop/shell # main.js + a package.json with no dependencies
+  output: dist/desktop/out
+  buildResources: build
+
+npmRebuild: false
+asar: true
+# app.asar holds ONLY the shell. Without the exclusion the packager, finding no dependencies in the
+# shell, walks up to the repository and packs its whole node_modules (240 MB) into the app.
+files:
+  - main.js
+  - package.json
+  - "!**/node_modules/**"
+
+# The server and clasp are copied beside the app by this hook (see the file for why not extraResources).
+afterPack: scripts/desktop-after-pack.cjs
+
+win:
+  icon: build/icon.ico # assembled by scripts/build-desktop.mjs
+  target:
+    - target: nsis
+      arch: [x64]
+
+nsis:
+  # Thai wizard (NSIS's own Thai strings: buttons, page titles, "I Agree"). A few electron-builder
+  # messages that have no Thai translation, such as "app is running", stay in English.
+  installerLanguages: [th_TH]
+  language: "1054" # Thai
+  multiLanguageInstaller: false
+  oneClick: false # a normal wizard, so the licence page is shown and must be accepted
+  perMachine: false # installs for the current user; no administrator rights needed
+  allowToChangeInstallationDirectory: true
+  license: build/license.txt
+  deleteAppDataOnUninstall: false # the user's projects and settings stay unless they delete them
+  shortcutName: EasyGAS IDE
+  artifactName: EasyGAS-IDE-Setup-${version}.${ext}

@@ -1,0 +1,450 @@
+{
+  "minAppVersion": "0.1.0",
+  "excluded": {
+    "deployment-versioning": "EasyGAS deploys for the user; manual clasp deploy steps contradict the app's own rules",
+    "external-frontend": "frontend hosted outside GAS (GitHub Pages) is not a supported target yet",
+    "project-structure": "file layout and clasp setup are owned by the app",
+    "testing-debugging": "terminal / Apps Script editor workflows the end user never sees"
+  },
+  "rules": [
+    {
+      "id": "web-app-rpc",
+      "title": "หน้าเว็บเรียกฟังก์ชันฝั่ง server (google.script.run)",
+      "when": "เว็บแอปที่หน้าเว็บเรียกฟังก์ชันฝั่ง server: รูปแบบผลลัพธ์, ตัวห่อ promise, โหลดข้อมูลรวมครั้งเดียว, สถานะกำลังโหลด",
+      "keywords": [
+        "google.script.run",
+        "rpc",
+        "เว็บแอป",
+        "web app",
+        "webapp",
+        "หน้าเว็บ"
+      ],
+      "features": [],
+      "kinds": [
+        "webapp"
+      ],
+      "baseline": true
+    },
+    {
+      "id": "htmlservice-frontend",
+      "title": "โครง HTML ของเว็บแอป",
+      "when": "เขียนไฟล์ .html: head/viewport สำหรับมือถือ, แยก partial ด้วย include, template syntax, การ escape",
+      "keywords": [
+        "html",
+        "viewport",
+        "include",
+        "มือถือ",
+        "responsive",
+        "template",
+        "หน้าจอ"
+      ],
+      "features": [],
+      "kinds": [
+        "webapp"
+      ],
+      "baseline": true
+    },
+    {
+      "id": "spreadsheet-ops",
+      "title": "อ่าน/เขียน Google Sheet",
+      "when": "อ่านหรือเขียนข้อมูลใน Sheet: อ่านครั้งเดียว, merged cells, วันที่, เลขขึ้นต้นด้วย 0, คำนวณซ้ำฝั่ง server",
+      "keywords": [
+        "sheet",
+        "sheets",
+        "spreadsheet",
+        "ชีต",
+        "ชีท",
+        "ตาราง",
+        "คอลัมน์",
+        "เบอร์โทร",
+        "วันที่",
+        "บันทึกข้อมูล",
+        "เก็บข้อมูล"
+      ],
+      "features": [
+        "sheet"
+      ],
+      "kinds": [
+        "webapp",
+        "bound"
+      ],
+      "baseline": false
+    },
+    {
+      "id": "error-handling",
+      "title": "จัดการ error และข้อความถึงผู้ใช้",
+      "when": "ออกแบบการจัดการ error: ผลลัพธ์แบบ envelope, ข้อความไทยที่ผู้ใช้ทำตามได้, ห้ามกลืน error, retry",
+      "keywords": [
+        "error",
+        "ผิดพลาด",
+        "ข้อผิดพลาด",
+        "try",
+        "catch",
+        "retry",
+        "ลองใหม่"
+      ],
+      "features": [],
+      "kinds": [
+        "webapp",
+        "bound"
+      ],
+      "baseline": false
+    },
+    {
+      "id": "lock-service",
+      "title": "LockService กันเขียนชนกัน",
+      "when": "งานที่ผู้ใช้หลายคนอาจเขียนพร้อมกัน: จองคิว, ตัดสต็อก, ออกเลขรัน, ลบ/เพิ่มแถว",
+      "keywords": [
+        "lock",
+        "จอง",
+        "คิว",
+        "สต็อก",
+        "สต๊อก",
+        "พร้อมกัน",
+        "เลขที่",
+        "เลขรัน",
+        "booking",
+        "ยืม",
+        "ยืมคืน",
+        "ยืม-คืน",
+        "คืนของ"
+      ],
+      "features": [
+        "multiuser"
+      ],
+      "kinds": [
+        "webapp",
+        "bound"
+      ],
+      "baseline": false
+    },
+    {
+      "id": "data-integrity",
+      "title": "กันข้อมูลสำคัญเสียหาย",
+      "when": "ข้อมูลสำคัญหรือเกี่ยวกับเงิน: กันเขียนทับทั้งชุด, กันลบยกชุด, field ที่ server เป็นเจ้าของ, ตรวจข้อมูลหลังแก้",
+      "keywords": [
+        "บัญชี",
+        "ชำระ",
+        "ใบเสร็จ",
+        "ลบทั้งหมด",
+        "เขียนทับ",
+        "sync",
+        "ซิงก์",
+        "นำเข้า",
+        "import",
+        "กระทบยอด",
+        "ยอดเงิน",
+        "ยอดรวม",
+        "ยอดขาย",
+        "รับเงิน",
+        "จ่ายเงิน",
+        "การเงิน",
+        "เงินสด",
+        "ค่าใช้จ่าย"
+      ],
+      "features": [
+        "money"
+      ],
+      "kinds": [
+        "webapp",
+        "bound"
+      ],
+      "baseline": false
+    },
+    {
+      "id": "security",
+      "title": "ล็อกอิน สิทธิ์ และการตรวจ input",
+      "when": "ระบบมีล็อกอิน, สิทธิ์ผู้ใช้/แอดมิน, เก็บรหัสผ่าน, ตรวจ input ที่รับจากหน้าเว็บ, OAuth scope",
+      "keywords": [
+        "login",
+        "ล็อกอิน",
+        "เข้าสู่ระบบ",
+        "รหัสผ่าน",
+        "password",
+        "สิทธิ์",
+        "แอดมิน",
+        "admin",
+        "role",
+        "ผู้ดูแล",
+        "pin",
+        "scope"
+      ],
+      "features": [
+        "login"
+      ],
+      "kinds": [
+        "webapp",
+        "bound"
+      ],
+      "baseline": false
+    },
+    {
+      "id": "pdf-generation",
+      "title": "สร้าง PDF จาก template",
+      "when": "สร้าง PDF/ใบเสร็จ/ใบรับรอง/เอกสารจาก template: placeholder, export, รูปและลายเซ็น, วันที่ พ.ศ., cache ไฟล์",
+      "keywords": [
+        "pdf",
+        "ใบเสร็จ",
+        "ใบแจ้งหนี้",
+        "ใบเสนอราคา",
+        "ใบรับรอง",
+        "เอกสาร",
+        "receipt",
+        "invoice",
+        "สั่งพิมพ์",
+        "พิมพ์ใบ",
+        "ปริ้น"
+      ],
+      "features": [
+        "pdf"
+      ],
+      "kinds": [
+        "webapp",
+        "bound"
+      ],
+      "baseline": false
+    },
+    {
+      "id": "drive-ops",
+      "title": "ไฟล์และรูปใน Google Drive",
+      "when": "อัปโหลด/จัดเก็บไฟล์หรือรูปใน Drive: โฟลเดอร์, แสดงรูปในหน้าเว็บ, แชร์ลิงก์, ตรวจไฟล์ที่รับมา",
+      "keywords": [
+        "drive",
+        "อัปโหลด",
+        "อัพโหลด",
+        "upload",
+        "รูปภาพ",
+        "ไฟล์แนบ",
+        "แนบไฟล์",
+        "โฟลเดอร์",
+        "ลายเซ็น",
+        "รูปถ่าย",
+        "อัปโหลดรูป",
+        "แนบรูป",
+        "ถ่ายรูป"
+      ],
+      "features": [
+        "upload"
+      ],
+      "kinds": [
+        "webapp",
+        "bound"
+      ],
+      "baseline": false
+    },
+    {
+      "id": "email-notifications",
+      "title": "ส่งอีเมลแจ้งเตือน",
+      "when": "ส่งอีเมลยืนยัน/แจ้งเตือน: MailApp กับ GmailApp, โควต้าต่อวัน, เนื้อหาไทย, กันเมลถล่มแอดมิน",
+      "keywords": [
+        "อีเมล",
+        "อีเมล์",
+        "เมล",
+        "email",
+        "mail",
+        "gmail"
+      ],
+      "features": [
+        "email"
+      ],
+      "kinds": [
+        "webapp",
+        "bound"
+      ],
+      "baseline": false
+    },
+    {
+      "id": "urlfetch-external-api",
+      "title": "เรียก API ภายนอกและ LINE",
+      "when": "เรียก API ภายนอกด้วย UrlFetchApp, LINE Messaging API, webhook: ตรวจ response code, retry, โควต้า",
+      "keywords": [
+        "line",
+        "ไลน์",
+        "api",
+        "webhook",
+        "urlfetch",
+        "telegram",
+        "discord",
+        "slack"
+      ],
+      "features": [
+        "line"
+      ],
+      "kinds": [
+        "webapp",
+        "bound"
+      ],
+      "baseline": false
+    },
+    {
+      "id": "triggers",
+      "title": "งานอัตโนมัติด้วย trigger",
+      "when": "งานอัตโนมัติตามเวลา, onEdit, onFormSubmit: กัน trigger ซ้ำ, สิทธิ์ของ trigger, แจ้งเตือนเมื่อพัง",
+      "keywords": [
+        "trigger",
+        "ทริกเกอร์",
+        "ตั้งเวลา",
+        "ทุกวัน",
+        "ทุกชั่วโมง",
+        "ทุกเช้า",
+        "onedit",
+        "onformsubmit",
+        "เตือนล่วงหน้า",
+        "google form",
+        "ส่งอัตโนมัติ",
+        "ทำงานอัตโนมัติ",
+        "แจ้งเตือนอัตโนมัติ",
+        "รายวัน"
+      ],
+      "features": [
+        "schedule"
+      ],
+      "kinds": [
+        "webapp",
+        "bound"
+      ],
+      "baseline": false
+    },
+    {
+      "id": "long-running-jobs",
+      "title": "งานนานเกิน 6 นาที",
+      "when": "ประมวลผลข้อมูลจำนวนมากหรือเสี่ยงเกินขีดจำกัด 6 นาที: แบ่ง batch, checkpoint, ทำงานเบื้องหลัง",
+      "keywords": [
+        "batch",
+        "จำนวนมาก",
+        "หลายพัน",
+        "หลายหมื่น",
+        "6 นาที",
+        "timeout",
+        "หมดเวลา",
+        "นำเข้าข้อมูล",
+        "ประมวลผลทั้งหมด"
+      ],
+      "features": [],
+      "kinds": [
+        "webapp",
+        "bound"
+      ],
+      "baseline": false
+    },
+    {
+      "id": "cache-service",
+      "title": "CacheService ลดการอ่านซ้ำ",
+      "when": "ข้อมูลที่อ่านบ่อยแต่เปลี่ยนน้อย หรือหน้าโหลดช้า: cache, ล้าง cache เมื่อข้อมูลเปลี่ยน, ขนาดจำกัด",
+      "keywords": [
+        "cache",
+        "แคช",
+        "โหลดช้า",
+        "เร็วขึ้น",
+        "dashboard",
+        "แดชบอร์ด",
+        "รายงาน",
+        "สรุปยอด",
+        "ทำงานช้า"
+      ],
+      "features": [
+        "dashboard"
+      ],
+      "kinds": [
+        "webapp",
+        "bound"
+      ],
+      "baseline": false
+    },
+    {
+      "id": "properties-service",
+      "title": "เก็บ config และ secret",
+      "when": "เก็บค่า config, API key หรือ token: Script Properties กับ Config sheet, ขนาดจำกัด, ห้ามฝังในโค้ด",
+      "keywords": [
+        "api key",
+        "token",
+        "secret",
+        "config",
+        "โทเคน",
+        "ค่าตั้งค่า"
+      ],
+      "features": [
+        "line"
+      ],
+      "kinds": [
+        "webapp",
+        "bound"
+      ],
+      "baseline": false
+    },
+    {
+      "id": "dynamic-dropdowns",
+      "title": "dropdown ที่ไม่ฟิกตายตัว",
+      "when": "dropdown ปี/เดือน/ช่วงเวลา หรือตัวเลือกที่ดึงจากข้อมูลจริงใน Sheet",
+      "keywords": [
+        "dropdown",
+        "ดรอปดาวน์",
+        "ตัวเลือก",
+        "เลือกปี",
+        "เลือกเดือน",
+        "select",
+        "ช่วงเวลา"
+      ],
+      "features": [],
+      "kinds": [
+        "webapp",
+        "bound"
+      ],
+      "baseline": false
+    },
+    {
+      "id": "schema-migrations",
+      "title": "เพิ่มตาราง/คอลัมน์ในระบบที่มีข้อมูลแล้ว",
+      "when": "เพิ่มหรือเปลี่ยนชีต/คอลัมน์ในระบบที่ใช้งานจริงและมีข้อมูลอยู่แล้ว",
+      "keywords": [
+        "migration",
+        "เพิ่มคอลัมน์",
+        "เพิ่มช่อง",
+        "เพิ่มฟิลด์",
+        "เพิ่มตาราง",
+        "เพิ่มชีต",
+        "เปลี่ยนชื่อคอลัมน์"
+      ],
+      "features": [],
+      "kinds": [
+        "webapp",
+        "bound"
+      ],
+      "baseline": false
+    },
+    {
+      "id": "logging-boundaries",
+      "title": "log เพื่อไล่ปัญหา",
+      "when": "ใส่ log ระหว่างหน้าเว็บกับ server เพื่อไล่หาสาเหตุของปัญหา โดยไม่ log ข้อมูลอ่อนไหว",
+      "keywords": [
+        "log",
+        "logger",
+        "debug",
+        "ดีบัก",
+        "ไล่บั๊ก",
+        "หาสาเหตุ"
+      ],
+      "features": [],
+      "kinds": [
+        "webapp",
+        "bound"
+      ],
+      "baseline": false
+    },
+    {
+      "id": "onopen-menu",
+      "title": "เมนูกำหนดเองใน Google Sheet",
+      "when": "สคริปต์ที่ผูกกับ Sheet และต้องมีเมนูกำหนดเอง (onOpen), กล่องยืนยัน, เมนูตามสิทธิ์",
+      "keywords": [
+        "onopen",
+        "เมนู",
+        "menu"
+      ],
+      "features": [],
+      "kinds": [
+        "bound"
+      ],
+      "baseline": true
+    }
+  ]
+}
