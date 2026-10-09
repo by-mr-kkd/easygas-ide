@@ -1,5 +1,6 @@
 "use server";
 
+import { assertLocalRequest } from "@/lib/remote/request";
 import { MODEL_ID } from "@/lib/ai-choice";
 import { revalidatePath } from "next/cache";
 import { claspLogout, getClaspAccount, startClaspLogin, type ClaspAccount } from "@/lib/clasp";
@@ -44,6 +45,7 @@ export async function setClaudeQuotaAction(on: boolean): Promise<void> {
 
 /** Store a provider key. The key never comes back to the browser — the page only learns hasKey. */
 export async function saveApiKeyAction(keyId: KeyId, key: string): Promise<{ ok: boolean; error?: string }> {
+  await assertLocalRequest();
   if (!KEY_IDS.includes(keyId)) return { ok: false, error: "provider ไม่ถูกต้อง" };
   const trimmed = key.trim();
   if (!trimmed || trimmed.length > MAX_KEY_LENGTH || /\s/.test(trimmed)) return { ok: false, error: "รูปแบบคีย์ไม่ถูกต้อง" };
@@ -57,6 +59,7 @@ export async function saveApiKeyAction(keyId: KeyId, key: string): Promise<{ ok:
 }
 
 export async function removeApiKeyAction(keyId: KeyId): Promise<void> {
+  await assertLocalRequest();
   if (!KEY_IDS.includes(keyId)) return;
   const s = await getSettings();
   const keys = { ...s.keys };
@@ -68,6 +71,7 @@ export async function removeApiKeyAction(keyId: KeyId): Promise<void> {
 
 /** Opens Google's sign-in page in the user's browser (clasp login); the UI polls googleStatusAction. */
 export async function startGoogleLoginAction(): Promise<void> {
+  await assertLocalRequest();
   await startClaspLogin();
 }
 
@@ -76,6 +80,7 @@ export async function googleStatusAction(): Promise<ClaspAccount> {
 }
 
 export async function googleLogoutAction(): Promise<void> {
+  await assertLocalRequest();
   await claspLogout();
   revalidatePath("/settings");
   revalidatePath("/projects");
@@ -190,6 +195,7 @@ export async function checkCliAction(tool: InstallableCli): Promise<CliCheck> {
  * the request goes into the command but the two fixed choices below.
  */
 export async function openCliTerminalAction(tool: InstallableCli, kind: TerminalKind): Promise<{ ok: boolean; error?: string }> {
+  await assertLocalRequest();
   if (!isCli(tool) || (kind !== "install" && kind !== "login")) return { ok: false, error: "คำขอไม่ถูกต้อง" };
   if (process.platform !== "win32") return { ok: false, error: "ปุ่มนี้ใช้ได้บน Windows ทำตามขั้นตอนติดตั้งเองด้านล่าง" };
   const exe = kind === "login" ? findCli(tool) : null;
@@ -213,6 +219,7 @@ export async function openCliTerminalAction(tool: InstallableCli, kind: Terminal
  * goes too; the path comes from the running executable.
  */
 export async function uninstallAppAction(deleteData: boolean): Promise<{ ok: boolean; error?: string }> {
+  await assertLocalRequest();
   const uninstaller = findUninstaller({ env: process.env, platform: process.platform, execPath: process.execPath, exists: existsSync });
   if (!uninstaller) {
     return { ok: false, error: "ปุ่มนี้ใช้ได้กับแอปที่ติดตั้งด้วยตัวติดตั้งเท่านั้น ถอนได้จาก Settings ของ Windows → Apps → Installed apps" };

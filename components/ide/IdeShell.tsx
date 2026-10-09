@@ -27,6 +27,7 @@ import { ChatPanel } from "./ChatPanel";
 import { CommandPalette } from "./CommandPalette";
 import { ConnectGoogleDialog } from "./ConnectGoogleDialog";
 import { DeployButton } from "./DeployButton";
+import { ShareButton } from "./ShareButton";
 import { DeployedUrlBar } from "./DeployedUrlBar";
 import { EditorPane } from "./EditorPane";
 import { EditorToolbar } from "./EditorToolbar";
@@ -34,6 +35,7 @@ import { IssuesPanel } from "./IssuesPanel";
 import { ProjectSwitcher, type SwitcherProject } from "./ProjectSwitcher";
 import { FileTree } from "./FileTree";
 import { PreviewPane } from "./PreviewPane";
+import { AppNudge } from "@/components/remote/AppNudge";
 
 type Pane = "chat" | "code" | "preview";
 /** What sits beside the chat on a wide window. "split" needs room for three columns (xl and up). */
@@ -52,6 +54,10 @@ export function IdeShell({
   projectName,
   initialFiles,
   initialImages,
+  initialMessages,
+  initialRunning = false,
+  remoteDevices = null,
+  pushNudge = false,
   webHint,
   googleConnected = true,
   googleEmail = null,
@@ -76,6 +82,13 @@ export function IdeShell({
   projectName: string;
   initialFiles: { path: string; content: string }[];
   initialImages?: { url: string }[];
+  /** The conversation so far (lib/messages-text chatHistoryOf), and whether an AI turn is running right now. */
+  initialMessages?: { role: "user" | "assistant"; text: string }[];
+  initialRunning?: boolean;
+  /** Remote access is on (lib/remote): how many phones are paired; null when it is off. */
+  remoteDevices?: number | null;
+  /** Pro, opened from a paired phone that has no notifications yet: point it to the Pro app to turn them on. */
+  pushNudge?: boolean;
   webHint?: string[];
   googleConnected?: boolean;
   googleEmail?: string | null;
@@ -202,10 +215,14 @@ export function IdeShell({
     el.addEventListener("pointercancel", end);
   }
 
+  // the two monthly-plan AIs have a quota to show: the status bar on a wide window, under the chat box on a phone
+  const quotaEngine = engineReady && (aiChoice?.engine === "codex-cli" || aiChoice?.engine === "claude-cli") ? aiChoice.engine : null;
+  const wide = useMediaQuery("(min-width: 1024px)");
+
   const settingsHref = (section: string) => `/settings?s=${section}&from=${projectId}`;
 
   return (
-    <main className="flex h-screen flex-col bg-bg text-fg">
+    <main className="flex h-dvh flex-col overflow-hidden bg-bg text-fg">
       <AppTopBar
         center={<ProjectSwitcher currentId={projectId} currentName={projectName} projects={projects} />}
         right={
@@ -231,15 +248,17 @@ export function IdeShell({
                 ))}
               </div>
             )}
-            <ThemeToggle className="btn-sm" />
+            <ThemeToggle className="btn-sm max-sm:hidden" />
             <Link href={settingsHref("ai")} title="ตั้งค่า" aria-label="ตั้งค่า" className="btn btn-ghost btn-sm btn-icon">
               <Cog6ToothIcon className="h-[18px] w-[18px]" />
             </Link>
-            {!isStart && <GuidedTour tour="ide" seen={tourSeen} className="btn-sm" />}
+            {!isStart && <GuidedTour tour="ide" seen={tourSeen} className="btn-sm max-sm:hidden" />}
+            {!isStart && <ShareButton projectId={projectId} projectName={projectName} className="max-md:w-[1.875rem] max-md:px-0" />}
             <span data-tour="deploy" className="flex shrink-0 items-center">
               <DeployButton
                 projectId={projectId}
                 googleConnected={google.connected}
+                googleEmail={google.email}
                 deployed={!!deployUrl}
                 onDeployed={setDeployUrl}
                 onConnectGoogle={() => setConnectOpen(true)}
@@ -250,7 +269,7 @@ export function IdeShell({
       />
 
       {/* live /exec URL + its actions */}
-      {deployUrl && <DeployedUrlBar url={deployUrl} projectId={projectId} />}
+      {deployUrl && <DeployedUrlBar url={deployUrl} projectId={projectId} googleEmail={google.email} />}
 
       {webHint && webHint.length > 0 && hintOpen && (
         <div className="callout callout-warn flex-none rounded-none border-x-0 border-t-0">
@@ -268,7 +287,7 @@ export function IdeShell({
 
       {/* BODY — the chat is always the first column; the view decides what sits beside it */}
       <div
-        className={`grid min-h-0 flex-1 grid-cols-1 ${
+        className={`grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)] ${
           isStart
             ? ""
             : effView === "split"
@@ -278,10 +297,13 @@ export function IdeShell({
         style={{ "--preview-w": `${previewW}px` } as CSSProperties}
       >
         <section data-tour="chat" className={`${isStart ? `${PANEL} flex bg-transparent` : `${paneClass("chat")} border-line lg:border-r`}`}>
+          {pushNudge && <AppNudge strip />}
           <ChatPanel
             projectId={projectId}
             start={isStart}
             initialImages={initialImages}
+            initialMessages={initialMessages}
+            initialRunning={initialRunning}
             energyUsed={energyUsed}
             energyTank={energyTank}
             aiOptions={aiOptions}
@@ -289,6 +311,11 @@ export function IdeShell({
             stylePrefs={stylePrefs}
             styleDefaults={styleDefaults}
             imported={imported}
+            footnote={
+              quotaEngine && !wide ? (
+                <QuotaStatus engine={quotaEngine} claudeAllowed={claudeQuotaAllowed} settingsHref={settingsHref("ai")} quiet />
+              ) : undefined
+            }
           />
         </section>
 
@@ -324,10 +351,10 @@ export function IdeShell({
         )}
       </div>
 
-      {/* STATUS BAR (wide window) — only facts the user can act on */}
+      {/* STATUS BAR (wide window) — only facts the user can act on. A phone shows the quota under the chat box. */}
       <footer className="hidden h-7 flex-none items-center gap-1 border-t border-line bg-surface px-2 text-xs text-muted lg:flex">
         {google.connected ? (
-          <Tooltip label="บัญชี Google ที่ใช้เผยแพร่ กดเพื่อเปลี่ยน" placement="top">
+          <Tooltip label="บัญชี Google ที่ใช้เผยแพร่ กดเพื่อเปลี่ยน" placement="top" className="max-lg:hidden">
             <Link href={settingsHref("google")} className="flex h-6 items-center gap-1.5 rounded px-1.5 transition hover:bg-sunken hover:text-fg">
               <span className="h-1.5 w-1.5 rounded-full bg-accent" />
               Google: {google.email ?? "เชื่อมแล้ว"}
@@ -337,16 +364,17 @@ export function IdeShell({
           <button
             type="button"
             onClick={() => setConnectOpen(true)}
-            className="flex h-6 items-center gap-1.5 rounded px-1.5 transition hover:bg-sunken hover:text-fg"
+            className="flex h-6 items-center gap-1.5 rounded px-1.5 transition hover:bg-sunken hover:text-fg max-lg:hidden"
           >
             <span className="h-1.5 w-1.5 rounded-full bg-line-strong" />
             ยังไม่ได้เชื่อม Google
           </button>
         )}
-        <span className="h-3.5 w-px bg-line" aria-hidden />
+        <span className="h-3.5 w-px bg-line max-lg:hidden" aria-hidden />
         <Tooltip
           label={engineReady ? "AI ที่ใช้อยู่ตอนนี้ เปลี่ยนได้ที่ปุ่มในช่องพิมพ์" : (pickedAi?.hint ?? "ยังไม่มี AI ที่ใช้ได้")}
           placement="top"
+          className="max-lg:hidden"
         >
           <Link
             href={settingsHref("ai")}
@@ -356,17 +384,26 @@ export function IdeShell({
             {engineReady ? `AI: ${aiLabel(aiOptions, aiChoice)}` : "AI ยังใช้ไม่ได้ กดเพื่อตั้งค่า"}
           </Link>
         </Tooltip>
-        {engineReady && (aiChoice?.engine === "codex-cli" || aiChoice?.engine === "claude-cli") && (
-          <QuotaStatus engine={aiChoice.engine} claudeAllowed={claudeQuotaAllowed} settingsHref={settingsHref("ai")} />
+        {quotaEngine && wide && (
+          <QuotaStatus engine={quotaEngine} claudeAllowed={claudeQuotaAllowed} settingsHref={settingsHref("ai")} />
         )}
         <span className="flex-1" />
-        {fileCount > 0 && <span className="px-1.5">{fileCount} ไฟล์</span>}
-        {activePath && effView !== "preview" && <span className="truncate px-1.5 font-mono">{activePath}</span>}
+        {remoteDevices !== null && (
+          <Tooltip label="เปิดให้มือถือสั่งงานอยู่ กดเพื่อดูหรือปิด" placement="top" className="max-lg:hidden">
+            <Link href={settingsHref("remote")} className="flex h-6 items-center gap-1.5 rounded px-1.5 transition hover:bg-sunken hover:text-fg">
+              <span className="h-1.5 w-1.5 rounded-full bg-info" />
+              รีโมท · {remoteDevices} เครื่อง
+            </Link>
+          </Tooltip>
+        )}
+        {fileCount > 0 && <span className="px-1.5 max-lg:hidden">{fileCount} ไฟล์</span>}
+        {activePath && effView !== "preview" && <span className="truncate px-1.5 font-mono max-lg:hidden">{activePath}</span>}
       </footer>
 
       {/* PANE TABS (narrow window) — a wide window shows the panes side by side instead */}
       {!isStart && (
-        <nav className="flex flex-none items-center gap-1 border-t border-line bg-surface px-2 py-1.5 lg:hidden">
+        // hidden while the phone keyboard is up (a short window): the chat box needs the room
+        <nav className="flex flex-none items-center gap-1 border-t border-line bg-surface px-2 py-1.5 lg:hidden [@media(max-height:520px)]:hidden">
           <button type="button" onClick={() => setPane("chat")} aria-pressed={pane === "chat"} className={TAB(pane === "chat")}>
             <ChatBubbleLeftRightIcon className="h-4 w-4 shrink-0" />
             แชต

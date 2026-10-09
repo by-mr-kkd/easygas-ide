@@ -13,6 +13,7 @@ import {
   RocketLaunchIcon,
   Squares2X2Icon,
   SwatchIcon,
+  LinkIcon,
 } from "@heroicons/react/24/outline";
 import { useProjectStore } from "@/store/useProjectStore";
 
@@ -117,6 +118,14 @@ export function CommandPalette({
         group: "คำสั่ง",
         icon: RocketLaunchIcon,
         run: () => requestAction(googleConnected ? "deploy" : "connectGoogle"),
+      });
+      list.push({
+        id: "share",
+        label: "แชร์โปรเจกต์เป็นลิงก์",
+        hint: "ให้คนอื่นโคลนโค้ดนี้ลงเครื่องได้ (easygaside.tech/s/…)",
+        group: "คำสั่ง",
+        icon: LinkIcon,
+        run: () => window.dispatchEvent(new CustomEvent("egs:share-open")),
       });
       list.push({
         id: "recheck",

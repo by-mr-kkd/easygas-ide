@@ -1,7 +1,13 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import vm from "node:vm";
-import { DISPATCHER_PATH, DISPATCHER_SOURCE, DoPostConflictError, definesDoPost, withDispatcher } from "../lib/pages/dispatcher.ts";
+import { DISPATCHER_PATH, DoPostConflictError, definesDoPost, withDispatcher } from "../lib/pages/dispatcher.ts";
+import { FAKE_RUNTIME, SKIP_REAL, realRuntime } from "./_pages-runtime.ts";
+
+// the dispatcher text is Pro content on the licence server; behaviour tests need a local copy
+const REAL = realRuntime();
+const DISPATCHER_SOURCE = REAL?.dispatcher ?? FAKE_RUNTIME.dispatcher;
+const needsReal = { skip: REAL ? false : SKIP_REAL };
 
 /** Run the dispatcher next to fake project functions and call doPost like GAS would. */
 function makeApp(projectCode: string) {
@@ -29,14 +35,14 @@ function echo() { return Array.prototype.slice.call(arguments); }
 var marker = 42;
 `;
 
-test("calls a project function with args and answers {ok,value}", () => {
+test("calls a project function with args and answers {ok,value}", needsReal, () => {
   const call = makeApp(PROJECT);
   assert.deepEqual(call({ fn: "add", args: [2, 3] }), { ok: true, value: 5 });
   assert.deepEqual(call({ fn: "nothing" }), { ok: true });
   assert.deepEqual(call({ fn: "echo", args: [1, "x", null] }), { ok: true, value: [1, "x", null] });
 });
 
-test("refuses private, reserved, unknown and non-function names as JSON errors", () => {
+test("refuses private, reserved, unknown and non-function names as JSON errors", needsReal, () => {
   const call = makeApp(PROJECT);
   for (const fn of ["secret_", "doGet", "doPost", "missing", "marker", "egsRemoteHandle_"]) {
     const r = call({ fn, args: [] });
@@ -46,7 +52,7 @@ test("refuses private, reserved, unknown and non-function names as JSON errors",
   }
 });
 
-test("refuses natives reachable through globalThis (eval, Function, Object.prototype members)", () => {
+test("refuses natives reachable through globalThis (eval, Function, Object.prototype members)", needsReal, () => {
   const call = makeApp(PROJECT);
   for (const fn of ["eval", "Function", "parseInt", "constructor", "toString", "hasOwnProperty", "__defineGetter__"]) {
     const r = call({ fn, args: ["marker = 1"] });
@@ -55,7 +61,7 @@ test("refuses natives reachable through globalThis (eval, Function, Object.proto
   assert.deepEqual(call({ fn: "echo", args: [] }), { ok: true, value: [] });
 });
 
-test("refuses malformed requests: bad JSON, fn not a string, args not an array", () => {
+test("refuses malformed requests: bad JSON, fn not a string, args not an array", needsReal, () => {
   const call = makeApp(PROJECT);
   assert.equal(call("{ nope").ok, false);
   assert.equal(call({ fn: 42 }).ok, false);
@@ -64,7 +70,7 @@ test("refuses malformed requests: bad JSON, fn not a string, args not an array",
   assert.equal(call({ fn: "add", args: "1,2" }).ok, false);
 });
 
-test("a thrown error is reported with name + message and no stack", () => {
+test("a thrown error is reported with name + message and no stack", needsReal, () => {
   const call = makeApp(PROJECT);
   const r = call({ fn: "boom", args: [] });
   assert.deepEqual(r, { ok: false, error: { name: "SheetError", message: "ชีตไม่พบ" } });
@@ -76,12 +82,12 @@ test("withDispatcher appends EgsRemote.gs once and keeps the project files", () 
     { path: "Code.gs", content: "function doGet(e) { return HtmlService.createHtmlOutputFromFile('Index'); }" },
     { path: "Index.html", content: "<p>hi</p>" },
   ];
-  const out = withDispatcher(files);
+  const out = withDispatcher(files, DISPATCHER_SOURCE);
   assert.equal(out.length, 3);
   assert.equal(out[2].path, DISPATCHER_PATH);
   assert.equal(out[2].content, DISPATCHER_SOURCE);
   assert.deepEqual(files.length, 2, "input not mutated");
-  const again = withDispatcher([...out, { path: "egsremote.gs", content: "stale copy" }]);
+  const again = withDispatcher([...out, { path: "egsremote.gs", content: "stale copy" }], DISPATCHER_SOURCE);
   assert.equal(again.filter((f) => f.path.toLowerCase() === DISPATCHER_PATH.toLowerCase()).length, 1);
   assert.equal(again.find((f) => f.path === DISPATCHER_PATH)?.content, DISPATCHER_SOURCE);
 });
@@ -91,7 +97,7 @@ test("withDispatcher throws a typed error when a .gs file defines doPost", () =>
     { path: "Code.gs", content: "function doGet(e) {}" },
     { path: "Api.gs", content: "function doPost(e) { return ContentService.createTextOutput('x'); }" },
   ];
-  assert.throws(() => withDispatcher(files), (e: unknown) => e instanceof DoPostConflictError && e.file === "Api.gs" && e.code === "DOPOST_CONFLICT");
+  assert.throws(() => withDispatcher(files, DISPATCHER_SOURCE), (e: unknown) => e instanceof DoPostConflictError && e.file === "Api.gs" && e.code === "DOPOST_CONFLICT");
   assert.equal(definesDoPost("// function doPost(e) {}\n/* doPost = 1 */ function doGet() {}"), false);
   assert.equal(definesDoPost("var doPost = function (e) {};"), true);
   assert.equal(definesDoPost("if (doPost == 1) {}"), false);

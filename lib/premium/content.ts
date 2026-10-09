@@ -5,6 +5,7 @@
  */
 import { fetchPremiumContent } from "./api.ts";
 import { CAMERA_RULES_HEADING } from "./camera-rules.ts";
+import { parsePagesRuntime, type PagesRuntime } from "../pages/runtime.ts";
 import { deviceIdentity } from "./device.ts";
 import { parseLicense } from "./license.ts";
 import { readPremium, updatePremium } from "./store.ts";
@@ -32,4 +33,34 @@ export async function refreshCameraRules(): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+// ---------- the "publish outside Apps Script" runtime (shim + dispatcher) ----------
+
+/** The cached runtime, or null when it was never fetched on this machine (or the cache is not usable). */
+export async function cachedPagesRuntime(): Promise<PagesRuntime | null> {
+  const { pagesRuntime } = await readPremium();
+  return pagesRuntime ? parsePagesRuntime(pagesRuntime) : null;
+}
+
+/** Download the runtime for the stored key on this machine and cache it. Null when it cannot. Never throws. */
+export async function refreshPagesRuntime(): Promise<PagesRuntime | null> {
+  try {
+    const { key } = await readPremium();
+    if (!key || !parseLicense(key).ok) return null;
+    const device = await deviceIdentity();
+    if (!device) return null;
+    const { body, version } = await fetchPremiumContent(key, device.hash, "pages_runtime");
+    const runtime = parsePagesRuntime(body);
+    if (!runtime) return null;
+    await updatePremium({ pagesRuntime: body, pagesRuntimeVersion: version });
+    return runtime;
+  } catch {
+    return null;
+  }
+}
+
+/** Cached first, the server when there is no cache yet (first publish online); null = not a Pro machine / offline. */
+export async function ensurePagesRuntime(): Promise<PagesRuntime | null> {
+  return (await cachedPagesRuntime()) ?? (await refreshPagesRuntime());
 }

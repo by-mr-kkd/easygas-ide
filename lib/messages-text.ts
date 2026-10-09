@@ -102,3 +102,29 @@ export function renderRecap(missed: TranscriptEntry[]): string {
     "[End of the earlier turns.]",
   ].join("\n");
 }
+
+/** How many entries the chat shows after a reload (older ones stay in the file and in the AI's context). */
+export const CHAT_HISTORY_LIMIT = 60;
+
+/** Notes the app appends to a user's message for the AI (vision proxy), cut from what the chat shows. */
+const APP_NOTES = ["\n\n[คำบรรยายรูปที่ผู้ใช้แนบ", "\n\n(ผู้ใช้แนบรูปมา แต่ระบบอ่านรูปไม่ได้"];
+
+/**
+ * The conversation as the chat pane shows it when the page opens (another device, a reload): words
+ * only, the app's own notes cut off, the newest `limit` entries.
+ */
+export function chatHistoryOf(rows: StoredRow[], limit = CHAT_HISTORY_LIMIT): TranscriptEntry[] {
+  const out: TranscriptEntry[] = [];
+  for (const e of transcriptOf(rows)) {
+    let text = e.text;
+    if (e.role === "user") {
+      for (const note of APP_NOTES) {
+        const at = text.indexOf(note);
+        if (at >= 0) text = text.slice(0, at);
+      }
+      text = text.trim();
+    }
+    if (text) out.push({ role: e.role, text });
+  }
+  return out.slice(-limit);
+}

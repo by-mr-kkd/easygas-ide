@@ -1,6 +1,7 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import { IBM_Plex_Mono, IBM_Plex_Sans_Thai } from "next/font/google";
+import { MobileNav } from "@/components/MobileNav";
 import { PremiumRefresher } from "@/components/premium/PremiumRefresher";
 import "./globals.css";
 
@@ -34,6 +35,10 @@ export const metadata: Metadata = {
   },
 };
 
+// cover: the phone's bottom tab bar (components/MobileNav) pads itself by the home-indicator inset
+// resizes-content: the on-screen keyboard shrinks the page (Android Chrome), so the chat box stays above it
+export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", interactiveWidget: "resizes-content" };
+
 // Set the theme class before first paint to avoid a flash. Defaults to light; dark only when the
 // user explicitly chose it (stored in localStorage by ThemeToggle).
 const NO_FLASH_THEME = `(function(){try{if(localStorage.getItem('theme')==='dark')document.documentElement.classList.add('dark')}catch(e){}})();`;
@@ -51,6 +56,7 @@ export default async function RootLayout({
       </head>
       <body>
         {children}
+        <MobileNav />
         <PremiumRefresher />
       </body>
     </html>

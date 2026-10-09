@@ -14,7 +14,9 @@ import {
 import { PagesError, type PagesErrorCode } from "@/lib/pages/github-api";
 import { pagesStateFor, publishToPages, type PublishPagesResult } from "@/lib/pages/publish";
 import { premiumStatus } from "@/lib/premium/status";
-import { getCurrentUserId, getProject } from "@/lib/projects";
+import { getFiles } from "@/lib/files";
+import { probeExec } from "@/lib/gas-verify";
+import { getCurrentUserId, getProject, updateProject } from "@/lib/projects";
 
 /**
  * Server actions for "วางหน้าเว็บบน GitHub". The device flow is driven by the client: it calls
@@ -95,9 +97,32 @@ export async function disconnectGitHubAction(): Promise<{ ok: true }> {
 
 export interface PagesState {
   hosting: "gas" | "github";
+  /** the user picked (or the camera gate set) where the front page lives; false = ask a Pro user once */
+  chosen: boolean;
   pages: { repo: string; url: string; published_at: string } | null;
   premium: boolean;
   github: GitHubStatus;
+}
+
+/**
+ * Where the front page lives, picked by the user (components/pages/HostingChoiceDialog). "github" is Pro:
+ * the AI keeps writing google.script.run, the publisher swaps in the fetch shim. Switching back to "gas" is
+ * refused while the project has camera code, because Google's page cannot run it.
+ */
+export async function setHostingAction(projectId: string, hosting: "gas" | "github"): Promise<{ ok: true } | ActionError> {
+  const project = await getProject(projectId);
+  if (!project) return { ok: false, code: "UNKNOWN", error: "ไม่พบโปรเจกต์" };
+  if (hosting !== "gas" && hosting !== "github") return { ok: false, code: "UNKNOWN", error: "ค่าไม่ถูกต้อง" };
+  if (hosting === "github" && !(await premiumStatus()).active) return { ok: false, code: "PREMIUM_REQUIRED", error: "วางหน้าเว็บบน GitHub เป็นฟีเจอร์ของ Pro" };
+  if (hosting === "gas") {
+    const files = await getFiles(projectId);
+    if (files.some((f) => /getUserMedia|capture=["']?(camera|environment)/.test(f.content))) {
+      return { ok: false, code: "UNKNOWN", error: "โปรเจกต์นี้ใช้กล้อง ซึ่งหน้าเว็บของ Google เปิดกล้องไม่ได้ ต้องอยู่บน GitHub Pages ต่อไป" };
+    }
+  }
+  await updateProject(projectId, { hosting });
+  revalidatePath(`/projects/${projectId}`);
+  return { ok: true };
 }
 
 /** Everything the publish UI needs for one project (called from a client effect, never at render). */
@@ -105,7 +130,28 @@ export async function pagesStateAction(projectId: string): Promise<PagesState | 
   const state = await pagesStateFor(projectId);
   if (!state) return null;
   const [premium, github] = await Promise.all([premiumStatus(), githubStatus()]);
-  return { hosting: state.hosting, pages: state.pages ?? null, premium: premium.active, github };
+  return { hosting: state.hosting, chosen: state.chosen, pages: state.pages ?? null, premium: premium.active, github };
+}
+
+export type BackendAuth = { execUrl: string | null; status: "ok" | "auth_required" | "unknown"; message?: string };
+
+/**
+ * Has the owner approved the backend yet? A GAS web app that touches Sheets/Drive answers everyone (the
+ * GitHub page included) with Google's permission wall until its owner opens /exec once and presses Allow.
+ * The probe is remembered on the project once it passes, so the reminder goes away for good.
+ */
+export async function backendAuthAction(projectId: string): Promise<BackendAuth> {
+  const project = await getProject(projectId);
+  const execUrl = project?.deployment?.exec_url ?? null;
+  if (!project || !execUrl) return { execUrl: null, status: "unknown" };
+  if (project.backend_authorized_at) return { execUrl, status: "ok" };
+  const probe = await probeExec(execUrl);
+  if (probe.authRequired) return { execUrl, status: "auth_required", message: probe.error };
+  // timeout / network / deleted deployment: nothing learned
+  if (probe.infraError) return { execUrl, status: "unknown", message: probe.error };
+  // the app answered — fine, or with a runtime error of its own: either way the permission wall is gone
+  await updateProject(projectId, { backend_authorized_at: new Date().toISOString() });
+  return { execUrl, status: "ok" };
 }
 
 export type PublishPagesAction = ({ ok: true } & Omit<PublishPagesResult, "deploy"> & { execUrl: string }) | ActionError;

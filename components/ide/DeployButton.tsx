@@ -12,7 +12,8 @@ import { useProjectStore } from "@/store/useProjectStore";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { PagesPublishPanel } from "@/components/pages/PagesPublishPanel";
-import { pagesStateAction, type PagesState } from "@/app/pages/actions";
+import { pagesStateAction, setHostingAction, type PagesState } from "@/app/pages/actions";
+import { HostingChoiceDialog, type Hosting } from "@/components/pages/HostingChoiceDialog";
 import { pullRemoteAction } from "@/app/projects/import-actions";
 import { useRouter } from "next/navigation";
 
@@ -56,12 +57,15 @@ function scopeLabel(s: string): string {
 export function DeployButton({
   projectId,
   googleConnected = true,
+  googleEmail = null,
   deployed = false,
   onDeployed,
   onConnectGoogle,
 }: {
   projectId: string;
   googleConnected?: boolean;
+  /** the connected Google account, named in the "approve the backend" step after a GitHub publish */
+  googleEmail?: string | null;
   deployed?: boolean;
   onDeployed?: (execUrl: string) => void;
   /** Open the connect-Google dialog (the shell owns it, and re-requests the deploy afterwards). */
@@ -74,6 +78,9 @@ export function DeployButton({
   // "วางหน้าเว็บบน GitHub" (premium): null until loaded; hosting "gas" keeps the flow below unchanged
   const [pagesState, setPagesState] = useState<PagesState | null>(null);
   const [pagesOpen, setPagesOpen] = useState(false);
+  // Pro, first publish of a project that never asked for the camera: Google's page or GitHub Pages?
+  const [chooserOpen, setChooserOpen] = useState(false);
+  const [hostingError, setHostingError] = useState<string | null>(null);
   const actionRequest = useProjectStore((s) => s.actionRequest);
   const clearActionRequest = useProjectStore((s) => s.clearActionRequest);
   const runAgent = useProjectStore((s) => s.runAgent);
@@ -93,9 +100,27 @@ export function DeployButton({
       .then((s) => {
         setPagesState(s);
         if (s?.hosting === "github") setPagesOpen(true);
+        else if (s && !s.chosen && s.premium && s.github.available) setChooserOpen(true);
         else setConfirmOpen(true);
       })
       .catch(() => (githubHosting ? setPagesOpen(true) : setConfirmOpen(true)));
+  }
+
+  /** The user picked where the front page lives; remembered on the project, then straight on to publishing. */
+  async function pickHosting(h: Hosting) {
+    setHostingError(null);
+    const r = await setHostingAction(projectId, h);
+    if (!r.ok) {
+      setHostingError(r.error);
+      return;
+    }
+    setChooserOpen(false);
+    setConfirmOpen(false);
+    setPagesOpen(false);
+    const s = await pagesStateAction(projectId).catch(() => null);
+    setPagesState(s);
+    if (h === "github") setPagesOpen(true);
+    else setConfirmOpen(true);
   }
 
   // command palette / connect-Google dialog → "เผยแพร่" (only dispatched once Google is connected)
@@ -172,16 +197,37 @@ export function DeployButton({
         </button>
       )}
 
+      {chooserOpen && pagesState && (
+        <div className="dialog-backdrop" onClick={() => setChooserOpen(false)}>
+          <div role="dialog" aria-modal="true" className="dialog max-w-md p-5" onClick={(e) => e.stopPropagation()}>
+            <HostingChoiceDialog githubConnected={pagesState.github.connected} onPick={pickHosting} onClose={() => setChooserOpen(false)} />
+            {hostingError && <p className="mt-2 text-sm text-danger">{hostingError}</p>}
+          </div>
+        </div>
+      )}
+
       {pagesOpen && pagesState && (
         <div className="dialog-backdrop">
           <div role="dialog" aria-modal="true" className="dialog max-w-md p-5">
             <PagesPublishPanel
               projectId={projectId}
               state={pagesState}
+              googleEmail={googleEmail}
               onStateChange={loadPagesState}
-              onPublished={(o) => onDeployed?.(o.url)}
+              onPublished={(o) => {
+                onDeployed?.(o.url);
+                void loadPagesState(); // the page is on GitHub now: the "Google instead" link below goes away
+              }}
               onClose={() => setPagesOpen(false)}
             />
+            {!pagesState.pages && (
+              <p className="mt-3 border-t border-line pt-3 text-xs">
+                <button type="button" onClick={() => pickHosting("gas")} className="link">
+                  เผยแพร่บนหน้าเว็บของ Google แทน (มีแถบของ Google ใช้กล้องไม่ได้)
+                </button>
+                {hostingError && <span className="ml-2 text-danger">{hostingError}</span>}
+              </p>
+            )}
           </div>
         </div>
       )}
@@ -194,6 +240,14 @@ export function DeployButton({
             แอปจะไปอยู่ในบัญชี Google ของคุณ พร้อมลิงก์สำหรับเปิดใช้งานจริง
             <br />
             ครั้งแรก Google จะถามขออนุญาตหนึ่งครั้ง
+            {pagesState?.premium && pagesState.github.available && !deployed && (
+              <>
+                <br />
+                <button type="button" onClick={() => pickHosting("github")} className="link mt-1">
+                  ไม่เอาแถบของ Google? วางหน้าเว็บบน GitHub Pages แทน (Pro)
+                </button>
+              </>
+            )}
           </>
         }
         confirmLabel="เผยแพร่"

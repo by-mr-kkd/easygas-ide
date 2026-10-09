@@ -165,6 +165,35 @@ npm run desktop:build   # Windows installer → dist/desktop/out
   on screen is skipped. Opens by itself once per screen, remembered in settings.app `tour_seen_<id>` (the
   desktop origin changes with its port, so localStorage alone forgets). Add a step = add to
   `TOURS` + mark the element; keep the copy in Thai.
+- **Remote access ("ใช้จากมือถือ", `lib/remote/*`, plan + tested limits in `docs/REMOTE-PLAN.md`):** the Next server
+  still binds 127.0.0.1 only. A separate gateway (`lib/remote/gateway.ts`, started from `instrumentation.ts`) is the
+  one thing that listens beyond loopback (127.0.0.1 for the Cloudflare quick tunnel, 0.0.0.0 only in "same Wi-Fi"
+  mode). It lets in only a paired device cookie (+ PIN session when set), drops x-forwarded-* / cf-* / x-egs-*,
+  rewrites Host/Origin to loopback and marks requests with the process secret in `x-egs-remote`. Server actions a
+  phone must not run call `assertLocalRequest()` (remote settings, API keys, Google login, CLI terminals,
+  uninstall, Pro key reveal / deactivate) — add it to any new action of that kind. Quick tunnels hold GET responses
+  until they end but stream POST: keep the agent / verify streams POST. cloudflared is downloaded at a pinned
+  version + SHA-256 (`lib/remote/tunnel.ts`); bumping it = new url + hash + size. Pro only: the fixed link /
+  link name (`premium-remote`), the phone app at easygaside.tech/app (EasyGAS-Site lib/remote-app.ts) talking to
+  `/__egs/api/*` with a Bearer device token (CORS: easygaside.tech + EASYGAS_SITE_ORIGIN), and Web Push sent by the
+  computer itself (`lib/remote/webpush.ts`, `notifyTurnEnd` in the agent / verify routes). Electron reads
+  `<data>/remote-state.json` for the tray / keep-awake / notifications and never writes it.
+- **Share links ("แชร์โปรเจกต์" / "โคลนจากลิงก์", `lib/share/*`):** a project is published to easygaside.tech as
+  `/s/<slug>` (EasyGAS-Site `app/api/share`) and anyone clones it into their own IDE. `scan.ts` + `link.ts` are
+  vendored copies of the website's `lib/share-scan.ts` / `lib/share-link.ts` — change both together; the website is
+  the final gate, the app scans first so the user sees the finding before anything leaves. Credentials refuse, ids /
+  emails warn. The owner token lives in `project.json` (`share.token`) and never reaches the client (`shareState`
+  strips it). Cloning = `/projects?mode=clone` (`CloneFromLink`), also where `easygas://clone/<slug>` lands
+  (electron/main.js `appPathForLink`; `protocols` in electron-builder.yml). A phone may preview and clone: the share
+  actions deliberately do not call `assertLocalRequest()`. The vendored files only speak to `EASYGAS_SITE_ORIGIN`
+  (default easygaside.tech); folders in `src/` are refused (the website takes flat Apps Script names only).
+- **Pro content lives on the licence server, not here** (`premium-content`, cached in `premium.json`,
+  `lib/premium/content.ts`): `camera_rules` (the camera prompt text) and, since 2026-10-09, `pages_runtime` = JSON
+  `{v, shim, dispatcher}` — the browser stand-in for `google.script.run` and `EgsRemote.gs`. `lib/pages/run-shim.ts`,
+  `dispatcher.ts`, `static-page.ts` and `deploy.ts` take the text as a parameter; `ensurePagesRuntime()` fetches it
+  on the first online publish and a missing runtime is `RUNTIME_MISSING`. Never paste either text back into the
+  repo (tests: `EASYGAS_PAGES_RUNTIME_FIXTURE=<json>` runs the behaviour tests, otherwise they skip). Changing the
+  text = a new row version on the server (`update premium_content … where id = 'pages_runtime'`), no app release.
 - **No work at render time that touches the network or writes settings** — `next build` renders pages
   (the rulebook check once ran during a build). Trigger such work from a client effect → server action.
 

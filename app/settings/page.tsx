@@ -4,6 +4,12 @@ import { UninstallApp } from "@/components/settings/UninstallApp";
 import { EngineForm } from "@/components/settings/EngineForm";
 import { PremiumSection } from "@/components/premium/PremiumSection";
 import { GoogleConnect } from "@/components/settings/GoogleConnect";
+import { RemoteSection } from "@/components/settings/RemoteSection";
+import { SupportSection } from "@/components/settings/SupportSection";
+import { APP_VERSION } from "@/lib/rulebook/store";
+import { remoteView } from "@/lib/remote/view";
+import { isRemoteRequest } from "@/lib/remote/request";
+import { remoteSnapshot } from "@/lib/remote/runtime";
 import { CLAUDE_QUOTA_SETTING } from "@/lib/engines/claude-quota";
 
 const isOn = (v: string | undefined) => v === "on" || v === "true" || v === "1";
@@ -23,7 +29,7 @@ import { getApiKey, getSettings, keyIdFor, type KeyId } from "@/lib/settings";
 
 export const metadata = { title: "ตั้งค่า — EasyGAS IDE" };
 
-const SECTIONS: readonly SettingsSection[] = ["ai", "google", "style", "premium", "data"];
+const SECTIONS: readonly SettingsSection[] = ["ai", "google", "style", "remote", "premium", "support", "data"];
 
 const KEY_FORMS: { id: KeyId; label: string; hint: string }[] = [
   { id: "anthropic", label: "Anthropic (Claude)", hint: "สร้างคีย์ที่ console.anthropic.com" },
@@ -51,15 +57,37 @@ const HEAD: Record<SettingsSection, { title: string; hint: string }> = {
       "AI จะใช้ค่าพวกนี้กับทุกโปรเจกต์ใหม่ แต่ละโปรเจกต์ตั้งต่างออกไปได้ และบอก AI ในแชทเพื่อเปลี่ยนก็ได้ " +
       "ส่วนกฎด้านความปลอดภัยและข้อจำกัดของ Google Apps Script เปลี่ยนจากตรงนี้ไม่ได้",
   },
+  remote: {
+    title: "ใช้จากมือถือ",
+    hint: "เปิดคอมทิ้งไว้ แล้วใช้มือถือสั่ง AI ดูพรีวิว และเผยแพร่ได้จากที่ไหนก็ได้ ไม่ต้องลงแอปในมือถือ",
+  },
   premium: {
     title: "Pro",
     hint: "ปลดล็อกให้ AI สร้างเว็บแอปที่ใช้กล้องได้ และเชื่อมบัญชี GitHub ที่จะใช้วางหน้าเว็บ",
+  },
+  support: {
+    title: "ช่วยเหลือ",
+    hint: "ติดตรงไหนถามได้ ผู้ใช้ Pro ส่ง Fast Track ถึงแอดมินได้จากหน้านี้ คนอื่นถามในเว็บบอร์ดได้ฟรี",
   },
   data: {
     title: "ข้อมูลในเครื่อง",
     hint: "ที่เก็บข้อมูลของแอปบนเครื่องนี้",
   },
 };
+
+/** One line about this install for a Fast Track question: version, Windows, the AI in use (no keys, no paths). */
+async function machineInfo(): Promise<string> {
+  const settings = await getSettings();
+  const ai = settings.engine === "api" ? `API ${settings.provider}` : `${settings.engine}${settings.cliModel ? ` (${settings.cliModel})` : ""}`;
+  const os = process.platform === "win32" ? "Windows" : process.platform;
+  return `EasyGAS IDE ${APP_VERSION} · ${os} · AI: ${ai}`;
+}
+
+/** The remote section's data — for the person at the computer only ("remote" when a phone asks). */
+async function loadRemoteSection() {
+  if (await isRemoteRequest()) return "remote" as const;
+  return remoteSnapshot();
+}
 
 /** The AI section's data. Keys stay on the server — the form only learns hasKey. */
 async function loadAiSection() {
@@ -79,11 +107,12 @@ export default async function SettingsPage({
   const sp = await searchParams;
   const section = pickSection(sp, SECTIONS, "ai");
   // only the visible section's data is loaded (the status feeds the nav badges on every section)
-  const [status, ai, settings, premium] = await Promise.all([
+  const [status, ai, settings, premium, remote] = await Promise.all([
     getSetupStatus(),
     section === "ai" ? loadAiSection() : null,
     section === "style" ? getSettings() : null,
-    section === "premium" ? premiumStatus() : null,
+    section === "premium" || section === "remote" || section === "support" ? premiumStatus() : null,
+    section === "remote" ? loadRemoteSection() : null,
   ]);
 
   return (
@@ -111,7 +140,20 @@ export default async function SettingsPage({
 
       {settings && <StylePrefsForm value={resolvePrefs(settings.prefs, null)} onSave={savePrefsAction} />}
 
-      {premium && <PremiumSection status={premium} />}
+      {section === "premium" && premium && <PremiumSection status={premium} />}
+
+      {section === "support" && premium && <SupportSection pro={premium.active} machineInfo={await machineInfo()} />}
+
+      {section === "remote" &&
+        (remote === "remote" ? (
+          <p className="card px-4 py-3 text-sm text-fg">หน้านี้ตั้งค่าได้บนคอมเท่านั้น เพื่อไม่ให้มือถือที่หลุดมือไปเปลี่ยน PIN หรือจับคู่เครื่องอื่นเพิ่มได้</p>
+        ) : (
+          remote && (
+            <RemoteSection
+              initial={remoteView(remote, !!premium?.active)}
+            />
+          )
+        ))}
 
       {section === "data" && (
         <>

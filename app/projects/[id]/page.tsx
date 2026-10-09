@@ -3,6 +3,12 @@ import { IdeShell } from "@/components/ide/IdeShell";
 import { getAiOptions, resolveChoice } from "@/lib/ai-options";
 import { listProjectChatImages } from "@/lib/chat-images";
 import { getFiles } from "@/lib/files";
+import { isProjectBusy } from "@/lib/agent-lock";
+import { getStoredRows } from "@/lib/messages";
+import { chatHistoryOf } from "@/lib/messages-text";
+import { remoteSnapshot } from "@/lib/remote/runtime";
+import { remoteDeviceOf } from "@/lib/remote/turn-notify";
+import { headers } from "next/headers";
 import { resolvePrefs, sanitizePrefs } from "@/lib/preferences";
 import { getDeployedMap, getProject, listProjects } from "@/lib/projects";
 import { getSettings } from "@/lib/settings";
@@ -20,7 +26,7 @@ export default async function ProjectBuilderPage({ params }: { params: Promise<{
   const project = await getProject(id);
   if (!project) notFound();
 
-  const [files, setup, aiOptions, aiChoice, chatImages, allProjects, deployedMap, settings, premium, github] = await Promise.all([
+  const [files, setup, aiOptions, aiChoice, chatImages, allProjects, deployedMap, settings, premium, github, chatRows] = await Promise.all([
     getFiles(id),
     getSetupStatus(),
     getAiOptions(project),
@@ -31,7 +37,12 @@ export default async function ProjectBuilderPage({ params }: { params: Promise<{
     getSettings(),
     premiumStatus().catch(() => ({ active: false })),
     githubStatus().catch(() => ({ available: false, connected: false })),
+    getStoredRows(id).catch(() => []),
   ]);
+  const remote = await remoteSnapshot().catch(() => null);
+  // Pro, opened from a paired phone that has not turned notifications on yet
+  const phone = remoteDeviceOf(await headers());
+  const pushNudge = !!(premium.active && phone && remote?.devices.some((d) => d.id === phone && !d.push));
   const switcherProjects = allProjects.map((p) => ({ id: p.id, name: p.name, deployed: !!deployedMap[p.id] }));
 
   // honest hint when the project asked for a capability GAS can't serve (web target). Recomputed here, not
@@ -52,6 +63,10 @@ export default async function ProjectBuilderPage({ params }: { params: Promise<{
       claudeQuotaAllowed={isOn(settings.app[CLAUDE_QUOTA_SETTING])}
       initialFiles={files.map((f) => ({ path: f.path, content: f.content }))}
       initialImages={chatImages.map((img) => ({ url: img.url }))}
+      initialMessages={chatHistoryOf(chatRows)}
+      initialRunning={isProjectBusy(id)}
+      remoteDevices={remote?.enabled ? remote.devices.length : null}
+      pushNudge={pushNudge}
       webHint={webHint}
       googleConnected={setup.google.loggedIn}
       googleEmail={setup.google.email}

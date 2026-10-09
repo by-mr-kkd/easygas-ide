@@ -12,6 +12,8 @@ import { finishTurnLessons, noteWrittenFile } from "@/lib/lessons-store";
 import { resolveProjectProvider, resolveProvider, resolveRepairProvider } from "@/lib/llm/provider";
 import { runOpenAiAgentLoop } from "@/lib/openai-agent";
 import { getCurrentUser, getProject } from "@/lib/projects";
+import { verifyNotice } from "@/lib/remote/notice";
+import { notifyTurnEnd, remoteDeviceOf } from "@/lib/remote/turn-notify";
 import { snapshotProject } from "@/lib/versions";
 import type { EgsProject } from "@/types/db";
 
@@ -93,7 +95,7 @@ async function prepareRepair(project: EgsProject, userId: string): Promise<Repai
  * live /exec; on a runtime failure it repairs with the active engine and re-deploys (same URL), up to
  * MAX_REPAIRS times. Streams SSE like /api/agent.
  */
-export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const user = await getCurrentUser();
   const project = await getProject(id);
@@ -121,10 +123,14 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
   const encoder = new TextEncoder();
   let closed = false;
+  // Pro: the phone that pressed "ทดสอบรันจริง" hears the result (lib/remote/turn-notify)
+  const phone = remoteDeviceOf(req.headers);
+  let verdict: boolean | null = null;
   const stream = new ReadableStream({
     async start(controller) {
       const emit = (ev: AgentEvent) => {
         if (ev.type === "file_mutation" && ev.op !== "delete") noteWrittenFile(id, ev.path);
+        if (ev.type === "verdict") verdict = ev.ok;
         if (closed) return;
         try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(ev)}\n\n`));
@@ -214,6 +220,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
           emit({ type: "lesson", lesson: { id: l.id, rule: l.rule, symptom: l.symptom, card: l.card, hits: l.hits } });
         }
         await releaseProjectRun(id, lock);
+        notifyTurnEnd(phone, id, verifyNotice(project.name, verdict));
         closed = true;
         try {
           controller.close();

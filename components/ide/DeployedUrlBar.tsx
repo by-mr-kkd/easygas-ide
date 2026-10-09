@@ -12,7 +12,7 @@ import {
 import { useProjectStore } from "@/store/useProjectStore";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Tooltip } from "@/components/ui/Tooltip";
-import { pagesStateAction, publishPagesAction, type PagesState } from "@/app/pages/actions";
+import { backendAuthAction, pagesStateAction, publishPagesAction, type BackendAuth, type PagesState } from "@/app/pages/actions";
 import { pullRemoteAction } from "@/app/projects/import-actions";
 
 /** LINE's in-app browser blocks the camera; this parameter makes LINE open the link in the device browser. */
@@ -25,8 +25,23 @@ const shareUrlFor = (u: string): string => `${u}${u.includes("?") ? "&" : "?"}${
  * "deploy ใหม่" (re-PATCH the same deployment → same /exec URL). The /exec URL is stable across
  * re-deploys, so it's safe to share once.
  */
-export function DeployedUrlBar({ url: execUrl, projectId }: { url: string; projectId: string }) {
+export function DeployedUrlBar({ url: execUrl, projectId, googleEmail = null }: { url: string; projectId: string; googleEmail?: string | null }) {
   const [copied, setCopied] = useState(false);
+  // the owner's one-time approval of the backend (Google's permission wall): a reminder with the link
+  // stays under the bar until a probe sees the wall gone (remembered on the project after that)
+  const [auth, setAuth] = useState<BackendAuth | null>(null);
+  const [authBusy, setAuthBusy] = useState(false);
+  const checkAuth = () => {
+    setAuthBusy(true);
+    backendAuthAction(projectId)
+      .then(setAuth)
+      .catch(() => {})
+      .finally(() => setAuthBusy(false));
+  };
+  useEffect(() => {
+    checkAuth();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, execUrl]);
   const [shareCopied, setShareCopied] = useState(false);
   // "วางหน้าเว็บบน GitHub": once published there, the Pages URL is the app's main link
   const [pagesState, setPagesState] = useState<PagesState | null>(null);
@@ -175,13 +190,23 @@ export function DeployedUrlBar({ url: execUrl, projectId }: { url: string; proje
     if (r.ok) router.refresh();
   }
 
+  const authNeeded = auth?.status === "auth_required" && !!auth.execUrl;
+
   return (
-    <div className="flex flex-none flex-wrap items-center gap-1.5 border-b border-line bg-sunken px-3 py-1">
+    <>
+    {/* a green band (not another grey bar): "this app is live". One row on a phone — the actions are icons there. */}
+    <div className="flex flex-none items-center gap-1 border-b border-accent/25 bg-accent-soft px-2 py-1 sm:gap-1.5 sm:px-3 [@media(max-height:520px)]:hidden">
       {/* one group that shrinks, so a long /exec url is cut with … instead of pushing the buttons down */}
-      <div className="flex min-w-0 flex-1 basis-64 items-center gap-1.5">
-        <span className="shrink-0 text-[13px] font-medium text-accent-text">{githubHosting && pagesState?.pages ? "แอปบน GitHub Pages" : "แอปที่เผยแพร่แล้ว"}</span>
+      <div className="flex min-w-0 flex-1 items-center gap-1.5">
+        <span className="relative flex h-2 w-2 shrink-0" aria-hidden>
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-40 motion-reduce:hidden" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-accent" />
+        </span>
+        <span className="truncate text-[13px] font-semibold text-accent-text">
+          {githubHosting && pagesState?.pages ? "ออนไลน์บน GitHub Pages" : "แอปออนไลน์แล้ว"}
+        </span>
         <span className="hidden min-w-0 truncate font-mono text-xs text-muted md:block">{url}</span>
-        {note && <span className="shrink-0 truncate text-xs text-muted">· {note}</span>}
+        {note && <span className="min-w-0 truncate text-xs text-muted">· {note}</span>}
       </div>
 
       <Tooltip
@@ -189,35 +214,24 @@ export function DeployedUrlBar({ url: execUrl, projectId }: { url: string; proje
         placement="bottom"
         className="shrink-0"
       >
-        <button
-          onClick={openDev}
-          disabled={devBusy}
-          className="btn btn-ghost btn-sm"
-        >
+        <button onClick={openDev} disabled={devBusy} aria-label="ลองโค้ดล่าสุด" className="btn btn-ghost btn-sm max-sm:w-[1.875rem] max-sm:px-0">
           <BoltIcon className={`h-4 w-4 ${devBusy ? "animate-pulse" : ""}`} />
-          {devBusy ? "กำลังเปิด…" : "ลองโค้ดล่าสุด"}
+          <span className="max-sm:hidden">{devBusy ? "กำลังเปิด…" : "ลองโค้ดล่าสุด"}</span>
         </button>
       </Tooltip>
       <Tooltip label="เผยแพร่โค้ดล่าสุดทับเวอร์ชันเดิม ลิงก์ไม่เปลี่ยน" placement="bottom" className="shrink-0">
-        <button
-          onClick={() => setConfirmOpen(true)}
-          disabled={deployBusy}
-          className="btn btn-ghost btn-sm"
-        >
+        <button onClick={() => setConfirmOpen(true)} disabled={deployBusy} aria-label="เผยแพร่ใหม่" className="btn btn-ghost btn-sm max-sm:w-[1.875rem] max-sm:px-0">
           <ArrowPathIcon className={`h-4 w-4 ${deployBusy ? "animate-spin" : ""}`} />
-          {deployBusy ? "กำลังเผยแพร่…" : "เผยแพร่ใหม่"}
+          <span className="max-sm:hidden">{deployBusy ? "กำลังเผยแพร่…" : "เผยแพร่ใหม่"}</span>
         </button>
       </Tooltip>
-      <button
-        onClick={copy}
-        className="btn btn-ghost btn-sm shrink-0"
-      >
+      <button onClick={copy} aria-label="คัดลอกลิงก์" className="btn btn-ghost btn-sm shrink-0 max-sm:w-[1.875rem] max-sm:px-0">
         {copied ? <CheckIcon className="h-4 w-4" /> : <ClipboardIcon className="h-4 w-4" />}
-        {copied ? "คัดลอกแล้ว" : "คัดลอกลิงก์"}
+        <span className="max-sm:hidden">{copied ? "คัดลอกแล้ว" : "คัดลอกลิงก์"}</span>
       </button>
       {githubHosting && pagesState?.pages && (
         <Tooltip label="ลิงก์เดียวกัน แต่ LINE จะเปิดในเบราว์เซอร์ของเครื่อง เพราะหน้าต่างใน LINE ใช้กล้องไม่ได้" placement="bottom" className="shrink-0">
-          <button onClick={copyShare} className="btn btn-ghost btn-sm">
+          <button onClick={copyShare} className="btn btn-ghost btn-sm max-sm:hidden">
             {shareCopied ? <CheckIcon className="h-4 w-4" /> : <ClipboardIcon className="h-4 w-4" />}
             {shareCopied ? "คัดลอกแล้ว" : "ลิงก์สำหรับแชร์ใน LINE"}
           </button>
@@ -273,5 +287,20 @@ export function DeployedUrlBar({ url: execUrl, projectId }: { url: string; proje
         onCancel={() => setRemoteChanged(null)}
       />
     </div>
+    {authNeeded && (
+      <div className="flex flex-none flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-warn/40 bg-warn-soft px-2 py-1.5 text-[13px] sm:px-3 [@media(max-height:520px)]:hidden">
+        <span className="min-w-0 flex-1">
+          <b>ขั้นสุดท้าย:</b> อนุญาตระบบหลังบ้านครั้งเดียว ด้วยบัญชี Google {googleEmail ? <b>{googleEmail}</b> : "ที่ใช้เผยแพร่"} ไม่งั้นแอปจะขึ้นว่าเชื่อมต่อไม่ได้
+          <span className="text-muted"> (Review permissions → Advanced → Allow)</span>
+        </span>
+        <a href={auth.execUrl ?? "#"} target="_blank" rel="noreferrer" className="btn btn-primary btn-sm shrink-0">
+          เปิดหน้าอนุญาต <ArrowTopRightOnSquareIcon className="h-4 w-4" />
+        </a>
+        <button type="button" onClick={checkAuth} disabled={authBusy} className="btn btn-secondary btn-sm shrink-0">
+          {authBusy ? "กำลังตรวจ…" : "อนุญาตแล้ว ตรวจอีกครั้ง"}
+        </button>
+      </div>
+    )}
+    </>
   );
 }

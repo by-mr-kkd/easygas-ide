@@ -5,9 +5,11 @@ import {
   ArrowLeftIcon,
   BookOpenIcon,
   CpuChipIcon,
+  DevicePhoneMobileIcon,
   FolderIcon,
   GlobeAltIcon,
   InformationCircleIcon,
+  LifebuoyIcon,
   SparklesIcon,
   SwatchIcon,
 } from "@heroicons/react/24/outline";
@@ -15,10 +17,11 @@ import { AppTopBar } from "@/components/AppTopBar";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { readLessons } from "@/lib/lessons-store";
 import { premiumStatus } from "@/lib/premium/status";
+import { unreadAnswers } from "@/lib/support/fast-track";
 import { getProject } from "@/lib/projects";
 import type { SetupStatus } from "@/lib/setup-status";
 
-export type SettingsSection = "ai" | "google" | "style" | "premium" | "data";
+export type SettingsSection = "ai" | "google" | "style" | "remote" | "premium" | "support" | "data";
 export type KnowledgeSection = "rules" | "lessons";
 type SectionId = SettingsSection | KnowledgeSection;
 
@@ -42,7 +45,9 @@ const NAV_ICON: Record<SectionId, { Icon: typeof CpuChipIcon; tone: string }> = 
   ai: { Icon: CpuChipIcon, tone: "text-ai" },
   google: { Icon: GlobeAltIcon, tone: "text-info" },
   style: { Icon: SwatchIcon, tone: "text-accent-text" },
+  remote: { Icon: DevicePhoneMobileIcon, tone: "text-info" },
   premium: { Icon: SparklesIcon, tone: "text-accent-text" },
+  support: { Icon: LifebuoyIcon, tone: "text-warn-text" },
   data: { Icon: FolderIcon, tone: "text-muted" },
   rules: { Icon: BookOpenIcon, tone: "text-info" },
   lessons: { Icon: AcademicCapIcon, tone: "text-ai" },
@@ -55,7 +60,9 @@ const NAV: { heading: string; items: { id: SectionId; path: "/settings" | "/know
       { id: "ai", path: "/settings", label: "AI ที่ใช้สร้างโค้ด" },
       { id: "google", path: "/settings", label: "บัญชี Google" },
       { id: "style", path: "/settings", label: "สไตล์เริ่มต้น" },
+      { id: "remote", path: "/settings", label: "ใช้จากมือถือ" },
       { id: "premium", path: "/settings", label: "Pro" },
+      { id: "support", path: "/settings", label: "ช่วยเหลือ" },
       { id: "data", path: "/settings", label: "ข้อมูลในเครื่อง" },
     ],
   },
@@ -98,7 +105,12 @@ export async function SettingsShell({
   children: ReactNode;
 }) {
   // local files only (premium.json is an offline signature check) — nothing here touches the network
-  const [project, book, premium] = await Promise.all([from ? getProject(from).catch(() => null) : null, readLessons(), premiumStatus()]);
+  const [project, book, premium, answers] = await Promise.all([
+    from ? getProject(from).catch(() => null) : null,
+    readLessons(),
+    premiumStatus(),
+    unreadAnswers().catch(() => 0),
+  ]);
   // only a project that still exists is carried along in the links
   const query = project ? `&from=${encodeURIComponent(project.id)}` : "";
   const pendingLessons = book.lessons.filter((l) => l.status === "pending").length;
@@ -110,6 +122,7 @@ export async function SettingsShell({
       // optional, so "not connected" stays neutral
       return status.google.loggedIn ? <span className="badge badge-ok">เชื่อมแล้ว</span> : <span className="badge">ยังไม่เชื่อม</span>;
     if (id === "premium" && premium.active) return <span className="badge badge-ok">เปิดใช้แล้ว</span>;
+    if (id === "support" && answers > 0) return <span className="badge badge-ok">ตอบแล้ว {answers}</span>;
     if (id === "lessons" && pendingLessons > 0) return <span className="badge badge-warn">{pendingLessons}</span>;
     return null;
   };

@@ -4,6 +4,14 @@ import vm from "node:vm";
 import { DoPostConflictError, withDispatcher } from "../lib/pages/dispatcher.ts";
 import { InvalidExecUrlError, buildRunShim } from "../lib/pages/run-shim.ts";
 import { NoEntryPageError, StaticPageScriptletError, buildStaticPage, composeEntryPage } from "../lib/pages/static-page.ts";
+import { parsePagesRuntime } from "../lib/pages/runtime.ts";
+import { FAKE_RUNTIME, SKIP_REAL, realRuntime } from "./_pages-runtime.ts";
+
+// the real shim + dispatcher live on the licence server (Pro content); behaviour tests need a local copy
+const REAL = realRuntime();
+const SHIM = REAL?.shim ?? FAKE_RUNTIME.shim;
+const DISPATCHER = REAL?.dispatcher ?? FAKE_RUNTIME.dispatcher;
+const needsReal = { skip: REAL ? false : SKIP_REAL };
 
 const EXEC = "https://script.google.com/macros/s/AKfycbxyz_ABC-123/exec";
 
@@ -32,7 +40,7 @@ function bootShim(answer: (call: FakeFetchCall) => Promise<string>) {
   };
   sandbox.window = sandbox;
   const ctx = vm.createContext(sandbox);
-  vm.runInContext(buildRunShim(EXEC), ctx);
+  vm.runInContext(buildRunShim(EXEC, SHIM), ctx);
   const google = vm.runInContext("google", ctx);
   return { google, calls, errors };
 }
@@ -42,7 +50,7 @@ const tick = () => new Promise((r) => setTimeout(r, 5));
 const plain = (v: unknown) => JSON.parse(JSON.stringify(v));
 const isError = (e: unknown) => Object.prototype.toString.call(e) === "[object Error]";
 
-test("shim: success handler gets value + user object; POST body is {fn,args} with no Content-Type", async () => {
+test("shim: success handler gets value + user object; POST body is {fn,args} with no Content-Type", needsReal, async () => {
   const { google, calls } = bootShim(async () => JSON.stringify({ ok: true, value: { rows: [1, 2] } }));
   const got: unknown[] = [];
   const ret = google.script.run.withUserObject({ tag: "u" }).withSuccessHandler((v: unknown, u: unknown) => got.push(v, u)).listRows("sheet1", 5);
@@ -56,7 +64,7 @@ test("shim: success handler gets value + user object; POST body is {fn,args} wit
   assert.deepEqual(JSON.parse(calls[0].init.body), { fn: "listRows", args: ["sheet1", 5] });
 });
 
-test("shim: server error, non-JSON answer and network failure reach the failure handler as Errors", async () => {
+test("shim: server error, non-JSON answer and network failure reach the failure handler as Errors", needsReal, async () => {
   let mode = "server";
   const { google, errors } = bootShim(async () => {
     if (mode === "network") throw new TypeError("Failed to fetch");
@@ -86,7 +94,7 @@ test("shim: server error, non-JSON answer and network failure reach the failure 
   assert.equal(errors.length, 1);
 });
 
-test("shim: with* builders return new runners and never mutate the one they were called on", async () => {
+test("shim: with* builders return new runners and never mutate the one they were called on", needsReal, async () => {
   const { google } = bootShim(async () => JSON.stringify({ ok: true, value: 1 }));
   const seen: string[] = [];
   const base = google.script.run.withSuccessHandler(() => seen.push("base"));
@@ -100,7 +108,7 @@ test("shim: with* builders return new runners and never mutate the one they were
   assert.equal(google.script.run.then, undefined, "not thenable, so a runner can sit in a Promise chain");
 });
 
-test("shim: a single <form> argument is sent as a field object; a chosen file is refused in Thai", async () => {
+test("shim: a single <form> argument is sent as a field object; a chosen file is refused in Thai", needsReal, async () => {
   const { google, calls } = bootShim(async () => JSON.stringify({ ok: true }));
   const form = {
     tagName: "FORM",
@@ -126,7 +134,7 @@ test("shim: a single <form> argument is sent as a field object; a chosen file is
   assert.match(fails[0].message, /ไฟล์/);
 });
 
-test("shim: url.getLocation and history mirror window.location / history", () => {
+test("shim: url.getLocation and history mirror window.location / history", needsReal, () => {
   const { google, calls } = bootShim(async () => "");
   let loc: Record<string, unknown> = {};
   google.script.url.getLocation((l: Record<string, unknown>) => (loc = l));
@@ -137,13 +145,13 @@ test("shim: url.getLocation and history mirror window.location / history", () =>
   assert.equal(typeof google.script.host.editor.focus, "function");
 });
 
-test("shim source is plain ASCII, carries the URL safely and refuses a bad URL", () => {
-  const src = buildRunShim(EXEC);
+test("shim source is plain ASCII, carries the URL safely and refuses a bad URL", needsReal, () => {
+  const src = buildRunShim(EXEC, SHIM);
   assert.equal(/^[\x00-\x7f]*$/.test(src), true);
   assert.equal(src.includes("</"), false);
   assert.ok(src.includes(JSON.stringify(EXEC)));
   for (const bad of ["http://script.google.com/macros/s/x/exec", "https://script.google.com/macros/s/x/dev", "https://evil.com/macros/s/x/exec", "https://script.google.com/macros/s/x</script>/exec"]) {
-    assert.throws(() => buildRunShim(bad), InvalidExecUrlError);
+    assert.throws(() => buildRunShim(bad, SHIM), InvalidExecUrlError);
   }
 });
 
@@ -168,7 +176,7 @@ test("composes Index.html with nested includes the way the preview does", () => 
 });
 
 test("buildStaticPage: shim before any script, GAS-supplied head tags added, .nojekyll present", () => {
-  const out = buildStaticPage(PROJECT, { execUrl: EXEC });
+  const out = buildStaticPage(PROJECT, { execUrl: EXEC, shim: SHIM });
   assert.deepEqual(out.map((f) => f.path), ["index.html", ".nojekyll"]);
   assert.equal(out[1].content, "");
   const html = out[0].content;
@@ -184,7 +192,7 @@ test("buildStaticPage: shim before any script, GAS-supplied head tags added, .no
 });
 
 test("buildStaticPage: a bare fragment without head/doctype still gets a valid document with the shim first", () => {
-  const [page] = buildStaticPage([{ path: "Index.html", content: "<script>go()</script><p>hi</p>" }], { execUrl: EXEC });
+  const [page] = buildStaticPage([{ path: "Index.html", content: "<script>go()</script><p>hi</p>" }], { execUrl: EXEC, shim: SHIM });
   const html = page.content;
   assert.ok(html.startsWith("<!DOCTYPE html>"));
   assert.ok(html.indexOf("data-egs-run-shim") < html.indexOf("<script>go()"));
@@ -193,11 +201,11 @@ test("buildStaticPage: a bare fragment without head/doctype still gets a valid d
 
 test("buildStaticPage: keeps the page's own charset/viewport/title and rejects a bad execUrl", () => {
   const own = "<!doctype html><html><head><meta charset=\"UTF-8\"><meta name='viewport' content='width=320'><title>Mine</title></head><body></body></html>";
-  const [page] = buildStaticPage([...PROJECT.slice(0, 1), { path: "Index.html", content: own }], { execUrl: EXEC });
+  const [page] = buildStaticPage([...PROJECT.slice(0, 1), { path: "Index.html", content: own }], { execUrl: EXEC, shim: SHIM });
   assert.equal((page.content.match(/<meta[^>]*charset/gi) ?? []).length, 1);
   assert.equal((page.content.match(/viewport/g) ?? []).length, 1);
   assert.equal((page.content.match(/<title/g) ?? []).length, 1);
-  assert.throws(() => buildStaticPage(PROJECT, { execUrl: "https://script.google.com/macros/s/x/dev" }), InvalidExecUrlError);
+  assert.throws(() => buildStaticPage(PROJECT, { execUrl: "https://script.google.com/macros/s/x/dev", shim: SHIM }), InvalidExecUrlError);
 });
 
 test("buildStaticPage: data scriptlets, missing includes and include loops are reported per file", () => {
@@ -206,7 +214,7 @@ test("buildStaticPage: data scriptlets, missing includes and include loops are r
     { path: "Part.html", content: "<?!= include('Part') ?>" },
   ];
   assert.throws(
-    () => buildStaticPage(files, { execUrl: EXEC }),
+    () => buildStaticPage(files, { execUrl: EXEC, shim: SHIM }),
     (e: unknown) => {
       assert.ok(e instanceof StaticPageScriptletError);
       assert.equal(e.code, "STATIC_PAGE_SCRIPTLET");
@@ -225,6 +233,16 @@ test("buildStaticPage: data scriptlets, missing includes and include loops are r
 
 test("publishing flow: dispatcher conflict surfaces before the static page is built", () => {
   const files = [...PROJECT, { path: "Hooks.gs", content: "function doPost(e) { return 1; }" }];
-  assert.throws(() => withDispatcher(files), DoPostConflictError);
-  assert.equal(withDispatcher(PROJECT).some((f) => f.path === "EgsRemote.gs"), true);
+  assert.throws(() => withDispatcher(files, DISPATCHER), DoPostConflictError);
+  assert.equal(withDispatcher(PROJECT, DISPATCHER).some((f) => f.path === "EgsRemote.gs"), true);
+});
+
+test("parsePagesRuntime: accepts the server body as JSON or object, refuses anything that would break the page", () => {
+  assert.deepEqual(parsePagesRuntime(JSON.stringify({ v: 1, ...FAKE_RUNTIME })), FAKE_RUNTIME);
+  assert.deepEqual(parsePagesRuntime({ v: 1, ...FAKE_RUNTIME }), FAKE_RUNTIME);
+  assert.equal(parsePagesRuntime("not json"), null);
+  assert.equal(parsePagesRuntime({ v: 1, shim: "no placeholder google", dispatcher: FAKE_RUNTIME.dispatcher }), null);
+  assert.equal(parsePagesRuntime({ v: 1, shim: FAKE_RUNTIME.shim + "</script>", dispatcher: FAKE_RUNTIME.dispatcher }), null);
+  assert.equal(parsePagesRuntime({ v: 1, shim: FAKE_RUNTIME.shim, dispatcher: "function other() {}" }), null);
+  if (REAL) assert.ok(parsePagesRuntime(JSON.stringify({ v: 1, ...REAL })), "the real server body parses");
 });

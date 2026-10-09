@@ -1,5 +1,7 @@
 "use server";
 
+import { assertLocalRequest } from "@/lib/remote/request";
+
 /**
  * Premium server actions. Every call is triggered by a user action in the dialog or Settings (never at
  * render). The licence key and the order secret stay in premium.json; the client receives view objects.
@@ -19,7 +21,7 @@ import {
   SLIP_MAX_BYTES,
 } from "@/lib/premium/api";
 import { ACTIVATION_REFRESH_DAYS } from "@/lib/premium/config";
-import { refreshCameraRules } from "@/lib/premium/content";
+import { refreshCameraRules, refreshPagesRuntime } from "@/lib/premium/content";
 import { deviceIdentity, ensureDeviceIdentity } from "@/lib/premium/device";
 import { LICENSE_FAILURE_TEXT, normalizeLicenseKey, parseActivation, parseLicense } from "@/lib/premium/license";
 import { getOffer } from "@/lib/premium/offer";
@@ -83,7 +85,7 @@ async function activateThisMachine(key: string): Promise<string | null> {
     const granted = await activateDevice(key, device.hash, device.label);
     if (!parseActivation(granted.token).ok) return "เซิร์ฟเวอร์ส่งข้อมูลยืนยันเครื่องที่ตรวจไม่ผ่าน ลองใหม่อีกครั้ง";
     await updatePremium({ activation: granted.token });
-    await refreshCameraRules(); // best effort: a turn fetches them again if this one failed
+    await Promise.all([refreshCameraRules(), refreshPagesRuntime()]); // best effort: fetched again when first needed
     return null;
   } catch (e) {
     return deviceErrorText(e);
@@ -156,6 +158,7 @@ export async function requestPremiumEmailCodeAction(
 
 /** `codeInput` = the emailed order code; only sent when the offer asks for it (emailVerify). */
 export async function startPremiumOrderAction(emailInput: string, codeInput?: string): Promise<ActionResult<OrderView>> {
+  await assertLocalRequest();
   const email = cleanEmail(emailInput);
   if (!email) return fail("กรอกอีเมลให้ถูกต้อง รหัสจะถูกออกให้อีเมลนี้", "invalid_email");
   let code: string | undefined;
@@ -197,6 +200,7 @@ export async function restorePremiumAction(emailInput: string, codeInput: string
 
 /** The stored key, on the user's explicit request (the "แสดงรหัส" / "คัดลอกรหัส" buttons). */
 export async function revealPremiumKeyAction(): Promise<ActionResult<{ key: string }>> {
+  await assertLocalRequest();
   const { key } = await readPremium();
   if (!key || !parseLicense(key).ok) return fail("ไม่พบรหัส Pro ที่ใช้งานได้บนเครื่องนี้");
   return { ok: true, data: { key } };
@@ -244,6 +248,7 @@ export async function pollPremiumOrderAction(): Promise<ActionResult<PollOutcome
 }
 
 export async function activatePremiumKeyAction(keyInput: string): Promise<ActionResult<PremiumStatus>> {
+  await assertLocalRequest();
   const key = normalizeLicenseKey(String(keyInput ?? ""));
   if (!key) return fail("วางรหัสก่อน");
   if (key.length > 4096) return fail(LICENSE_FAILURE_TEXT.bad_format);
@@ -274,7 +279,11 @@ export async function refreshPremiumDeviceAction(): Promise<{ active: boolean }>
   if (ageDays < ACTIVATION_REFRESH_DAYS) {
     const status = await premiumStatus();
     // active but the camera instructions were never downloaded (e.g. offline at activation): try now
-    if (status.active && !(await readPremium()).cameraRules) await refreshCameraRules();
+    if (status.active) {
+      const file = await readPremium();
+      if (!file.cameraRules) await refreshCameraRules();
+      if (!file.pagesRuntime) await refreshPagesRuntime();
+    }
     return { active: status.active };
   }
   const device = await deviceIdentity();
@@ -284,11 +293,11 @@ export async function refreshPremiumDeviceAction(): Promise<{ active: boolean }>
     const granted = await activateDevice(key, d.hash, d.label);
     if (parseActivation(granted.token).ok) {
       await updatePremium({ activation: granted.token });
-      await refreshCameraRules();
+      await Promise.all([refreshCameraRules(), refreshPagesRuntime()]);
     }
   } catch (e) {
     if (e instanceof PremiumApiError && ["revoked", "too_many_devices", "unknown_key"].includes(e.code)) {
-      await updatePremium({ activation: null, cameraRules: null, cameraRulesVersion: null });
+      await updatePremium({ activation: null, cameraRules: null, cameraRulesVersion: null, pagesRuntime: null, pagesRuntimeVersion: null });
     }
   }
   return { active: (await premiumStatus()).active };
@@ -299,6 +308,7 @@ export async function refreshPremiumDeviceAction(): Promise<{ active: boolean }>
  * internet, otherwise the slot would stay taken; a key the server no longer knows is simply removed.
  */
 export async function deactivatePremiumDeviceAction(): Promise<ActionResult<PremiumStatus>> {
+  await assertLocalRequest();
   const { key } = await readPremium();
   if (!key) return { ok: true, data: await premiumStatus() };
   const device = await deviceIdentity();
@@ -313,7 +323,7 @@ export async function deactivatePremiumDeviceAction(): Promise<ActionResult<Prem
       }
     }
   }
-  await updatePremium({ key: null, activation: null, cameraRules: null, cameraRulesVersion: null });
+  await updatePremium({ key: null, activation: null, cameraRules: null, cameraRulesVersion: null, pagesRuntime: null, pagesRuntimeVersion: null });
   revalidatePath("/settings");
   return { ok: true, data: await premiumStatus() };
 }

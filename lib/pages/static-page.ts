@@ -133,7 +133,7 @@ function injectHead(html: string, head: string): string {
   return html.slice(0, at) + "\n" + head + html.slice(at);
 }
 
-export function buildStaticPage(files: SourceFile[], opts: { execUrl: string }): SourceFile[] {
+export function buildStaticPage(files: SourceFile[], opts: { execUrl: string; shim: string }): SourceFile[] {
   assertExecUrl(opts.execUrl);
   let html = composeEntryPage(files);
 
@@ -148,7 +148,7 @@ export function buildStaticPage(files: SourceFile[], opts: { execUrl: string }):
   if (title && !/<title[\s>]/i.test(html)) extras.push(`<title>${escapeHtml(title)}</title>`);
 
   if (!/^\s*<!doctype/i.test(html)) html = "<!DOCTYPE html>\n" + html;
-  html = injectHead(html, extras.concat(runShimScriptTag(opts.execUrl)).join("\n"));
+  html = injectHead(html, extras.concat(runShimScriptTag(opts.execUrl, opts.shim)).join("\n"));
 
   return [
     { path: STATIC_INDEX_PATH, content: html },

@@ -96,11 +96,11 @@ test("a correctly signed but malformed payload is bad_payload", () => {
 });
 
 test("store: missing or corrupt file reads as empty", async () => {
-  assert.deepEqual(await readPremium(), { v: 1, key: null, pendingOrder: null, activation: null, deviceSeed: null, cameraRules: null, cameraRulesVersion: null });
-  await writePremium({ v: 1, key: "x", pendingOrder: null, activation: null, deviceSeed: null, cameraRules: null, cameraRulesVersion: null });
+  assert.deepEqual(await readPremium(), { v: 1, key: null, pendingOrder: null, activation: null, deviceSeed: null, cameraRules: null, cameraRulesVersion: null, pagesRuntime: null, pagesRuntimeVersion: null });
+  await writePremium({ v: 1, key: "x", pendingOrder: null, activation: null, deviceSeed: null, cameraRules: null, cameraRulesVersion: null, pagesRuntime: null, pagesRuntimeVersion: null });
   assert.equal(premiumPath(), join(DATA_DIR, "premium.json"));
   await import("node:fs/promises").then((fs) => fs.writeFile(premiumPath(), "{not json", "utf8"));
-  assert.deepEqual(await readPremium(), { v: 1, key: null, pendingOrder: null, activation: null, deviceSeed: null, cameraRules: null, cameraRulesVersion: null });
+  assert.deepEqual(await readPremium(), { v: 1, key: null, pendingOrder: null, activation: null, deviceSeed: null, cameraRules: null, cameraRulesVersion: null, pagesRuntime: null, pagesRuntimeVersion: null });
 });
 
 test("store: a pending order round-trips and a malformed one is dropped", async () => {
@@ -114,7 +114,7 @@ test("store: a pending order round-trips and a malformed one is dropped", async 
     promptpayId: "0812345678",
     expiresAt: "2026-10-08T00:00:00.000Z",
   };
-  await writePremium({ v: 1, key: null, pendingOrder: order, activation: null, deviceSeed: null, cameraRules: null, cameraRulesVersion: null });
+  await writePremium({ v: 1, key: null, pendingOrder: order, activation: null, deviceSeed: null, cameraRules: null, cameraRulesVersion: null, pagesRuntime: null, pagesRuntimeVersion: null });
   assert.deepEqual((await readPremium()).pendingOrder, order);
   // the file holds the secret; it is this module's job alone to keep it off the wire
   assert.match(readFileSync(premiumPath(), "utf8"), /s3cret/);
@@ -125,7 +125,7 @@ test("store: a pending order round-trips and a malformed one is dropped", async 
 });
 
 test("premiumStatus re-verifies the stored key against the shipped public key", async () => {
-  await writePremium({ v: 1, key: null, pendingOrder: null, activation: null, deviceSeed: null, cameraRules: null, cameraRulesVersion: null });
+  await writePremium({ v: 1, key: null, pendingOrder: null, activation: null, deviceSeed: null, cameraRules: null, cameraRulesVersion: null, pagesRuntime: null, pagesRuntimeVersion: null });
   assert.deepEqual(await premiumStatus(), { active: false });
   // a key signed by some other pair is on disk: not active, no matter how it got there
   const { privateKey } = keyPair();
@@ -135,5 +135,5 @@ test("premiumStatus re-verifies the stored key against the shipped public key", 
   assert.deepEqual(await premiumStatus(), { active: false });
   // the file can be patched piecemeal
   await updatePremium({ key: null });
-  assert.deepEqual(await readPremium(), { v: 1, key: null, pendingOrder: null, activation: null, deviceSeed: null, cameraRules: null, cameraRulesVersion: null });
+  assert.deepEqual(await readPremium(), { v: 1, key: null, pendingOrder: null, activation: null, deviceSeed: null, cameraRules: null, cameraRulesVersion: null, pagesRuntime: null, pagesRuntimeVersion: null });
 });

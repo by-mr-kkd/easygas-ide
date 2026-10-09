@@ -4,10 +4,12 @@
 //   1. starts that server as a child process on a free 127.0.0.1 port (Electron's own Node, no shell),
 //   2. shows it in one locked-down window,
 //   3. sends every outside link to the user's real browser, and
-//   4. stops the server (and anything it started) when the app quits.
+//   4. stops the server (and anything it started) when the app quits, and
+//   5. while "use from a phone" is on (lib/remote, docs/REMOTE-PLAN.md): keeps running in the tray when the
+//      window is closed, keeps the PC from sleeping, and shows the gateway's notifications.
 // It holds no secrets and gives the page no Node access: contextIsolation on, nodeIntegration off,
 // sandbox on, no preload.
-const { app, BrowserWindow, Menu, dialog, nativeTheme, session, shell } = require("electron");
+const { app, BrowserWindow, Menu, Notification, Tray, dialog, nativeTheme, powerSaveBlocker, session, shell } = require("electron");
 const { spawn, execFile } = require("node:child_process");
 const fs = require("node:fs");
 const http = require("node:http");
@@ -28,6 +30,141 @@ let win = null;
 let server = null;
 let quitting = false;
 let started = false; // the app page is on screen
+let appPort = 0;
+
+// ------------------------------------------------------------------ remote access (tray, awake, notices)
+// The server writes <data>/remote-state.json (lib/remote/store.ts RemoteState); we only read it.
+// same folder as lib/local/paths.ts dataRoot(), including its EASYGAS_DATA_DIR override (testing)
+const dataDir = () => (process.env.EASYGAS_DATA_DIR?.trim() ? path.resolve(process.env.EASYGAS_DATA_DIR.trim()) : path.join(app.getPath("appData"), PRODUCT));
+const remoteStatePath = () => path.join(dataDir(), "remote-state.json");
+let remote = { enabled: false, on: false, url: null, devices: 0, event: null };
+let tray = null;
+let awake = null; // powerSaveBlocker id
+let lastEventId = null;
+let toldAboutTray = false;
+
+function showWindow(pathAfter) {
+  if (!win) return;
+  if (pathAfter && appPort) win.loadURL(`http://127.0.0.1:${appPort}${pathAfter}`);
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
+
+// ------------------------------------------------------------------ easygas:// links (shared code)
+// The website's "โคลนลง EasyGAS IDE" button opens easygas://clone/<slug>. Windows hands the link to the
+// running app as a second instance's argv (or as this instance's argv on a cold start); the app page that
+// takes it is /projects?mode=clone&clone=<slug> (components/projects/CloneFromLink.tsx). Only that one
+// shape is honoured — anything else in the link is ignored.
+const PROTOCOL = "easygas";
+let pendingAppPath = null; // a link that arrived before the server was up
+
+/** The in-app path for a protocol link, or null when it is not one we know. */
+function appPathForLink(raw) {
+  if (typeof raw !== "string") return null;
+  const m = raw.match(/^easygas:\/\/clone\/([A-Za-z0-9]{6,16})\/?(?:[?#].*)?$/);
+  return m ? `/projects?mode=clone&clone=${m[1].toLowerCase()}` : null;
+}
+
+/** The first protocol link among process arguments (Windows puts it last). */
+function linkFromArgv(argv) {
+  return (argv || []).map(appPathForLink).find(Boolean) || null;
+}
+
+function openAppPath(appPath) {
+  if (!appPath) return;
+  if (started && appPort) showWindow(appPath);
+  else pendingAppPath = appPath; // showApp() opens it once the server answers
+}
+
+function registerProtocol() {
+  try {
+    // in development the handler must point at electron.exe + this script, not at the bare exe
+    if (process.defaultApp && process.argv.length >= 2) app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path.resolve(process.argv[1])]);
+    else app.setAsDefaultProtocolClient(PROTOCOL);
+  } catch {
+    // not registered: the website's fallback (paste the link in the app) still works
+  }
+}
+
+/** Ask the app's own server to switch remote access off (a loopback request, so middleware.ts lets it in). */
+function turnRemoteOff() {
+  if (!appPort) return;
+  const req = http.request({ host: "127.0.0.1", port: appPort, method: "POST", path: "/api/remote/off", timeout: 5000 }, (res) => res.resume());
+  req.on("error", () => {});
+  req.end();
+}
+
+function trayMenu() {
+  const status = remote.on ? `รีโมทเปิดอยู่ · จับคู่ ${remote.devices} เครื่อง` : "รีโมทกำลังเชื่อมต่อ…";
+  return Menu.buildFromTemplate([
+    { label: status, enabled: false },
+    { type: "separator" },
+    { label: "เปิดหน้าต่าง", click: () => showWindow() },
+    { label: "ตั้งค่าการใช้จากมือถือ", click: () => showWindow("/settings?s=remote") },
+    { label: "ปิดรีโมท", click: turnRemoteOff },
+    { type: "separator" },
+    {
+      label: "ออกจาก EasyGAS IDE",
+      click: () => {
+        quitting = true;
+        app.quit();
+      },
+    },
+  ]);
+}
+
+async function applyRemoteState(next, initial) {
+  remote = next;
+  if (remote.enabled && awake === null) awake = powerSaveBlocker.start("prevent-app-suspension");
+  if (!remote.enabled && awake !== null) {
+    powerSaveBlocker.stop(awake);
+    awake = null;
+  }
+  if (remote.enabled && !tray) {
+    const icon = await app.getFileIcon(process.execPath, { size: "small" }).catch(() => null);
+    if (!remote.enabled || tray || !icon) return;
+    tray = new Tray(icon);
+    tray.setToolTip(`${PRODUCT} · ใช้จากมือถือได้`);
+    tray.on("click", () => showWindow());
+  }
+  if (!remote.enabled && tray) {
+    tray.destroy();
+    tray = null;
+    if (win && !win.isVisible()) win.show(); // never leave a hidden window without a way back
+  }
+  if (tray) tray.setContextMenu(trayMenu());
+  const ev = remote.event;
+  if (ev && ev.id !== lastEventId) {
+    lastEventId = ev.id;
+    if (!initial && Notification.isSupported()) {
+      const n = new Notification({ title: ev.title, body: ev.body });
+      const target = typeof ev.path === "string" && ev.path.startsWith("/") && !ev.path.startsWith("//") ? ev.path : "/settings?s=remote";
+      n.on("click", () => showWindow(target));
+      n.show();
+    }
+  }
+}
+
+function readRemoteState(initial = false) {
+  fs.readFile(remoteStatePath(), "utf8", (err, text) => {
+    if (err) return;
+    try {
+      const s = JSON.parse(text);
+      void applyRemoteState(
+        { enabled: s.enabled === true, on: s.on === true, url: s.url ?? null, devices: Number(s.devices) || 0, event: s.event ?? null },
+        initial,
+      );
+    } catch {
+      // a half-written file is replaced atomically, so this is a rare stale read: the next change fixes it
+    }
+  });
+}
+
+function watchRemoteState() {
+  readRemoteState(true);
+  fs.watchFile(remoteStatePath(), { interval: 1500 }, () => readRemoteState(false));
+}
 
 const resourcesDir = () => (app.isPackaged ? process.resourcesPath : path.join(__dirname, "..", "dist", "desktop", "resources"));
 
@@ -241,6 +378,20 @@ function createWindow() {
     titleBarOverlay: { color: "#00000000", symbolColor: "#8a94a0", height: TITLEBAR_HEIGHT },
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false },
   });
+  // With remote access on, closing the window keeps the app (and the phone's way in) running in the tray.
+  win.on("close", (e) => {
+    if (quitting || !remote.enabled || !tray) return;
+    e.preventDefault();
+    win.hide();
+    if (!toldAboutTray && Notification.isSupported()) {
+      toldAboutTray = true;
+      new Notification({ title: PRODUCT, body: "ยังทำงานอยู่ให้มือถือใช้ได้ เปิดหน้าต่างหรือออกจากแอปได้ที่ไอคอนมุมขวาล่าง" }).show();
+    }
+  });
+  // a Windows shutdown / sign-out must close the app, not hide it
+  win.on("session-end", () => {
+    quitting = true;
+  });
   win.on("closed", () => {
     win = null;
   });
@@ -273,20 +424,31 @@ function showApp(port) {
     openOutside(url);
   });
   started = true;
-  win.loadURL(`${origin}/`);
+  appPort = port;
+  watchRemoteState();
+  const first = pendingAppPath || linkFromArgv(process.argv) || "/";
+  pendingAppPath = null;
+  win.loadURL(`${origin}${first}`);
 }
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
-    if (!win) return;
-    if (win.isMinimized()) win.restore();
-    win.focus();
+  app.on("second-instance", (_event, argv) => {
+    const appPath = linkFromArgv(argv);
+    if (appPath) openAppPath(appPath);
+    else showWindow();
+  });
+  // macOS delivers protocol links as events; harmless on Windows
+  app.on("open-url", (event, url) => {
+    event.preventDefault();
+    openAppPath(appPathForLink(url));
   });
 
   app.whenReady().then(async () => {
     Menu.setApplicationMenu(null);
+    app.setAppUserModelId("com.mrkkd.easygas-ide"); // electron-builder.yml appId: Windows notifications need it
+    registerProtocol();
     // nothing is permitted until the app's own origin is known (showApp installs the real handlers)
     session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
     session.defaultSession.setPermissionCheckHandler(() => false);
@@ -309,6 +471,9 @@ if (!app.requestSingleInstanceLock()) {
   app.on("window-all-closed", () => app.quit());
   app.on("before-quit", () => {
     quitting = true;
+    fs.unwatchFile(remoteStatePath());
+    if (awake !== null) powerSaveBlocker.stop(awake);
+    if (tray) tray.destroy();
     stopServer();
   });
 }

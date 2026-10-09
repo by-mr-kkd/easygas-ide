@@ -48,12 +48,21 @@ export interface EgsProject {
   /** Where the front page lives. "github" (premium) = a static page on the user's GitHub Pages that
    *  calls the GAS web app as its backend, so it can use the camera. Absent = "gas". */
   hosting?: "gas" | "github" | null;
+  /** The backend's /exec answered without Google's permission wall (the owner approved it once). Set by
+   *  backendAuthAction; cleared by a deploy that adds scopes, since Google asks again then. */
+  backend_authorized_at?: string | null;
   /** The GitHub Pages copy of the front page, once published (lib/pages). */
   pages?: { repo: string; url: string; published_at: string } | null;
   /** "imported" = an existing Apps Script cloned in from the user's Google account (lib/import.ts): its
    *  manifest is never rewritten, Google's copy is checked for outside edits before every push, and only
    *  files the user changed are linted. Absent / "created" = made in this app. */
-  origin?: "created" | "imported" | null;
+  origin?: "created" | "imported" | "cloned" | null;
+  /** "cloned" = made from an EasyGAS share link (lib/share): where it came from, for the share dialog's
+   *  "ต่อยอดจาก" and the sidebar label. */
+  cloned_from?: { slug: string; url: string; title: string; author: string; version: number; cloned_at: string } | null;
+  /** This project is published as an EasyGAS share link (lib/share). The token proves ownership to the
+   *  website (new version, take down) and never leaves this computer. */
+  share?: { slug: string; url: string; token: string; title: string; version: number; shared_at: string; updated_at: string } | null;
   /** Imported projects: what Google held at the last sync (import, pull, or our own push). */
   remote?: { hash: string; synced_at: string; title: string; /** local files last pushed */ pushed?: string } | null;
   created_at: string;

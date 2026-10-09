@@ -33,9 +33,22 @@ export interface PremiumFile {
   /** the paid camera instructions, fetched from premium-content for this licence + machine (not in the source) */
   cameraRules: string | null;
   cameraRulesVersion: number | null;
+  /** the "publish outside Apps Script" runtime (shim + dispatcher) as the server's JSON body, same arrangement */
+  pagesRuntime: string | null;
+  pagesRuntimeVersion: number | null;
 }
 
-const EMPTY: PremiumFile = { v: 1, key: null, pendingOrder: null, activation: null, deviceSeed: null, cameraRules: null, cameraRulesVersion: null };
+const EMPTY: PremiumFile = {
+  v: 1,
+  key: null,
+  pendingOrder: null,
+  activation: null,
+  deviceSeed: null,
+  cameraRules: null,
+  cameraRulesVersion: null,
+  pagesRuntime: null,
+  pagesRuntimeVersion: null,
+};
 
 export const premiumPath = (): string => join(dataRoot(), "premium.json");
 
@@ -76,6 +89,8 @@ export async function readPremium(): Promise<PremiumFile> {
       deviceSeed: str(raw.deviceSeed) && raw.deviceSeed ? raw.deviceSeed : null,
       cameraRules: str(raw.cameraRules) && raw.cameraRules ? raw.cameraRules : null,
       cameraRulesVersion: typeof raw.cameraRulesVersion === "number" && Number.isInteger(raw.cameraRulesVersion) ? raw.cameraRulesVersion : null,
+      pagesRuntime: str(raw.pagesRuntime) && raw.pagesRuntime ? raw.pagesRuntime : null,
+      pagesRuntimeVersion: typeof raw.pagesRuntimeVersion === "number" && Number.isInteger(raw.pagesRuntimeVersion) ? raw.pagesRuntimeVersion : null,
     };
   } catch {
     return EMPTY;

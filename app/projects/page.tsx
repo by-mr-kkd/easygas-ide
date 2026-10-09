@@ -1,8 +1,11 @@
 import Link from "next/link";
 import { Cog6ToothIcon, Squares2X2Icon } from "@heroicons/react/24/outline";
 import { AppTopBar } from "@/components/AppTopBar";
+import { AnnouncementBanner } from "@/components/projects/AnnouncementBanner";
+import { AppNudge } from "@/components/remote/AppNudge";
 import { PoweredBy } from "@/components/PoweredBy";
 import { RulebookAutoCheck } from "@/components/RulebookAutoCheck";
+import { CloneFromLink } from "@/components/projects/CloneFromLink";
 import { GoogleScriptsList } from "@/components/projects/GoogleScriptsList";
 import { ProjectSidebar } from "@/components/projects/ProjectSidebar";
 import { PromptComposer } from "@/components/projects/PromptComposer";
@@ -12,24 +15,29 @@ import { GuidedTour } from "@/components/tour/GuidedTour";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { getDeployedMap, listProjects } from "@/lib/projects";
 import { getAppSetting } from "@/lib/settings";
+import { shouldNudgeApp } from "@/lib/remote/nudge";
 import { getSetupStatus } from "@/lib/setup-status";
 import { tourSeenKey } from "@/lib/tour";
 
 export const metadata = { title: "โปรเจกต์ของฉัน — EasyGAS IDE" };
 
 /**
- * The home screen: the projects already here on the left (one click to open), and on the right the two
- * ways to start — describe something new, or pull a script down from Google (`?mode=existing`).
+ * The home screen: the projects already here on the left (one click to open), and on the right the three
+ * ways to start — describe something new, pull a script down from Google (`?mode=existing`), or clone code
+ * someone shared as an EasyGAS link (`?mode=clone`, also where easygas://clone/<slug> arrives).
  */
 export default async function ProjectsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const [projects, deployed, setup, tourSeen, params] = await Promise.all([
+  const [projects, deployed, setup, tourSeen, params, appNudge] = await Promise.all([
     listProjects(),
     getDeployedMap(),
     getSetupStatus(),
     getAppSetting(tourSeenKey("home")),
     searchParams,
+    shouldNudgeApp().catch(() => false),
   ]);
   const mode = startModeFrom(params.mode);
+  // the easygas://clone/<slug> protocol lands here with the slug (electron/main.js)
+  const cloneLink = typeof params.clone === "string" ? params.clone.slice(0, 300) : "";
 
   return (
     <main className="flex min-h-screen flex-col bg-bg text-fg">
@@ -37,11 +45,11 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
         center={<span className="truncate text-sm font-semibold">โปรเจกต์ของฉัน</span>}
         right={
           <>
-            <Link href="/styleshopping" title="ตัวอย่างสไตล์" aria-label="ตัวอย่างสไตล์" className="btn btn-ghost btn-sm">
+            <Link href="/styleshopping" title="ตัวอย่างสไตล์" aria-label="ตัวอย่างสไตล์" className="btn btn-ghost btn-sm max-md:hidden">
               <Squares2X2Icon className="h-4 w-4 text-info" />
               <span className="hidden sm:inline">ตัวอย่างสไตล์</span>
             </Link>
-            <Link href="/settings?s=ai" title="ตั้งค่า" aria-label="ตั้งค่า" data-tour="settings" className="btn btn-ghost btn-icon">
+            <Link href="/settings?s=ai" title="ตั้งค่า" aria-label="ตั้งค่า" data-tour="settings" className="btn btn-ghost btn-icon max-md:hidden">
               <Cog6ToothIcon className="h-5 w-5" />
             </Link>
             <ThemeToggle />
@@ -51,6 +59,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
       />
 
       <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8">
+        {appNudge && <AppNudge />}
         {(!setup.engineReady || !setup.google.loggedIn) && <SetupChecklist setup={setup} />}
 
         {/* the sidebar sits first on a wide window and under the composer on a narrow one */}
@@ -69,6 +78,12 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
                   <div className="mt-4">
                     <PromptComposer engineReady={setup.engineReady} foldExamples={projects.length > 0} />
                   </div>
+                </>
+              ) : mode === "clone" ? (
+                <>
+                  <h1 className="text-2xl font-semibold">โคลนจากลิงก์แชร์</h1>
+                  <p className="hint mt-1">วางลิงก์ easygaside.tech/s/… ที่คนอื่นแชร์ไว้ ดูไฟล์และสิทธิ์ที่ขอก่อน แล้วโคลนเป็นโปรเจกต์ในเครื่องนี้</p>
+                  <CloneFromLink initialLink={cloneLink} />
                 </>
               ) : (
                 <>
@@ -89,6 +104,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
                 </>
               )}
             </section>
+            <AnnouncementBanner />
           </div>
         </div>
       </div>

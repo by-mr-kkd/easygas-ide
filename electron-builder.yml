@@ -21,6 +21,11 @@ files:
 # The server and clasp are copied beside the app by this hook (see the file for why not extraResources).
 afterPack: scripts/desktop-after-pack.cjs
 
+# easygas://clone/<slug> — the website's "โคลนลง EasyGAS IDE" button (electron/main.js appPathForLink)
+protocols:
+  - name: EasyGAS IDE
+    schemes: [easygas]
+
 win:
   icon: build/icon.ico # assembled by scripts/build-desktop.mjs
   target:

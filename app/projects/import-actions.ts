@@ -1,5 +1,6 @@
 "use server";
 
+import { assertLocalRequest } from "@/lib/remote/request";
 import { revalidatePath } from "next/cache";
 import { acquireProjectRun, releaseProjectRun } from "@/lib/agent-lock";
 import { ImportError, NotConnectedError, UserSettingsDisabledError } from "@/lib/errors";
@@ -78,6 +79,7 @@ export async function checkWithGoogleAction(projectId: string): Promise<Result<G
 
 /** "เปิดโฟลเดอร์": the project's code folder in File Explorer. */
 export async function openProjectFolderAction(projectId: string): Promise<Result<null>> {
+  await assertLocalRequest();
   const project = await getProject(String(projectId ?? "")).catch(() => null);
   if (!project) return { ok: false, error: "ไม่พบโปรเจกต์นี้ในเครื่อง" };
   try {

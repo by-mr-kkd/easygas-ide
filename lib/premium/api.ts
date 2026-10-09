@@ -276,7 +276,9 @@ export async function deactivateDevice(key: string, deviceHash: string): Promise
 }
 
 /** A paid instruction set (e.g. "camera_rules") for a non-revoked licence on a registered machine. */
-export async function fetchPremiumContent(key: string, deviceHash: string, id: "camera_rules"): Promise<{ body: string; version: number }> {
+export type PremiumContentId = "camera_rules" | "pages_runtime";
+
+export async function fetchPremiumContent(key: string, deviceHash: string, id: PremiumContentId): Promise<{ body: string; version: number }> {
   const r = await call<Record<string, unknown>>("premium-content", { method: "POST", body: { key, deviceHash, id } });
   if (typeof r.body !== "string" || !r.body || typeof r.version !== "number") throw new PremiumApiError("bad_response", API_TEXT.bad_response);
   return { body: r.body, version: r.version };

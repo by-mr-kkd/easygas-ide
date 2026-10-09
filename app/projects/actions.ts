@@ -10,6 +10,7 @@ import { detectCapabilityNeeds, routeTarget } from "@/lib/deployment-targets/rou
 import { briefToMessage, isEmptyBrief, sanitizeBrief } from "@/lib/brief";
 import { sanitizePrefs, type StylePrefs } from "@/lib/preferences";
 import { isProjectBusy } from "@/lib/agent-lock";
+import { latestAnnouncement, type Announcement } from "@/lib/announcement";
 import { createProject, getProject, mutateProject, softDeleteProject } from "@/lib/projects";
 
 function buildSpec(name: string): Record<string, unknown> {
@@ -74,6 +75,16 @@ export async function startFromBriefAction(
 }
 
 /** This project's own look & feel choices as stored now (the AI may have saved one during the chat). */
+/** The home screen's news banner (lib/announcement.ts); asked from a client effect, never at render time. */
+export async function appAnnouncementAction(): Promise<Announcement | null> {
+  return latestAnnouncement();
+}
+
+/** Whether an AI turn (or deploy / verify) is running on the project — the chat polls it after a reload. */
+export async function projectRunningAction(id: string): Promise<boolean> {
+  return (await getProject(id)) ? isProjectBusy(id) : false;
+}
+
 export async function getProjectPrefsAction(id: string): Promise<Partial<StylePrefs>> {
   return sanitizePrefs((await getProject(id))?.prefs);
 }

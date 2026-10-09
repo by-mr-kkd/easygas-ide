@@ -32,6 +32,8 @@ export function mapGoogleError(e: unknown, connectedEmail?: string | null): Next
     );
   }
   if (e instanceof ImportError) return NextResponse.json({ error: e.code, message: e.message }, { status: 400 });
+  // GitHub-hosted project without the Pro runtime on this machine (lib/pages/runtime.ts)
+  if (e instanceof Error && (e as { code?: unknown }).code === "RUNTIME_MISSING") return NextResponse.json({ error: "RUNTIME_MISSING", message: e.message }, { status: 403 });
   console.error("[deploy] unexpected:", e);
   const code = e instanceof Error && e.message === "no_files" ? "NO_FILES" : "UNKNOWN";
   return NextResponse.json({ error: code }, { status: code === "NO_FILES" ? 400 : 500 });

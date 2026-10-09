@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { ChatText } from "./ChatText";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
   BoltIcon,
@@ -19,7 +20,7 @@ import {
   SwatchIcon,
   XMarkIcon,
 } from "@heroicons/react/24/outline";
-import { getProjectPrefsAction } from "@/app/projects/actions";
+import { getProjectPrefsAction, projectRunningAction } from "@/app/projects/actions";
 import { useProjectStore } from "@/store/useProjectStore";
 import { compressImage, type CompressedImage } from "@/lib/client/image-compress";
 import { saveDirtyFiles } from "@/lib/client/save-files";
@@ -60,6 +61,9 @@ type AgentEvent =
   | { type: "error"; message: string };
 
 type CameraGateState = "allowed" | "need-github" | "need-premium";
+
+const RUNNING_ELSEWHERE = "AI กำลังทำงานอยู่ (สั่งจากอีกหน้าจอ) เสร็จแล้วหน้านี้จะโหลดผลให้เอง…";
+const RUNNING_POLL_MS = 4000;
 
 interface ChatMsg {
   role: "user" | "assistant";
@@ -123,6 +127,8 @@ export function ChatPanel({
   projectId,
   start = false,
   initialImages,
+  initialMessages = [],
+  initialRunning = false,
   energyUsed = 0,
   energyTank,
   aiOptions = [],
@@ -130,16 +136,23 @@ export function ChatPanel({
   stylePrefs = {},
   styleDefaults = DEFAULT_PREFS,
   imported = false,
+  footnote,
 }: {
   projectId: string;
   /** a script imported from the user's Google account: offer "วิเคราะห์โค้ด" */
   imported?: boolean;
+  /** replaces the "Enter ส่ง" hint under the box (a phone: the AI quota — a phone has no Enter / Shift+Enter) */
+  footnote?: ReactNode;
   /** Empty project, nothing said yet: render the centred start screen instead of the side panel. */
   start?: boolean;
   /** This project's own look & feel choices, and the user's defaults they fall back to. */
   stylePrefs?: Partial<StylePrefs>;
   styleDefaults?: StylePrefs;
   initialImages?: { url: string }[];
+  /** The conversation so far, read from the project's history when the page opened. */
+  initialMessages?: ChatMsg[];
+  /** An AI turn was already running when the page opened (started on another screen, or before a reload). */
+  initialRunning?: boolean;
   energyUsed?: number;
   energyTank?: number;
   /** The AIs the chat's picker offers (which are set up, their models). */
@@ -157,10 +170,10 @@ export function ChatPanel({
   const pickedAi = aiOptions.find((o) => aiChoice && o.engine === aiChoice.engine && (o.engine !== "api" || o.provider === aiChoice.provider));
   const engineReady = pickedAi ? pickedAi.ready : aiOptions.length === 0;
   const engineHint = pickedAi ? pickedAi.hint && `${pickedAi.label}: ${pickedAi.hint}` : "ยังไม่มี AI ที่ใช้ได้ เลือกจากปุ่มในช่องพิมพ์ หรือไปตั้งค่าก่อน";
-  const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const [messages, setMessages] = useState<ChatMsg[]>(initialMessages);
   const [input, setInput] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(initialRunning);
+  const [status, setStatus] = useState(initialRunning ? RUNNING_ELSEWHERE : "");
   // energy lives in the store so a manual "ตรวจซ้ำ" (EditorToolbar) deducts from the same bar
   const energy = useProjectStore((s) => s.energy);
   const initEnergy = useProjectStore((s) => s.initEnergy);
@@ -185,6 +198,25 @@ export function ChatPanel({
   useEffect(() => {
     bodyRef.current?.scrollTo(0, bodyRef.current.scrollHeight);
   }, [messages, status, images]);
+
+  // A turn this page did not start (another screen, or a reload cut its stream): its words and files
+  // are not streaming here, so wait for it to finish and reload the page to show what it did.
+  useEffect(() => {
+    if (!initialRunning) return;
+    let stop = false;
+    const tick = async () => {
+      if (stop) return;
+      const running = await projectRunningAction(projectId).catch(() => true);
+      if (stop) return;
+      if (running) setTimeout(tick, RUNNING_POLL_MS);
+      else window.location.reload();
+    };
+    const first = setTimeout(tick, RUNNING_POLL_MS);
+    return () => {
+      stop = true;
+      clearTimeout(first);
+    };
+  }, [initialRunning, projectId]);
 
   // seed the energy bar from the server-computed usage (store is shared with the editor toolbar)
   useEffect(() => {
@@ -489,7 +521,11 @@ export function ChatPanel({
           </button>
         </div>
       </div>
-      <p className="mt-1 px-1 text-xs text-faint">Enter ส่ง · Shift+Enter ขึ้นบรรทัดใหม่</p>
+      {footnote ? (
+        <div className="mt-1 flex min-h-5 items-center text-xs">{footnote}</div>
+      ) : (
+        <p className="mt-1 px-1 text-xs text-faint">Enter ส่ง · Shift+Enter ขึ้นบรรทัดใหม่</p>
+      )}
     </>
   );
 
@@ -590,7 +626,7 @@ export function ChatPanel({
   }
 
   return (
-    <div className="flex h-full w-full flex-col">
+    <div className="flex min-h-0 w-full flex-1 flex-col">
       <div className="flex h-11 flex-none items-center gap-2 border-b border-line px-3">
         <span className="icon-chip tone-ai">
           <ChatBubbleLeftRightIcon className="h-4 w-4" />
@@ -668,7 +704,11 @@ export function ChatPanel({
                   ))}
                 </div>
               )}
-              <span className="whitespace-pre-wrap break-words">{m.text.trimStart() || (busy && i === messages.length - 1 ? "…" : "")}</span>
+              {m.role === "assistant" && m.text.trim() ? (
+                <ChatText text={m.text.trim()} />
+              ) : (
+                <span className="whitespace-pre-wrap break-words">{m.text.trimStart() || (busy && i === messages.length - 1 ? "…" : "")}</span>
+              )}
             </div>
           </div>
         ))}
@@ -733,7 +773,7 @@ export function ChatPanel({
 
         {/* shortcuts for a project that already has code */}
         {hasFiles && !busy && (
-          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5 [@media(max-height:520px)]:hidden">
             <button onClick={() => send("อธิบายว่าโค้ดในโปรเจกต์นี้ทำงานยังไง แบบสรุปสั้น ๆ เป็นข้อ ๆ")} className="btn btn-soft tone-info btn-sm">
               <LightBulbIcon className="h-4 w-4" />
               อธิบายโค้ด

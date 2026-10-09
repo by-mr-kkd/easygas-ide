@@ -16,7 +16,18 @@ const LEVEL_TEXT = { ok: "", warn: "text-warn-text", danger: "text-danger" } as 
  * times on hover; click to read again. Only the two monthly-plan AIs have a quota to show; for
  * Claude it appears once the switch in Settings is on, otherwise the entry points there.
  */
-export function QuotaStatus({ engine, claudeAllowed, settingsHref }: { engine: QuotaEngine; claudeAllowed: boolean; settingsHref: string }) {
+export function QuotaStatus({
+  engine,
+  claudeAllowed,
+  settingsHref,
+  quiet = false,
+}: {
+  engine: QuotaEngine;
+  claudeAllowed: boolean;
+  settingsHref: string;
+  /** under the phone's chat box: faint text, only the dot shows the level */
+  quiet?: boolean;
+}) {
   const [result, setResult] = useState<QuotaResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
@@ -77,12 +88,12 @@ export function QuotaStatus({ engine, claudeAllowed, settingsHref }: { engine: Q
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className={`flex h-6 items-center gap-1.5 rounded px-1.5 transition hover:bg-sunken hover:text-fg ${windows.length ? "xl:hidden" : ""} ${LEVEL_TEXT[level]}`}
+        className={`flex h-6 items-center gap-1.5 rounded px-1.5 transition hover:bg-sunken hover:text-fg ${windows.length && !quiet ? "xl:hidden" : ""} ${quiet ? "text-faint" : LEVEL_TEXT[level]}`}
       >
         <span className={`h-1.5 w-1.5 rounded-full ${result?.ok ? LEVEL_DOT[level] : "bg-line-strong"}`} />
         <span className="truncate">{text}</span>
       </button>
-      {windows.length > 0 && (
+      {windows.length > 0 && !quiet && (
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}

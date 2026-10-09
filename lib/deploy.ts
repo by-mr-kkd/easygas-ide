@@ -8,6 +8,8 @@ import { assertRemoteUnchanged, recordRemote } from "@/lib/import";
 import { enforceWebAppManifest } from "@/lib/manifest";
 import { withBackendNotice } from "@/lib/pages/backend-page";
 import { withDispatcher, type SourceFile } from "@/lib/pages/dispatcher";
+import { PagesRuntimeMissingError } from "@/lib/pages/runtime";
+import { ensurePagesRuntime } from "@/lib/premium/content";
 import { saveDeployment, updateProject } from "@/lib/projects";
 import type { EgsDeployment, EgsProject } from "@/types/db";
 
@@ -28,9 +30,12 @@ const isPushed = (path: string): boolean => path === MANIFEST || /\.(gs|js|html)
  * The set clasp pushes. A project whose front page lives on GitHub Pages (premium, lib/pages) also gets
  * the doPost dispatcher so the page outside GAS can call the script; everything else is unchanged.
  */
-function filesToPush(project: EgsProject, files: SourceFile[], pagesUrl?: string | null): SourceFile[] {
+async function filesToPush(project: EgsProject, files: SourceFile[], pagesUrl?: string | null): Promise<SourceFile[]> {
   if (project.hosting !== "github") return files;
-  const withRemote = withDispatcher(files);
+  // the dispatcher text is Pro content from the licence server (cached after the first online publish)
+  const runtime = await ensurePagesRuntime();
+  if (!runtime) throw new PagesRuntimeMissingError();
+  const withRemote = withDispatcher(files, runtime.dispatcher);
   // once the page is on GitHub, the Google copy of it only points there (lib/pages/backend-page)
   return pagesUrl ? withBackendNotice(withRemote, pagesUrl, project.name) : withRemote;
 }
@@ -135,7 +140,7 @@ export async function pushHeadPreview(project: EgsProject): Promise<{ devUrl: st
   await fsWriteFile(join(dir, ".claspignore"), CLASPIGNORE, "utf8");
   await writeClaspConfig(project.id, project.script_id);
   const own = (await getFiles(project.id)).filter((f) => isPushed(f.path));
-  const pushed = filesToPush(project, own);
+  const pushed = await filesToPush(project, own);
   await pushWithExtras(project, pushed, own);
   if (imported) await recordRemote(project, hashFiles(pushed));
   const out = await claspOrThrow(["list-deployments", "--json"], dir);
@@ -158,7 +163,7 @@ async function deployImported(project: EgsProject, opts: { pagesUrl?: string }):
   const dir = srcDir(project.id);
   const own = (await getFiles(project.id)).filter((f) => isPushed(f.path));
   if (own.length === 0) throw new Error("no_files");
-  const files = filesToPush(project, own, opts.pagesUrl ?? project.pages?.url);
+  const files = await filesToPush(project, own, opts.pagesUrl ?? project.pages?.url);
   const deployHash = hashFiles(files);
   const needsTriggerSetup = files.some((f) => INSTALL_TRIGGERS_RE.test(f.content));
   const existing = project.deployment;
@@ -197,7 +202,7 @@ export async function deployProject(_userId: string, project: EgsProject, opts: 
   await writeFile(project.id, MANIFEST, manifest);
   const own = (await getFiles(project.id)).filter((f) => isPushed(f.path));
   // throws before anything is pushed when a GitHub-hosted project defines its own doPost
-  const files = filesToPush(project, own, opts.pagesUrl ?? project.pages?.url);
+  const files = await filesToPush(project, own, opts.pagesUrl ?? project.pages?.url);
   const deployHash = hashFiles(files);
   const needsTriggerSetup = files.some((f) => INSTALL_TRIGGERS_RE.test(f.content));
   const existing = project.deployment;
@@ -256,6 +261,8 @@ export async function deployProject(_userId: string, project: EgsProject, opts: 
     updated_at: now,
   };
   await saveDeployment(project.id, record);
+  // new scopes = Google asks the owner again → the "approve the backend" reminder comes back
+  if (scopesAdded.length > 0 && project.backend_authorized_at) await updateProject(project.id, { backend_authorized_at: null });
 
   return {
     execUrl,

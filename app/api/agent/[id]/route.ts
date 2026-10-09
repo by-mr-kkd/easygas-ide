@@ -12,6 +12,8 @@ import { getDefaultProvider, providerConfig, resolveProvider } from "@/lib/llm/p
 import { runOpenAiAgentLoop } from "@/lib/openai-agent";
 import { cameraGateFor, stripCameraClaims, type CameraGateResult } from "@/lib/premium/camera-gate";
 import { getProject, updateProject } from "@/lib/projects";
+import { turnNotice } from "@/lib/remote/notice";
+import { notifyTurnEnd, remoteDeviceOf } from "@/lib/remote/turn-notify";
 import { getSettings } from "@/lib/settings";
 import { snapshotProject } from "@/lib/versions";
 import { describeImages } from "@/lib/vision-proxy";
@@ -163,11 +165,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const encoder = new TextEncoder();
   let closed = false; // flipped by cancel() on client disconnect, and in finally
+  // Pro: the phone that sent this message hears how it ended (lib/remote/turn-notify)
+  const phone = remoteDeviceOf(req.headers);
+  let said = "";
+  let failed = false;
   const stream = new ReadableStream({
     async start(controller) {
       const emit = (ev: AgentEvent) => {
         // which files the AI touched this turn — lint is only "the AI's mistake" in those (lib/lessons)
         if (ev.type === "file_mutation" && ev.op !== "delete") noteWrittenFile(id, ev.path);
+        if (phone && ev.type === "text" && said.length < 20_000) said += ev.delta;
         if (closed) return;
         try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(ev)}\n\n`));
@@ -191,10 +198,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         await snapshotProject(id, "ai");
         await finishTurnLessons(id, project); // close the bookkeeping (nothing is offered after a failure)
         const secrets = Object.values((await getSettings()).keys).filter((k): k is string => !!k);
+        failed = true;
         emit({ type: "error", message: agentErrorMessage(e, secrets) });
         emit({ type: "done" });
       } finally {
         await releaseProjectRun(id, lock);
+        notifyTurnEnd(phone, id, turnNotice(project.name, said, failed));
         closed = true;
         try {
           controller.close();

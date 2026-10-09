@@ -14,8 +14,9 @@ const POS: Record<Placement, string> = {
 
 /**
  * Styled hover/focus tooltip — replaces the browser's native (yellow) `title` bubble.
- * Wrap any trigger; pass the text via `label`. CSS-only (group-hover/focus), so no JS/positioning
- * state. Long Thai strings wrap at a sensible max width instead of running off-screen.
+ * Wrap any trigger; pass the text via `label`. CSS-only (hover, or keyboard focus), so no JS/positioning
+ * state. Long Thai strings wrap at a sensible max width. Hidden with display:none (not opacity) so a bubble
+ * near the edge never widens the page on a phone, and a tap (focus without focus-visible) does not open it.
  *
  *   <Tooltip label="ลบรายการ"><button>…</button></Tooltip>
  */
@@ -36,7 +37,7 @@ export function Tooltip({
       {label != null && label !== "" && (
         <span
           role="tooltip"
-          className={`pointer-events-none absolute z-[80] w-max max-w-[min(240px,60vw)] whitespace-normal rounded-md bg-[#1b222a] px-2.5 py-1.5 text-xs font-medium leading-relaxed text-white opacity-0 shadow-pop transition-opacity duration-150 group-hover/tt:opacity-100 group-focus-within/tt:opacity-100 dark:bg-[#3a4450] ${POS[placement]}`}
+          className={`pointer-events-none absolute z-[80] w-max max-w-[min(240px,60vw)] whitespace-normal rounded-md bg-[#1b222a] px-2.5 py-1.5 text-xs font-medium leading-relaxed text-white shadow-pop hidden group-hover/tt:block group-has-focus-visible/tt:block dark:bg-[#3a4450] ${POS[placement]}`}
         >
           {label}
         </span>

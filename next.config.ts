@@ -5,6 +5,9 @@ const nextConfig: NextConfig = {
   output: "standalone",
   // clasp is spawned as a separate Node process from node_modules — never bundle it.
   serverExternalPackages: ["@google/clasp"],
+  // `next build` otherwise runs `next lint`, which with no ESLint config stops to ASK how to set it up — and a
+  // build started without a terminal (desktop:build, CI) then waits forever. Lint is its own step (npm run lint).
+  eslint: { ignoreDuringBuilds: true },
   experimental: {
     // Allow large Server Action / route payloads (full GAS file sets).
     serverActions: { bodySizeLimit: "4mb" },

@@ -16,7 +16,7 @@ function Row({ project, deployed, onDelete }: { project: EgsProject; deployed: b
     <li className="group relative">
       <Link
         href={`/projects/${project.id}`}
-        className="flex items-start gap-2.5 rounded-lg px-2.5 py-2 transition hover:bg-sunken focus-visible:bg-sunken"
+        className="flex items-start gap-2.5 rounded-lg py-2 pl-2.5 pr-11 transition hover:bg-sunken focus-visible:bg-sunken lg:pr-2.5 lg:group-hover:pr-11 lg:group-focus-within:pr-11"
       >
         <span className={`icon-chip mt-px shrink-0 ${deployed ? "tone-accent" : "tone-info"}`}>
           <KindIcon className="h-4 w-4" aria-hidden />
@@ -26,7 +26,7 @@ function Row({ project, deployed, onDelete }: { project: EgsProject; deployed: b
           <span className="hint flex items-center gap-1.5">
             <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${deployed ? "bg-accent" : "bg-line-strong"}`} aria-hidden />
             <span className="truncate">
-              {deployed ? "เผยแพร่แล้ว" : "ยังไม่เผยแพร่"} · {project.origin === "imported" ? "จาก Google" : (KIND_LABEL[project.kind] ?? project.kind)} ·{" "}
+              {deployed ? "เผยแพร่แล้ว" : "ยังไม่เผยแพร่"} · {project.origin === "imported" ? "จาก Google" : project.origin === "cloned" ? "โคลนจากลิงก์" : (KIND_LABEL[project.kind] ?? project.kind)} ·{" "}
               {new Date(project.updated_at).toLocaleDateString("th-TH", { day: "numeric", month: "short" })}
             </span>
           </span>

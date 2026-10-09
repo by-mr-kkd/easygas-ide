@@ -5,6 +5,7 @@ import { githubToken } from "@/lib/pages/github-auth";
 import { createGitHubClient, gitBlobSha, PagesError, type FetchLike } from "@/lib/pages/github-api";
 import { GITHUB_CLIENT_ID } from "@/lib/pages/config";
 import { pagesUrlFor, repoNameFor, SHARE_PARAM, shareUrlFor } from "@/lib/pages/repo-name";
+import { ensurePagesRuntime } from "@/lib/premium/content";
 import { premiumStatus } from "@/lib/premium/status";
 import { getProject, updateProject } from "@/lib/projects";
 import type { EgsProject } from "@/types/db";
@@ -43,6 +44,9 @@ export async function publishToPages(userId: string, project: EgsProject, deps: 
   const auth = await githubToken();
   if (!auth) throw new PagesError("GITHUB_NOT_CONNECTED", "ยังไม่ได้เชื่อมบัญชี GitHub");
   const step = deps.onStep ?? (() => {});
+  // the shim + dispatcher are Pro content from the licence server; cached after the first online publish
+  const runtime = await ensurePagesRuntime();
+  if (!runtime) throw new PagesError("RUNTIME_MISSING", "ส่วนเผยแพร่ขึ้น GitHub ต้องดาวน์โหลดจากเซิร์ฟเวอร์ครั้งแรก ต่ออินเทอร์เน็ตแล้วลองใหม่ (และดูว่า ตั้งค่า → Pro ขึ้นว่าเปิดใช้แล้ว)");
 
   // 1. the backend: the normal GAS deploy (with the dispatcher, see deploy.ts); its own page becomes a
   // notice that links to the GitHub copy, whose address is known before anything is uploaded
@@ -56,7 +60,7 @@ export async function publishToPages(userId: string, project: EgsProject, deps: 
   // 2. the front page as static files (throws a typed error when it cannot be made static)
   step("build");
   const files = await getFiles(project.id);
-  const staticFiles = buildStaticPage(files, { execUrl: deploy.execUrl });
+  const staticFiles = buildStaticPage(files, { execUrl: deploy.execUrl, shim: runtime.shim });
 
   // 3. the repo (reused on re-publish)
   step("repo");
@@ -89,9 +93,11 @@ export async function publishToPages(userId: string, project: EgsProject, deps: 
 /** What the publish UI needs to decide its state for a project (no secrets). */
 export async function pagesStateFor(projectId: string): Promise<{
   hosting: "gas" | "github";
+  /** false until the user (or the camera gate) settled where the front page lives */
+  chosen: boolean;
   pages: EgsProject["pages"] | null;
 } | null> {
   const project = await getProject(projectId);
   if (!project) return null;
-  return { hosting: project.hosting === "github" ? "github" : "gas", pages: project.pages ?? null };
+  return { hosting: project.hosting === "github" ? "github" : "gas", chosen: project.hosting === "github" || project.hosting === "gas", pages: project.pages ?? null };
 }
