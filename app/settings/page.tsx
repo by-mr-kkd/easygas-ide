@@ -1,6 +1,8 @@
 import { existsSync } from "node:fs";
 import { savePrefsAction } from "./actions";
 import { UninstallApp } from "@/components/settings/UninstallApp";
+import { AppUpdateCard } from "@/components/settings/AppUpdateCard";
+import { autoUpdateEnabled, readUpdateState } from "@/lib/app-update";
 import { EngineForm } from "@/components/settings/EngineForm";
 import { PremiumSection } from "@/components/premium/PremiumSection";
 import { GoogleConnect } from "@/components/settings/GoogleConnect";
@@ -157,6 +159,7 @@ export default async function SettingsPage({
 
       {section === "data" && (
         <>
+          <AppUpdateCard version={APP_VERSION} enabled={await autoUpdateEnabled()} state={await readUpdateState()} />
           <p className="card break-all px-4 py-3 font-mono text-[13px] text-fg">{dataRoot()}</p>
           <p className="hint mt-2">โปรเจกต์ทั้งหมดและการตั้งค่าของคุณเก็บอยู่ในโฟลเดอร์นี้ ไม่ได้ส่งไปเก็บที่อื่น</p>
           <UninstallApp

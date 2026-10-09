@@ -1,6 +1,6 @@
 {
   "name": "easygas-ide",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "description": "EasyGAS IDE — local AI coding app for Google Apps Script. Bring your own AI (API key or subscription CLI) and deploy to your own Google account.",
   "license": "SEE LICENSE IN LICENSE",
@@ -41,6 +41,7 @@
     "@types/react-dom": "^19.1.0",
     "electron": "^44.5.1",
     "electron-builder": "^26.15.3",
+    "electron-updater": "^6.8.9",
     "esbuild": "^0.28.2",
     "eslint": "^9.0.0",
     "eslint-config-next": "^15.5.27",

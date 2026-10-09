@@ -37,6 +37,69 @@ let appPort = 0;
 // same folder as lib/local/paths.ts dataRoot(), including its EASYGAS_DATA_DIR override (testing)
 const dataDir = () => (process.env.EASYGAS_DATA_DIR?.trim() ? path.resolve(process.env.EASYGAS_DATA_DIR.trim()) : path.join(app.getPath("appData"), PRODUCT));
 const remoteStatePath = () => path.join(dataDir(), "remote-state.json");
+
+// ── app updates ──
+// electron-updater against GitHub Releases (resources/app-update.yml, written by electron-builder). Runs at
+// launch when Settings → ข้อมูลในเครื่อง → "อัปเดตอัตโนมัติเมื่อเปิดโปรแกรม" is on (settings.json
+// app.app_auto_update, default on): downloads in the background and installs when the app quits. We write
+// <data>/update-state.json; the server only reads it (lib/app-update.ts) for the Settings card and the notice.
+const updateStatePath = () => path.join(dataDir(), "update-state.json");
+const UPDATE_CHECK_DELAY_MS = 8_000;
+let updateState = null;
+let updater = null;
+
+function autoUpdateOn() {
+  try {
+    const s = JSON.parse(fs.readFileSync(path.join(dataDir(), "settings.json"), "utf8"));
+    return s?.app?.app_auto_update !== "off";
+  } catch {
+    return true; // no settings yet: the default
+  }
+}
+
+function writeUpdateState(patch) {
+  updateState = { status: "off", current: app.getVersion(), version: null, percent: null, error: null, ...(updateState ?? {}), ...patch, at: new Date().toISOString() };
+  const file = updateStatePath();
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(`${file}.tmp`, JSON.stringify(updateState));
+    fs.renameSync(`${file}.tmp`, file);
+  } catch {
+    /* the notice is a convenience; the update itself does not depend on it */
+  }
+}
+
+function startAutoUpdate() {
+  if (!app.isPackaged) return;
+  // a fresh state every launch: a "ready" left by the last run was installed when that run quit
+  if (!autoUpdateOn()) return writeUpdateState({ status: "off", version: null, percent: null, error: null });
+  writeUpdateState({ status: "checking", version: null, percent: null, error: null });
+  try {
+    ({ autoUpdater: updater } = require("electron-updater"));
+  } catch (e) {
+    return writeUpdateState({ status: "error", error: `updater: ${e.message}` });
+  }
+  updater.logger = null;
+  updater.autoDownload = true;
+  updater.autoInstallOnAppQuit = true;
+  let lastPercent = -1;
+  updater.on("checking-for-update", () => writeUpdateState({ status: "checking", error: null }));
+  updater.on("update-not-available", () => writeUpdateState({ status: "latest", version: null, percent: null }));
+  updater.on("update-available", (info) => writeUpdateState({ status: "downloading", version: info.version, percent: 0 }));
+  updater.on("download-progress", (p) => {
+    const pct = Math.floor(p.percent);
+    if (pct < lastPercent + 5) return;
+    lastPercent = pct;
+    writeUpdateState({ status: "downloading", percent: pct });
+  });
+  updater.on("update-downloaded", (info) => writeUpdateState({ status: "ready", version: info.version, percent: 100 }));
+  updater.on("error", (e) => {
+    if (updateState?.status !== "ready") writeUpdateState({ status: "error", error: String(e?.message ?? e).slice(0, 200) });
+  });
+  setTimeout(() => {
+    if (!quitting) updater.checkForUpdates().catch(() => {}); // failures arrive through "error"
+  }, UPDATE_CHECK_DELAY_MS);
+}
 let remote = { enabled: false, on: false, url: null, devices: 0, event: null };
 let tray = null;
 let awake = null; // powerSaveBlocker id
@@ -459,6 +522,7 @@ if (!app.requestSingleInstanceLock()) {
       startServer(port);
       await waitUntilReady(port);
       showApp(port);
+      startAutoUpdate();
     } catch (e) {
       if (quitting) return; // the window was closed during start-up — nothing to report
       quitting = true;
@@ -471,6 +535,8 @@ if (!app.requestSingleInstanceLock()) {
   app.on("window-all-closed", () => app.quit());
   app.on("before-quit", () => {
     quitting = true;
+    // switched off after the download: keep this version
+    if (updater && !autoUpdateOn()) updater.autoInstallOnAppQuit = false;
     fs.unwatchFile(remoteStatePath());
     if (awake !== null) powerSaveBlocker.stop(awake);
     if (tray) tray.destroy();

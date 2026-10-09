@@ -46,10 +46,20 @@ export class RelayError extends Error {
   }
 }
 
-/** Report the tunnel's address; the machine's fixed link, or null when this install is not Pro. */
+/**
+ * Report the tunnel's address; the machine's fixed link, or null when this install is not Pro. `hb` tells the
+ * server this app repeats the report (lib/remote/runtime.ts HEARTBEAT_MS), so a silent address can be called
+ * offline instead of being shown as online forever.
+ */
 export async function reportRelayUrl(url: string): Promise<RelayLink | null> {
   if (!(await premiumStatus()).active) return null;
-  return call({ url });
+  return call({ url, hb: true });
+}
+
+/** Remote access stopped or the tunnel dropped: the phone app shows this machine offline at once. */
+export async function reportRelayOff(): Promise<void> {
+  if (!(await premiumStatus()).active) return;
+  await call({ action: "off" });
 }
 
 /** Pick the link's name (unique; the server says when it is taken, reserved or changed too recently). */

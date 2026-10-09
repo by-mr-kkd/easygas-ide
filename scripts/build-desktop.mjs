@@ -140,7 +140,18 @@ console.log(`  clasp ${claspVersion} bundled`);
 step("staging the shell");
 const shell = join(out, "shell");
 mkdirSync(shell, { recursive: true });
-cpSync(join(root, "electron", "main.js"), join(shell, "main.js"));
+// bundled, not copied: the shell has no node_modules, and electron-updater (app updates) must travel inside it
+await build({
+  entryPoints: [join(root, "electron", "main.js")],
+  outfile: join(shell, "main.js"),
+  bundle: true,
+  platform: "node",
+  format: "cjs",
+  target: "node22",
+  external: ["electron"],
+  legalComments: "external", // electron-updater's licence notices → main.js.LEGAL.txt beside it
+  logLevel: "warning",
+});
 writeFileSync(
   join(shell, "package.json"),
   JSON.stringify(

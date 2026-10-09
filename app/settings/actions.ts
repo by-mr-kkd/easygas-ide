@@ -1,6 +1,7 @@
 "use server";
 
 import { assertLocalRequest } from "@/lib/remote/request";
+import { AUTO_UPDATE_KEY } from "@/lib/app-update";
 import { MODEL_ID } from "@/lib/ai-choice";
 import { revalidatePath } from "next/cache";
 import { claspLogout, getClaspAccount, startClaspLogin, type ClaspAccount } from "@/lib/clasp";
@@ -91,6 +92,13 @@ export async function savePrefsAction(input: unknown): Promise<{ ok: boolean; er
   await saveSettings({ prefs: sanitizePrefs(input) });
   revalidatePath("/settings");
   return { ok: true };
+}
+
+/** "อัปเดตอัตโนมัติเมื่อเปิดโปรแกรม" (default on). The Electron shell reads it at the next launch. */
+export async function setAutoUpdateAction(on: boolean): Promise<void> {
+  await assertLocalRequest();
+  await updateAppSettings({ [AUTO_UPDATE_KEY]: on === true ? "on" : "off" });
+  revalidatePath("/settings");
 }
 
 export async function setRulebookAutoAction(on: boolean): Promise<void> {

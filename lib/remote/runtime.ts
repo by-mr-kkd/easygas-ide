@@ -11,7 +11,7 @@ import os from "node:os";
 import type { Server } from "node:http";
 import { hashPin, hashToken, lanAddresses, newPairingCode, newToken, type PairingCode } from "./auth.ts";
 import { PRO_APP_ORIGIN, createGateway, newDeviceId } from "./gateway.ts";
-import { renameRelay, reportRelayUrl } from "./relay.ts";
+import { renameRelay, reportRelayOff, reportRelayUrl } from "./relay.ts";
 import { MAX_DEVICES, readRemote, updateRemote, writeRemoteState, type RemoteConfig, type RemoteMode } from "./store.ts";
 import { ensureCloudflared, runTunnel, type TunnelHandle } from "./tunnel.ts";
 import { generateVapidKeys, sendPush, type PushResult, type PushSubscription } from "./webpush.ts";
@@ -36,10 +36,14 @@ interface Runtime {
   generation: number;
   /** Pro status, re-read at most every PRO_CHECK_MS (the gateway asks on every Pro API call) */
   pro: { active: boolean; at: number };
+  /** Pro: re-reports the tunnel's address every HEARTBEAT_MS while it is up */
+  beat: ReturnType<typeof setInterval> | null;
 }
 
 // premiumStatus() only reads two local files, so this can be short: a key entered in Settings → Pro counts at once
 const PRO_CHECK_MS = 30_000;
+// the licence server calls an address offline after 10 minutes without a report (premium-remote)
+const HEARTBEAT_MS = 4 * 60_000;
 
 const KEY = "__egsRemote";
 const TOUCH_WRITE_MS = 10 * 60_000;
@@ -62,6 +66,7 @@ function rt(): Runtime {
       event: null,
       generation: 0,
       pro: { active: false, at: 0 },
+      beat: null,
     };
   }
   return g[KEY]!;
@@ -91,6 +96,29 @@ function refreshPro(): void {
       if (s.active && !was && url) registerRelay(url);
     })
     .catch(() => {});
+}
+
+/** Keep the fixed link "online": the same address again every HEARTBEAT_MS, while it is still this tunnel's. */
+function startBeat(url: string): void {
+  stopBeat();
+  const timer = setInterval(() => {
+    if (rt().tunnelUrl === url) registerRelay(url);
+    else stopBeat();
+  }, HEARTBEAT_MS);
+  timer.unref?.();
+  rt().beat = timer;
+}
+
+function stopBeat(): void {
+  const r = rt();
+  if (r.beat) clearInterval(r.beat);
+  r.beat = null;
+}
+
+/** Best effort: if it never arrives, the server still calls the address offline after its silence limit. */
+function relayOff(): void {
+  if (!rt().config?.relayId) return;
+  reportRelayOff().catch((e) => console.error("[remote] relay off:", e instanceof Error ? e.message : e));
 }
 
 function registerRelay(url: string): void {
@@ -193,6 +221,8 @@ async function pickPort(host: string, wanted: number | null): Promise<number> {
 
 function stopNow(): void {
   const r = rt();
+  if (r.tunnelUrl) relayOff();
+  stopBeat();
   r.generation += 1;
   r.tunnel?.stop();
   r.tunnel = null;
@@ -273,10 +303,13 @@ async function start(): Promise<void> {
         rt().error = null;
         pushState();
         registerRelay(url);
+        startBeat(url);
       },
       (why) => {
         if (gen !== rt().generation) return;
         console.error("[remote] tunnel down:", why);
+        stopBeat();
+        relayOff();
         rt().tunnelUrl = null;
         rt().phase = "connecting";
         pushState();
