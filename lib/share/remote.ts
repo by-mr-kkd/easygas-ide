@@ -6,6 +6,7 @@ import { deviceIdentity } from "@/lib/premium/device";
 import { readPremium } from "@/lib/premium/store";
 import { parseSharePublic, ShareRefusal, type SharePublic } from "./payload";
 import type { ShareFile } from "./scan";
+import { parseShareSummaries, type ShareSummary } from "./summary";
 
 export const siteOrigin = (): string => (process.env.EASYGAS_SITE_ORIGIN?.trim() || "https://easygaside.tech").replace(/\/+$/, "");
 
@@ -52,6 +53,36 @@ export async function fetchShare(slug: string): Promise<SharePublic> {
   try {
     return parseSharePublic(await call(`/api/share/${slug}`, { headers: await proHeaders() }));
   } catch (e) {
+    if (e instanceof ShareRefusal) throw new ShareApiError(e.message, "server");
+    throw e;
+  }
+}
+
+export type ShareOrder = "new" | "clones";
+export type ShareList = { shares: ShareSummary[]; /** served from the last good answer because the website did not answer now */ stale: boolean; at: number };
+
+/** the list changes slowly; the home screen and "ระบบที่คนแชร์" share one answer for a while */
+const LIST_TTL_MS = 2 * 60_000;
+const listCache = new Map<ShareOrder, ShareList>();
+
+/**
+ * The website's public list of shares. Cached in this process for a couple of minutes; when the website
+ * cannot be reached, the last good list is returned marked stale (none yet: the error).
+ */
+export async function listSharesRemote(order: ShareOrder = "new", limit = 60): Promise<ShareList> {
+  const hit = listCache.get(order);
+  if (hit && Date.now() - hit.at < LIST_TTL_MS && !hit.stale) return hit;
+  try {
+    const raw = await call(`/api/share?order=${order}&limit=${Math.min(100, Math.max(1, limit))}`, { timeoutMs: 10_000 });
+    const fresh: ShareList = { shares: parseShareSummaries(raw), stale: false, at: Date.now() };
+    listCache.set(order, fresh);
+    return fresh;
+  } catch (e) {
+    if (hit) {
+      const stale = { ...hit, stale: true, at: Date.now() };
+      listCache.set(order, stale);
+      return stale;
+    }
     if (e instanceof ShareRefusal) throw new ShareApiError(e.message, "server");
     throw e;
   }

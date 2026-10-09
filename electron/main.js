@@ -9,7 +9,7 @@
 //      window is closed, keeps the PC from sleeping, and shows the gateway's notifications.
 // It holds no secrets and gives the page no Node access: contextIsolation on, nodeIntegration off,
 // sandbox on, no preload.
-const { app, BrowserWindow, Menu, Notification, Tray, dialog, nativeTheme, powerSaveBlocker, session, shell } = require("electron");
+const { app, BrowserWindow, Menu, Notification, Tray, dialog, nativeImage, nativeTheme, powerSaveBlocker, session, shell } = require("electron");
 const { spawn, execFile } = require("node:child_process");
 const fs = require("node:fs");
 const http = require("node:http");
@@ -177,6 +177,16 @@ function trayMenu() {
   ]);
 }
 
+// The tray icon is our own file (resources/icon.ico, put there by scripts/desktop-after-pack.cjs). Asking
+// Windows for the exe's icon (app.getFileIcon) answers from its icon cache, which handed back the generic
+// program icon after an install over an older version. The exe's icon stays the fallback.
+async function trayIcon() {
+  const file = app.isPackaged ? path.join(process.resourcesPath, "icon.ico") : path.join(__dirname, "..", "build", "icon.ico");
+  const own = nativeImage.createFromPath(file);
+  if (!own.isEmpty()) return own;
+  return app.getFileIcon(process.execPath, { size: "small" }).catch(() => null);
+}
+
 async function applyRemoteState(next, initial) {
   remote = next;
   if (remote.enabled && awake === null) awake = powerSaveBlocker.start("prevent-app-suspension");
@@ -185,7 +195,7 @@ async function applyRemoteState(next, initial) {
     awake = null;
   }
   if (remote.enabled && !tray) {
-    const icon = await app.getFileIcon(process.execPath, { size: "small" }).catch(() => null);
+    const icon = await trayIcon();
     if (!remote.enabled || tray || !icon) return;
     tray = new Tray(icon);
     tray.setToolTip(`${PRODUCT} · ใช้จากมือถือได้`);

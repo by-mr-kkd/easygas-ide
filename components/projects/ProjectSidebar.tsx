@@ -8,7 +8,7 @@ import type { EgsProject } from "@/types/db";
 
 const KIND_LABEL: Record<string, string> = { webapp: "เว็บแอป", bound: "ผูก Sheet" };
 /** a search box appears once the list is longer than this */
-const SEARCH_FROM = 6;
+const SEARCH_FROM = 5;
 
 function Row({ project, deployed, onDelete }: { project: EgsProject; deployed: boolean; onDelete: () => void }) {
   const KindIcon = project.kind === "bound" ? TableCellsIcon : GlobeAltIcon;
@@ -16,14 +16,14 @@ function Row({ project, deployed, onDelete }: { project: EgsProject; deployed: b
     <li className="group relative">
       <Link
         href={`/projects/${project.id}`}
-        className="flex items-start gap-2.5 rounded-lg py-2 pl-2.5 pr-11 transition hover:bg-sunken focus-visible:bg-sunken lg:pr-2.5 lg:group-hover:pr-11 lg:group-focus-within:pr-11"
+        className="flex items-center gap-2.5 rounded-lg py-1.5 pl-2 pr-10 transition hover:bg-line/60 focus-visible:bg-line/60 md:pr-2 md:group-hover:pr-10 md:group-focus-within:pr-10"
       >
-        <span className={`icon-chip mt-px shrink-0 ${deployed ? "tone-accent" : "tone-info"}`}>
+        <span className={`icon-chip shrink-0 ${deployed ? "tone-accent" : "tone-info"}`}>
           <KindIcon className="h-4 w-4" aria-hidden />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-semibold text-fg">{project.name}</span>
-          <span className="hint flex items-center gap-1.5">
+          <span className="block truncate text-[13px] font-medium leading-snug text-fg">{project.name}</span>
+          <span className="flex items-center gap-1.5 text-[11.5px] leading-snug text-muted">
             <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${deployed ? "bg-accent" : "bg-line-strong"}`} aria-hidden />
             <span className="truncate">
               {deployed ? "เผยแพร่แล้ว" : "ยังไม่เผยแพร่"} · {project.origin === "imported" ? "จาก Google" : project.origin === "cloned" ? "โคลนจากลิงก์" : (KIND_LABEL[project.kind] ?? project.kind)} ·{" "}
@@ -38,7 +38,7 @@ function Row({ project, deployed, onDelete }: { project: EgsProject; deployed: b
         onClick={onDelete}
         title="ลบโปรเจกต์"
         aria-label={`ลบโปรเจกต์ ${project.name}`}
-        className="btn btn-ghost btn-sm btn-icon absolute right-1.5 top-1.5 hover:bg-danger-soft hover:text-danger lg:opacity-0 lg:focus-visible:opacity-100 lg:group-hover:opacity-100"
+        className="btn btn-ghost btn-sm btn-icon absolute right-1 top-1/2 -translate-y-1/2 hover:bg-danger-soft hover:text-danger md:opacity-0 md:focus-visible:opacity-100 md:group-hover:opacity-100"
       >
         <TrashIcon className="h-4 w-4" />
       </button>
@@ -47,8 +47,9 @@ function Row({ project, deployed, onDelete }: { project: EgsProject; deployed: b
 }
 
 /**
- * The left column of the home screen: every project in this app, newest first, one click to open. It is
- * the same list on a phone, just under the composer instead of beside it.
+ * The project panel of the home screen: every project in this app, newest first, one click to open. On a
+ * wide window it is the left panel of the app shell (full height, its own scrollbar); on a phone the same
+ * list comes under the work box as a card.
  */
 export function ProjectSidebar({
   projects,
@@ -69,17 +70,21 @@ export function ProjectSidebar({
   }, [projects, query]);
 
   return (
-    <aside aria-labelledby="projects-title" data-tour="projects" className="card flex flex-col overflow-hidden lg:sticky lg:top-16 lg:max-h-[calc(100vh-5rem)]">
-      <div className="flex items-center gap-2 border-b border-line px-4 py-3">
-        <FolderOpenIcon className="h-4 w-4 shrink-0 text-accent-text" aria-hidden />
-        <h2 id="projects-title" className="text-sm font-semibold">
+    <aside
+      aria-labelledby="projects-title"
+      data-tour="projects"
+      className="card mx-4 mb-5 flex flex-col overflow-hidden md:m-0 md:min-h-0 md:w-[260px] md:shrink-0 md:rounded-none md:border-0 md:border-r md:bg-panel"
+    >
+      <div className="flex items-center gap-2 px-3.5 pb-1.5 pt-3">
+        <FolderOpenIcon className="h-4 w-4 shrink-0 text-muted" aria-hidden />
+        <h2 id="projects-title" className="text-[12.5px] font-semibold text-muted">
           โปรเจกต์ของฉัน
         </h2>
-        {projects.length > 0 && <span className="badge ml-auto tabular-nums">{projects.length}</span>}
+        {projects.length > 0 && <span className="badge ml-auto h-5 tabular-nums">{projects.length}</span>}
       </div>
 
       {projects.length >= SEARCH_FROM && (
-        <label className="relative block border-b border-line px-3 py-2">
+        <label className="relative block px-2.5 pb-1.5">
           <MagnifyingGlassIcon className="pointer-events-none absolute left-5 top-1/2 h-4 w-4 -translate-y-1/2 text-faint" aria-hidden />
           <input
             type="search"
@@ -87,42 +92,34 @@ export function ProjectSidebar({
             onChange={(e) => setQuery(e.target.value)}
             placeholder="ค้นหาโปรเจกต์"
             aria-label="ค้นหาโปรเจกต์"
-            className="field h-8 w-full pl-8 text-sm"
+            className="field h-8 w-full pl-8 text-[13px]"
           />
         </label>
       )}
 
       {projects.length === 0 ? (
-        <div className="px-4 py-6 text-center">
-          <span className="icon-chip tone-info mx-auto mb-2 h-9 w-9">
-            <FolderOpenIcon className="h-5 w-5" />
-          </span>
-          <p className="text-sm font-semibold">ยังไม่มีโปรเจกต์</p>
-          <p className="hint mt-1">
-            สร้างอันแรกจากช่อง <b>อยากได้ระบบอะไร?</b> ทุกอย่างที่สร้างจะมาอยู่ที่นี่ กดเปิดแก้ต่อได้ตลอด
-          </p>
-        </div>
+        <p className="hint px-4 py-5">
+          ยังไม่มีโปรเจกต์ สร้างอันแรกจากช่อง <b>อยากได้ระบบอะไร?</b> ทุกอย่างที่สร้างจะมาอยู่ที่นี่ กดเปิดแก้ต่อได้ตลอด
+        </p>
       ) : shown.length === 0 ? (
-        <p className="hint px-4 py-6 text-center">ไม่มีโปรเจกต์ที่ตรงกับ “{query.trim()}”</p>
+        <p className="hint px-4 py-5 text-center">ไม่มีโปรเจกต์ที่ตรงกับ “{query.trim()}”</p>
       ) : (
-        <ul className="min-h-0 flex-1 overflow-y-auto p-1.5">
+        <ul className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-1.5">
           {shown.map((p) => (
             <Row key={p.id} project={p} deployed={!!deployed[p.id]} onDelete={() => setDeleting(p)} />
           ))}
         </ul>
       )}
 
-      {(deployedCount > 0 || googleConnected) && (
-        <div className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-2.5">
-          {deployedCount > 0 && <span className="hint">เผยแพร่แล้ว {deployedCount}</span>}
-          {googleConnected && (
-            <Link href="/projects?mode=existing" className="link ml-auto flex items-center gap-1 text-[13px]">
-              <ArrowDownTrayIcon className="h-3.5 w-3.5" />
-              สคริปต์ในบัญชี Google
-            </Link>
-          )}
-        </div>
-      )}
+      <div className="mt-auto flex flex-wrap items-center gap-2 border-t border-line px-3.5 py-2.5 text-[12px]">
+        {deployedCount > 0 && <span className="text-muted">เผยแพร่แล้ว {deployedCount}</span>}
+        {googleConnected && (
+          <Link href="/projects?mode=existing" className="link ml-auto flex items-center gap-1 no-underline">
+            <ArrowDownTrayIcon className="h-3.5 w-3.5" />
+            สคริปต์ในบัญชี Google
+          </Link>
+        )}
+      </div>
 
       {deleting && <DeleteProjectDialog project={deleting} onClose={() => setDeleting(null)} />}
     </aside>

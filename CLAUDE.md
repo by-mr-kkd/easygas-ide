@@ -209,6 +209,9 @@ npm run desktop:build   # Windows installer → dist/desktop/out
   amber = needs attention. `.icon-chip` marks what a panel or row is about. Warn colours never as decoration.
 - Every screen uses `AppTopBar` (h-12). In the desktop app it is the window title bar (`.titlebar` drag region,
   `TITLEBAR_HEIGHT` in electron/main.js) — keep the two heights equal.
+- The launcher screens (home `/projects`, `/shares`) are an app shell: `AppRail` (left icon rail, md+) · a panel
+  (`bg-panel`, e.g. `ProjectSidebar`) · the work area (`bg-main`, its own scrollbar) · `AppStatusBar` (bottom, md+).
+  Below md the rail and status bar give way to `MobileNav`. Title / status bars are `bg-panel2`.
 - Wording: "เผยแพร่" (never deploy), "โปรเจกต์", "Ctrl+K". Settings deep links: `/settings?s=ai|google|style|data`,
   `/knowledge?s=rules|lessons`, plus `&from=<projectId>` to return to a project.
 - Hand-offs into the IDE travel in sessionStorage: `egs:kickoff` (prefill), `egs:kickoff-auto` (send), `egs:wizard`.

@@ -3,7 +3,7 @@
 // They are copied here by hand instead of through `extraResources` because the packager filters that
 // copy: it silently drops every `node_modules` folder and every dot-folder (so `.next` too), and what
 // arrives cannot start. A plain recursive copy has no opinions.
-const { cpSync, existsSync } = require("node:fs");
+const { copyFileSync, cpSync, existsSync } = require("node:fs");
 const { join } = require("node:path");
 
 exports.default = async function afterPack(context) {
@@ -13,7 +13,9 @@ exports.default = async function afterPack(context) {
     if (!existsSync(join(staged, name))) throw new Error(`staged folder missing: ${name} (run scripts/build-desktop.mjs)`);
     cpSync(join(staged, name), join(target, name), { recursive: true });
   }
-  for (const must of ["app/server.js", "app/desktop-entry.js", "app/.next/BUILD_ID", "app/node_modules/next/package.json", "clasp/clasp.mjs"]) {
+  // the tray icon, loaded by electron/main.js trayIcon() (the same .ico the exe carries)
+  copyFileSync(join(context.packager.projectDir, "build", "icon.ico"), join(target, "icon.ico"));
+  for (const must of ["icon.ico", "app/server.js", "app/desktop-entry.js", "app/.next/BUILD_ID", "app/node_modules/next/package.json", "clasp/clasp.mjs"]) {
     if (!existsSync(join(target, must))) throw new Error(`packaged app is incomplete: resources/${must}`);
   }
 };

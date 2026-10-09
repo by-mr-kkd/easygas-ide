@@ -3,19 +3,20 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRightIcon, LightBulbIcon, PlusIcon, QueueListIcon, Squares2X2Icon } from "@heroicons/react/24/outline";
+import { ArrowRightIcon, LightBulbIcon, QueueListIcon, Squares2X2Icon } from "@heroicons/react/24/outline";
 import { newProjectReturnId } from "@/app/projects/actions";
 
 const NAME_MAX = 60;
 const WIZARD_PROJECT_NAME = "โปรเจกต์ใหม่";
 
-const EXAMPLES = [
-  "ระบบจองคิวร้านตัดผม ลูกค้ากรอกฟอร์มเลือกวันและเวลา แล้วได้รับอีเมลยืนยันอัตโนมัติ",
-  "ระบบสต็อกสินค้า บันทึกของเข้าและของออก แล้วแจ้งเตือนเมื่อสินค้าใกล้หมด",
-  "ระบบขอลางาน พนักงานกรอกฟอร์ม หัวหน้ากดอนุมัติ และดูวันลาคงเหลือของแต่ละคนได้",
-  "หน้าสรุปยอดขายรายวันจาก Google Sheet มีกราฟและยอดรวมแยกตามสินค้า",
-  "ส่งอีเมลอัตโนมัติถึงลูกค้าทุกคนในรายชื่อจาก Google Sheet โดยใส่ชื่อของแต่ละคนในเนื้อหา",
-  "ออกใบเสนอราคาเป็น PDF จากแม่แบบ โดยกรอกข้อมูลลูกค้าและรายการสินค้าในฟอร์ม",
+/** one click puts the text in the box; the label is what fits on a chip */
+const EXAMPLES: { label: string; text: string }[] = [
+  { label: "จองคิวร้านตัดผม", text: "ระบบจองคิวร้านตัดผม ลูกค้ากรอกฟอร์มเลือกวันและเวลา แล้วได้รับอีเมลยืนยันอัตโนมัติ" },
+  { label: "สต็อกสินค้า", text: "ระบบสต็อกสินค้า บันทึกของเข้าและของออก แล้วแจ้งเตือนเมื่อสินค้าใกล้หมด" },
+  { label: "ขอลางาน", text: "ระบบขอลางาน พนักงานกรอกฟอร์ม หัวหน้ากดอนุมัติ และดูวันลาคงเหลือของแต่ละคนได้" },
+  { label: "สรุปยอดขายรายวัน", text: "หน้าสรุปยอดขายรายวันจาก Google Sheet มีกราฟและยอดรวมแยกตามสินค้า" },
+  { label: "ส่งอีเมลตามรายชื่อ", text: "ส่งอีเมลอัตโนมัติถึงลูกค้าทุกคนในรายชื่อจาก Google Sheet โดยใส่ชื่อของแต่ละคนในเนื้อหา" },
+  { label: "ใบเสนอราคา PDF", text: "ออกใบเสนอราคาเป็น PDF จากแม่แบบ โดยกรอกข้อมูลลูกค้าและรายการสินค้าในฟอร์ม" },
 ];
 
 /** Project name from what the user typed: the first non-empty line, cut at a word boundary. */
@@ -48,14 +49,7 @@ function nameFromPrompt(prompt: string): string {
  * working on it. The prompt travels in sessionStorage (`egs:kickoff` + `egs:kickoff-auto`); the IDE's
  * chat reads both keys, prefills and sends. `egs:wizard` opens the IDE's question wizard instead.
  */
-export function PromptComposer({
-  engineReady,
-  foldExamples = false,
-}: {
-  engineReady: boolean;
-  /** Someone who already has projects knows what to type: keep the examples one click away. */
-  foldExamples?: boolean;
-}) {
+export function PromptComposer({ engineReady }: { engineReady: boolean }) {
   const router = useRouter();
   const fieldRef = useRef<HTMLTextAreaElement>(null);
   // state lags a render behind — the ref is what stops a second Enter in the same tick
@@ -63,7 +57,6 @@ export function PromptComposer({
   const [prompt, setPrompt] = useState("");
   const [pending, setPending] = useState<"prompt" | "wizard" | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [showExamples, setShowExamples] = useState(!foldExamples);
 
   function fail(message: string) {
     busy.current = false;
@@ -103,7 +96,6 @@ export function PromptComposer({
 
   function fillExample(text: string) {
     setPrompt(text);
-    setShowExamples(false);
     fieldRef.current?.focus();
   }
 
@@ -116,9 +108,11 @@ export function PromptComposer({
           start();
         }}
       >
+        <h1 className="text-xl font-semibold sm:text-[22px]">อยากได้ระบบอะไร?</h1>
+        <p className="hint mb-3">เล่าเป็นภาษาพูดได้ AI จะเขียนโค้ดและทำหน้าจอตัวอย่างให้ดูก่อน ยังไม่แตะบัญชี Google จนกว่าจะกดเผยแพร่</p>
         <textarea
           ref={fieldRef}
-          rows={3}
+          rows={4}
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           onKeyDown={(e) => {
@@ -130,19 +124,33 @@ export function PromptComposer({
           placeholder="เช่น ระบบจองคิวร้านตัดผม ลูกค้ากรอกฟอร์มแล้วได้อีเมลยืนยัน"
           aria-label="บอกสิ่งที่อยากได้"
           aria-describedby="composer-hint"
-          // grows with the text (3 → about 8 lines), then scrolls
-          className="field block max-h-[12.25rem] min-h-[5.25rem] resize-none overflow-y-auto [field-sizing:content]"
+          // grows with the text (4 → about 8 lines), then scrolls
+          className="field block max-h-[12.25rem] min-h-[6rem] resize-none overflow-y-auto text-[15px] [field-sizing:content]"
         />
         {error && (
           <p role="alert" className="callout callout-danger mt-2">
             {error}
           </p>
         )}
-        <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <p id="composer-hint" className="hint">
-            {engineReady ? "Enter เพื่อเริ่ม · Shift+Enter ขึ้นบรรทัดใหม่" : "ตั้งค่า AI ด้านบนก่อน ถึงจะเริ่มสร้างได้"}
+        <div className="mt-2.5 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void createAndOpen("wizard", WIZARD_PROJECT_NAME, { "egs:wizard": "1" })}
+            disabled={pending !== null}
+            title="ตอบคำถามสั้น ๆ ทีละข้อ แล้วแอปเรียบเรียงเป็นโจทย์ให้ AI"
+            className="btn btn-soft tone-ai btn-sm"
+          >
+            <QueueListIcon className="h-4 w-4" />
+            {pending === "wizard" ? "กำลังสร้าง…" : "ถามทีละข้อ"}
+          </button>
+          <Link href="/styleshopping" title="ดูตัวอย่างหน้าตาหลายแบบ เลือกแบบที่ชอบ แล้วเริ่มสร้างจากแบบนั้น" className="btn btn-soft tone-info btn-sm">
+            <Squares2X2Icon className="h-4 w-4" />
+            ดูตัวอย่างหน้าตา
+          </Link>
+          <p id="composer-hint" className="hint sr-only flex-1 lg:not-sr-only">
+            {engineReady ? "Enter เพื่อเริ่ม · Shift+Enter ขึ้นบรรทัดใหม่" : "ตั้งค่า AI ก่อน ถึงจะเริ่มสร้างได้"}
           </p>
-          <button type="submit" disabled={!engineReady || pending !== null} data-tour="start-button" className="btn btn-primary btn-lg shrink-0">
+          <button type="submit" disabled={!engineReady || pending !== null} data-tour="start-button" className="btn btn-primary ml-auto shrink-0">
             {pending === "prompt" ? (
               "กำลังสร้าง…"
             ) : (
@@ -155,57 +163,18 @@ export function PromptComposer({
         </div>
       </form>
 
-      {/* three ways to get a brief when you do not have one yet; one row, one tone */}
-      <div data-tour="alt-starts" className="mt-5 flex flex-wrap items-center gap-2">
-        <span className="hint mr-1">ยังนึกไม่ออก?</span>
-        <button
-          type="button"
-          onClick={() => void createAndOpen("wizard", WIZARD_PROJECT_NAME, { "egs:wizard": "1" })}
-          disabled={pending !== null}
-          title="ตอบคำถามสั้น ๆ ทีละข้อ แล้วแอปเรียบเรียงเป็นโจทย์ให้ AI"
-          className="btn btn-soft tone-ai"
-        >
-          <QueueListIcon className="h-4 w-4" />
-          {pending === "wizard" ? "กำลังสร้าง…" : "ถามทีละข้อ"}
-        </button>
-        <Link
-          href="/styleshopping"
-          title="ดูตัวอย่างหน้าตาหลายแบบ เลือกแบบที่ชอบ แล้วเริ่มสร้างจากแบบนั้น"
-          className="btn btn-soft tone-info"
-        >
-          <Squares2X2Icon className="h-4 w-4" />
-          ดูตัวอย่างหน้าตา
-        </Link>
-        <button
-          type="button"
-          onClick={() => setShowExamples((v) => !v)}
-          aria-expanded={showExamples}
-          aria-controls="prompt-examples"
-          title="ตัวอย่างโจทย์ กดอันไหนก็ใส่ลงช่องพิมพ์ให้ แก้ต่อได้"
-          className={`btn btn-soft tone-accent ${showExamples ? "ring-2 ring-accent/40" : ""}`}
-        >
-          <LightBulbIcon className="h-4 w-4" />
-          ดูตัวอย่างโจทย์
-        </button>
+      {/* a brief when you do not have one yet: one click fills the box, then edit */}
+      <div data-tour="alt-starts" className="mt-4 flex flex-wrap items-center gap-1.5">
+        <span className="hint mr-1 flex items-center gap-1">
+          <LightBulbIcon className="h-4 w-4 text-accent-text" aria-hidden />
+          ยังนึกไม่ออก? ลองกดตัวอย่าง
+        </span>
+        {EXAMPLES.map((ex) => (
+          <button key={ex.label} type="button" onClick={() => fillExample(ex.text)} disabled={pending !== null} title={ex.text} className="btn btn-secondary btn-sm rounded-full">
+            {ex.label}
+          </button>
+        ))}
       </div>
-
-      {showExamples && (
-        <ul id="prompt-examples" className="mt-3 grid gap-2 sm:grid-cols-2">
-          {EXAMPLES.map((text) => (
-            <li key={text}>
-              <button
-                type="button"
-                onClick={() => fillExample(text)}
-                disabled={pending !== null}
-                className="row-btn h-full text-sm"
-              >
-                <PlusIcon className="h-4 w-4 shrink-0 text-accent-text" />
-                <span className="min-w-0 flex-1">{text}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
     </div>
   );
 }

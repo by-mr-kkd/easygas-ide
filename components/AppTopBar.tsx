@@ -11,7 +11,7 @@ import type { ReactNode } from "react";
  */
 export function AppTopBar({ center, right }: { center?: ReactNode; right?: ReactNode }) {
   return (
-    <header className="titlebar sticky top-0 z-30 flex h-12 flex-none items-center gap-2.5 border-b border-line bg-surface pl-3 sm:pl-4">
+    <header className="titlebar sticky top-0 z-30 flex h-12 flex-none items-center gap-2.5 border-b border-line bg-panel2 pl-3 sm:pl-4">
       <Link href="/projects" className="flex shrink-0 items-center gap-2" title="โปรเจกต์ทั้งหมด">
         <Image src="/icon/android-icon-192x192.png" alt="" width={24} height={24} className="rounded-md" />
         <b className="hidden text-[15px] tracking-tight sm:block">
