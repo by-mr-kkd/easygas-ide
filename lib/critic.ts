@@ -241,9 +241,9 @@ function buildReviewPrompt(files: { path: string; content: string }[], project: 
     .join("\n\n");
   const kind =
     project.origin === "imported"
-      ? `existing script imported from the user's Google account (${project.kind === "webapp" ? "has a web app section: doGet entry point" : "no web app section: it may be bound to a Sheet/Doc or run from triggers"})`
+      ? `existing script imported from the user's Google account (${project.kind === "webapp" ? "standalone, has a web app section: doGet entry point" : "lives in a Google Sheet or Doc: getActiveSpreadsheet() is that file, also from its web app if it has a doGet"})`
       : project.kind === "bound"
-      ? "container-bound script (bound to a Google Sheet, uses onOpen menu)"
+      ? "container-bound script (lives in a Google Sheet: getActiveSpreadsheet() is that Sheet everywhere, also from the web app; menus/getUi/getActiveSheet only work while the Sheet is open)"
       : "standalone web app (doGet entry point)";
   // premium: the front page is published to GitHub Pages where the camera works — the fixed rubric
   // still calls camera use broken for GAS, so the fact travels in the request (not the cached system)

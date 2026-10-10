@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { enforceBoundManifest, parseBoundCreate, sheetUrl } from "../lib/bound.ts";
+import { enforceBoundManifest, hasDoGet, kindForExisting, manifestHasWebApp, parseBoundCreate, sheetUrl, usesContainer } from "../lib/bound.ts";
 
 const SCRIPT = "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-abcdef";
 const SHEET = "1ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210_-zyxwvu";
@@ -29,4 +29,28 @@ test("bound manifest: V8, Bangkok when no zone, the AI's settings kept, no web a
   assert.equal(JSON.parse(enforceBoundManifest(JSON.stringify({ timeZone: "Asia/Tokyo" }))).timeZone, "Asia/Tokyo");
   assert.equal(JSON.parse(enforceBoundManifest(null)).webapp, undefined);
   assert.equal(enforceBoundManifest("{broken"), "{broken");
+});
+
+
+const WEB_MANIFEST = { path: "appsscript.json", content: JSON.stringify({ webapp: { access: "ANYONE_ANONYMOUS" } }) };
+
+test("a tutorial-style script (active spreadsheet + doGet + web-app manifest) lives in a Sheet", () => {
+  const files = [{ path: "Code.gs", content: "function doGet(){ var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Data'); }" }, WEB_MANIFEST];
+  assert.equal(usesContainer(files), true);
+  assert.equal(hasDoGet(files), true);
+  assert.equal(manifestHasWebApp(files), true);
+  assert.equal(kindForExisting(files), "bound");
+});
+
+test("a standalone web app (openById, web-app manifest) stays a web app; no manifest section = bound", () => {
+  const web = [{ path: "Code.gs", content: "function doGet(){ SpreadsheetApp.openById(ID); }" }, WEB_MANIFEST];
+  assert.equal(kindForExisting(web), "webapp");
+  assert.equal(kindForExisting([{ path: "Code.gs", content: "function run(){}" }, { path: "appsscript.json", content: "{}" }]), "bound");
+});
+
+test("only code files count: a comment in HTML or a doGet mention in JSON does not", () => {
+  const files = [{ path: "Index.html", content: "<script>// getActiveSheet()</script>" }, { path: "appsscript.json", content: '{"x":"function doGet("}' }];
+  assert.equal(usesContainer(files), false);
+  assert.equal(hasDoGet(files), false);
+  assert.equal(usesContainer([{ path: "Menu.gs", content: "SpreadsheetApp.getUi().createMenu('x')" }]), true);
 });

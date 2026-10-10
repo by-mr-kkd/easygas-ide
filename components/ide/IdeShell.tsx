@@ -16,6 +16,7 @@ import { useProjectStore } from "@/store/useProjectStore";
 import { AppTopBar } from "@/components/AppTopBar";
 import { HelpButton } from "@/components/ide/HelpDialog";
 import { BoundSheetBar } from "@/components/ide/BoundSheetBar";
+import { hasDoGet } from "@/lib/bound";
 import { GuidedTour } from "@/components/tour/GuidedTour";
 import { QuotaStatus } from "./QuotaStatus";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
@@ -123,6 +124,9 @@ export function IdeShell({
   const setInitial = useProjectStore((s) => s.setInitial);
   const activePath = useProjectStore((s) => s.activePath);
   const fileCount = useProjectStore((s) => s.order.length);
+  // a project in a Sheet serves a page only when it has a doGet: then it is published as a web app too
+  const hasPage = useProjectStore((s) => hasDoGet(Object.entries(s.files).map(([path, f]) => ({ path, content: f.content }))));
+  const sheetOnly = !!bound && !hasPage;
   const chatActive = useProjectStore((s) => s.chatActive);
   const setPaletteOpen = useProjectStore((s) => s.setPaletteOpen);
   // the file the agent is writing right now (null when idle) — drives the narrow-window code-tab pulse
@@ -277,6 +281,7 @@ export function IdeShell({
                 empty={fileCount === 0}
                 bound={!!bound}
                 boundHasScript={!!bound?.scriptId}
+                sheetOnly={sheetOnly}
                 onBoundPublished={setSheetUrl}
                 onDeployed={setDeployUrl}
                 onConnectGoogle={() => setConnectOpen(true)}
@@ -287,7 +292,7 @@ export function IdeShell({
       />
 
       {/* live /exec URL + its actions */}
-      {deployUrl && <DeployedUrlBar url={deployUrl} projectId={projectId} googleEmail={google.email} />}
+      {deployUrl && <DeployedUrlBar url={deployUrl} projectId={projectId} googleEmail={google.email} sheetUrl={sheetUrl} />}
       {!deployUrl && sheetUrl && <BoundSheetBar sheetUrl={sheetUrl} scriptId={bound?.scriptId ?? null} />}
 
       {webHint && webHint.length > 0 && hintOpen && (
@@ -342,7 +347,7 @@ export function IdeShell({
           <>
             <section data-tour="code" className={paneClass("code")}>
               <FileTree />
-              <EditorToolbar projectId={projectId} canVerify={!bound} />
+              <EditorToolbar projectId={projectId} canVerify={!sheetOnly} />
               <div className="min-h-0 flex-1">
                 <EditorPane />
               </div>
@@ -439,7 +444,7 @@ export function IdeShell({
         </nav>
       )}
 
-      <CommandPalette projectId={projectId} googleConnected={google.connected} deployed={!!deployUrl || !!sheetUrl} canVerify={!bound} onJumpPane={jumpPane} />
+      <CommandPalette projectId={projectId} googleConnected={google.connected} deployed={!!deployUrl || !!sheetUrl} canVerify={!sheetOnly} onJumpPane={jumpPane} />
       <ConnectGoogleDialog
         open={connectOpen}
         projectId={projectId}

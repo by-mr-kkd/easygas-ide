@@ -3,6 +3,7 @@ import { mkdir, readdir, readFile, rm, writeFile as fsWriteFile } from "node:fs/
 import { join, relative } from "node:path";
 import { claspError, claspOrThrow, runClasp } from "@/lib/clasp";
 import { ImportError, RemoteChangedError } from "@/lib/errors";
+import { kindForExisting } from "@/lib/bound";
 import { parseScriptId } from "@/lib/script-id";
 import { deleteFile, getFiles, hashFiles, writeFile } from "@/lib/files";
 import { readJson, writeJsonAtomic } from "@/lib/local/json-store";
@@ -198,7 +199,8 @@ export async function importScript(input: string, nameHint?: string): Promise<{ 
 
   const remote = await readRemote(scriptId);
   const title = (nameHint ?? "").trim().slice(0, 120) || "สคริปต์ที่นำเข้า";
-  const projectId = await createProject(title, hasWebApp(remote.files) ? "webapp" : "bound", { description: null, imported: true });
+  // a script that reads the active spreadsheet lives in a Sheet even when it is also a web app (lib/bound.ts)
+  const projectId = await createProject(title, kindForExisting(remote.files), { description: null, imported: true });
   await replaceScriptFiles(projectId, remote.files);
   await writeClaspConfig(projectId, scriptId);
   await writeBaseline(projectId, remote.files, remote.hash);

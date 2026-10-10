@@ -66,11 +66,14 @@ export function DeployButton({
   empty = false,
   bound = false,
   boundHasScript = false,
+  sheetOnly = false,
   onBoundPublished,
 }: {
   projectId: string;
-  /** kind "bound": published into a new Google Sheet (lib/bound.ts) — no hosting choice, no /exec */
+  /** kind "bound": the script lives in a Google Sheet (a new one on the first publish, lib/bound.ts) */
   bound?: boolean;
+  /** bound with no page (no doGet): used from the Sheet only — no /exec, so no hosting choice either */
+  sheetOnly?: boolean;
   /** the bound project already has its script (published before, or imported from a Sheet): publishing pushes into it */
   boundHasScript?: boolean;
   onBoundPublished?: (sheetUrl: string) => void;
@@ -108,7 +111,7 @@ export function DeployButton({
   /** The GitHub flow has its own dialog (premium + GitHub checks live there); the GAS flow confirms first. */
   function askToPublish() {
     if (empty) return;
-    if (bound) return setConfirmOpen(true); // a Sheet's script has no front page to host anywhere
+    if (sheetOnly) return setConfirmOpen(true); // no web page, so nothing to host anywhere
     // re-read first: the first camera request of a session switches the project to GitHub hosting after
     // this button mounted, and a stale state would publish to Google only
     void pagesStateAction(projectId)
@@ -263,12 +266,17 @@ export function DeployButton({
           <>
             {bound ? (
               boundHasScript ? (
-                "โค้ดล่าสุดจะถูกส่งเข้าไปในสคริปต์ของชีตเดิม ข้อมูลในชีตไม่ถูกแตะ"
+                sheetOnly ? (
+                  "โค้ดล่าสุดจะถูกส่งเข้าไปในสคริปต์ของชีตเดิม ข้อมูลในชีตไม่ถูกแตะ"
+                ) : (
+                  "โค้ดล่าสุดจะถูกส่งเข้าไปในสคริปต์ของชีตเดิม และอัปเดตหน้าเว็บ ลิงก์เดิมไม่เปลี่ยน ข้อมูลในชีตไม่ถูกแตะ"
+                )
               ) : (
                 <>
                   แอปจะสร้าง Google Sheet ใหม่ใน Drive ของคุณ พร้อมใส่สคริปต์นี้ไว้ในชีต
+                  {!sheetOnly && " แล้วเผยแพร่หน้าเว็บพร้อมลิงก์สำหรับเปิดใช้งาน"}
                   <br />
-                  ครั้งแรกที่ใช้เมนูหรือปุ่มในชีต Google จะถามขออนุญาตหนึ่งครั้ง
+                  {sheetOnly ? "ครั้งแรกที่ใช้เมนูหรือปุ่มในชีต Google จะถามขออนุญาตหนึ่งครั้ง" : "ครั้งแรก Google จะถามขออนุญาตหนึ่งครั้ง"}
                 </>
               )
             ) : (
@@ -278,7 +286,7 @@ export function DeployButton({
                 ครั้งแรก Google จะถามขออนุญาตหนึ่งครั้ง
               </>
             )}
-            {!bound && pagesState?.premium && pagesState.github.available && !deployed && (
+            {!sheetOnly && pagesState?.premium && pagesState.github.available && !deployed && (
               <>
                 <br />
                 <button type="button" onClick={() => pickHosting("github")} className="link mt-1">
@@ -300,9 +308,9 @@ export function DeployButton({
               <div className="flex flex-col gap-3">
                 <h3 className="flex items-center gap-2 text-[15px] font-semibold">
                   <CheckCircleIcon className="h-6 w-6 shrink-0 text-accent-text" />
-                  {res.sheetUrl ? "เผยแพร่สำเร็จ สคริปต์อยู่ใน Google Sheet ของคุณแล้ว" : "เผยแพร่สำเร็จ แอปอยู่ในบัญชี Google ของคุณแล้ว"}
+                  {res.sheetUrl && !res.execUrl ? "เผยแพร่สำเร็จ สคริปต์อยู่ใน Google Sheet ของคุณแล้ว" : "เผยแพร่สำเร็จ แอปอยู่ในบัญชี Google ของคุณแล้ว"}
                 </h3>
-                {res.sheetUrl && (
+                {res.sheetUrl && !res.execUrl && (
                   <>
                     <a href={res.sheetUrl} target="_blank" rel="noreferrer" className="btn btn-primary">
                       เปิดชีตของคุณ <ArrowTopRightOnSquareIcon className="h-4 w-4" />
@@ -319,6 +327,11 @@ export function DeployButton({
                       เปิดแอปของคุณ <ArrowTopRightOnSquareIcon className="h-4 w-4" />
                     </a>
                     <p className="break-all rounded-md bg-sunken px-2.5 py-1.5 font-mono text-xs text-muted">{res.execUrl}</p>
+                    {res.sheetUrl && (
+                      <a href={res.sheetUrl} target="_blank" rel="noreferrer" className="btn btn-secondary">
+                        เปิดชีตที่เก็บข้อมูล <ArrowTopRightOnSquareIcon className="h-4 w-4" />
+                      </a>
+                    )}
                   </>
                 )}
                 {res.probe &&
@@ -341,7 +354,7 @@ export function DeployButton({
                       </button>
                     </div>
                   ))}
-                {!res.sheetUrl && (
+                {res.execUrl && (
                   <p className="hint">
                     ครั้งแรกที่เปิด Google จะขอสิทธิ์เข้าถึง เช่น Sheets หรือ Gmail ให้เจ้าของแอปกด{" "}
                     <b>Review permissions → Advanced → Allow</b> ครั้งเดียวพอ คนอื่นที่เปิดลิงก์ไม่ต้องกดอีก

@@ -4,6 +4,7 @@
  * app refuses the same things before uploading, with the reason in Thai.
  */
 import type { ShareFile } from "./scan.ts";
+import { kindForExisting } from "../bound.ts";
 
 export class ShareRefusal extends Error {}
 
@@ -55,15 +56,11 @@ export function fromShareFiles(files: unknown): { path: string; content: string 
   return out;
 }
 
-/** The manifest says web app → a "webapp" project, else "bound". */
-export function kindOf(files: { path: string; content: string }[]): "webapp" | "bound" {
-  const m = files.find((f) => f.path === "appsscript.json")?.content;
-  try {
-    return m && (JSON.parse(m) as { webapp?: unknown }).webapp ? "webapp" : "bound";
-  } catch {
-    return "bound";
-  }
-}
+/**
+ * Where a share's code belongs: code that reads the active spreadsheet / its UI lives in a Sheet even when it
+ * is also a web app (the tutorial way); otherwise the manifest decides (web-app section → standalone web app).
+ */
+export const kindOf = (files: { path: string; content: string }[]): "webapp" | "bound" => kindForExisting(files);
 
 export type SharePublic = {
   slug: string;

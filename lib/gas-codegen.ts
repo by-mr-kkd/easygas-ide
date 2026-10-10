@@ -142,13 +142,39 @@ Browser libraries via CDN are ALLOWED and encouraged when they improve UX — lo
 - "จำการเข้าสู่ระบบ" / remember-me: NEVER put the password (or any reusable credential) in localStorage. On successful login issue a RANDOM session token; store only its HASH + an expiry (+ userId) in a sessions sheet; send the raw token to the client for localStorage. On load, validate server-side (hash matches AND not expired) → auto-login; logout deletes the session row. Tokens must expire and be revocable.
 - Scope stays lean: a Sheet-backed custom login needs only 'auth/spreadsheets' (the Sheet is private because the web app runs "execute as me") — do NOT add Drive/external scopes for auth.`;
 
+/** The doGet self-check every script with a web page carries (web apps, and Sheet scripts that also serve a page). */
+const SELF_DIAG = `- Self-diagnostics (lets EasyGAS auto-test & repair the deployed app): wrap doGet(e) in try/catch. When e.parameter.__egsdiag === 'egsverify', CAPTURE Logger.log output and, on error, return the stack PLUS the captured logs as TEXT so EasyGAS sees what happened before the crash; otherwise show a friendly fallback page. Normal users never pass that param, so they only ever see the fallback. Copy this shape EXACTLY (the log-capture is wrapped in its own try so a non-writable Logger can never break the page):
+      function doGet(e) {
+        var __egsDiag = e && e.parameter && e.parameter.__egsdiag === 'egsverify';
+        var __egsLogs = [];
+        if (__egsDiag) {
+          try {                                            // capture Logger.log ONLY in diag mode
+            var __ol = Logger.log;
+            Logger.log = function (m) { try { __egsLogs.push(String(m)); } catch (_) {} return __ol.apply(Logger, arguments); };
+          } catch (_) {}
+        }
+        try {
+          // ...build + return your HtmlOutput as usual...
+        } catch (err) {
+          if (__egsDiag)
+            return ContentService.createTextOutput(
+              'EGS_ERROR: ' + (err && err.stack ? err.stack : err) + '\nEGS_LOGS: ' + JSON.stringify(__egsLogs)
+            ).setMimeType(ContentService.MimeType.TEXT);
+          return HtmlService.createHtmlOutput('<p style="font-family:sans-serif;padding:16px">ขออภัย เกิดข้อผิดพลาด ลองใหม่อีกครั้ง</p>');
+        }
+      }
+  Add Logger.log('...') at key steps (after reading/writing the Sheet, before returning a value) so a failed diag run shows the trace — EasyGAS feeds these logs straight into the auto-repair.`;
+
 const BOUND_ADDENDUM = `
 
-## This is a CONTAINER-BOUND script (bound to a Google Sheet)
-- The active spreadsheet IS the data store — use SpreadsheetApp.getActiveSpreadsheet() / getActiveSheet()
-- Ensure the needed tabs + header columns exist on first use (create them if missing; setNumberFormat('@') on phone/idcard columns)
-- Add an onOpen(e) custom menu with SpreadsheetApp.getUi() when a Sheet UI helps
-- For time/auth-driven automation, generate an installTriggers() setup function the user runs once`;
+## This is a CONTAINER-BOUND script: it lives INSIDE a Google Sheet (the way most tutorials teach Apps Script)
+- That Sheet IS the data store. SpreadsheetApp.getActiveSpreadsheet() returns it EVERYWHERE — from menus, sidebars and triggers AND from the web app (doGet, doPost, google.script.run). NEVER create another spreadsheet for data, never use openById for it.
+- Find tabs by name: SpreadsheetApp.getActiveSpreadsheet().getSheetByName('...'). Create missing tabs + header row on first use, race-safe (getSheetByName → script lock → re-check → insertSheet), and setNumberFormat('@') on phone/idcard columns before writing them.
+- getActiveSheet(), getActiveRange(), getActiveCell(), SpreadsheetApp.getUi() and toast() only work while someone has the Sheet open (menus, sidebars, dialogs, onEdit). NEVER use them in doGet, doPost or any function the web page calls through google.script.run — there is no open Sheet there; use getSheetByName instead.
+- A web page is optional and common: when the user wants a page or form people open from a link, write doGet(e) + Index.html exactly as for a web app (the self-diagnostics shape below) — EasyGAS publishes it as a web app and the /exec link works. Without a page, the script is used from the Sheet: an onOpen(e) custom menu (SpreadsheetApp.getUi()) and/or a sidebar.
+- Use LockService around appendRow for concurrent writes (a web page can fire several calls at once).
+- For time/auth-driven automation, generate an installTriggers() setup function the user runs once.
+${SELF_DIAG}`;
 
 const WEBAPP_ADDENDUM = `
 
@@ -198,27 +224,7 @@ const WEBAPP_ADDENDUM = `
   - Run setup on first use (top of doGet or each data function) so the spreadsheet + tabs + header columns are created automatically on the first request.
   - Expose the spreadsheet URL to the owner (a link in an admin view or returned from a function) so they can find their data.
 - Use LockService around appendRow for concurrent writes.
-- Self-diagnostics (lets EasyGAS auto-test & repair the deployed app): wrap doGet(e) in try/catch. When e.parameter.__egsdiag === 'egsverify', CAPTURE Logger.log output and, on error, return the stack PLUS the captured logs as TEXT so EasyGAS sees what happened before the crash; otherwise show a friendly fallback page. Normal users never pass that param, so they only ever see the fallback. Copy this shape EXACTLY (the log-capture is wrapped in its own try so a non-writable Logger can never break the page):
-      function doGet(e) {
-        var __egsDiag = e && e.parameter && e.parameter.__egsdiag === 'egsverify';
-        var __egsLogs = [];
-        if (__egsDiag) {
-          try {                                            // capture Logger.log ONLY in diag mode
-            var __ol = Logger.log;
-            Logger.log = function (m) { try { __egsLogs.push(String(m)); } catch (_) {} return __ol.apply(Logger, arguments); };
-          } catch (_) {}
-        }
-        try {
-          // ...build + return your HtmlOutput as usual...
-        } catch (err) {
-          if (__egsDiag)
-            return ContentService.createTextOutput(
-              'EGS_ERROR: ' + (err && err.stack ? err.stack : err) + '\nEGS_LOGS: ' + JSON.stringify(__egsLogs)
-            ).setMimeType(ContentService.MimeType.TEXT);
-          return HtmlService.createHtmlOutput('<p style="font-family:sans-serif;padding:16px">ขออภัย เกิดข้อผิดพลาด ลองใหม่อีกครั้ง</p>');
-        }
-      }
-  Add Logger.log('...') at key steps (after reading/writing the Sheet, before returning a value) so a failed diag run shows the trace — EasyGAS feeds these logs straight into the auto-repair.`;
+${SELF_DIAG}`;
 
 export interface CodegenOptions {
   kind?: ProjectKind;

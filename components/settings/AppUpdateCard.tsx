@@ -6,6 +6,7 @@ import { ArrowDownTrayIcon, ArrowPathIcon } from "@heroicons/react/24/outline";
 import { setAutoUpdateAction } from "@/app/settings/actions";
 import { requestUpdateAction, updateStateAction } from "@/app/update-actions";
 import type { UpdateState } from "@/lib/app-update";
+import { whatsNewUrl } from "@/lib/links";
 
 const DOWNLOAD_PAGE = "https://easygaside.tech/download";
 /** how often the card re-reads the shell's state while a check or a download runs */
@@ -81,7 +82,17 @@ export function AppUpdateCard({ version, enabled, state: initial }: { version: s
     <div className="card mb-4 min-w-0 px-4 py-4">
       <div className="flex flex-wrap items-start gap-3">
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-semibold text-fg">EasyGAS IDE เวอร์ชัน {version}</div>
+          <div className="text-sm font-semibold text-fg">
+            EasyGAS IDE เวอร์ชัน {version}{" "}
+            <a href={whatsNewUrl(version)} target="_blank" rel="noopener noreferrer" className="link ml-1 text-[13px] font-medium">
+              มีอะไรใหม่
+            </a>
+            {state?.status === "ready" && state.version && (
+              <a href={whatsNewUrl(state.version)} target="_blank" rel="noopener noreferrer" className="link ml-2 text-[13px] font-medium">
+                ใน {state.version} ที่จะติดตั้ง
+              </a>
+            )}
+          </div>
           <p className={`mt-0.5 break-words text-[13px] ${ready ? "font-medium text-accent" : "hint"}`} aria-live="polite">
             {statusText(state, on)}
           </p>

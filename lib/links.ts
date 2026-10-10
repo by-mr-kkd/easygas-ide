@@ -11,3 +11,6 @@ export const LINKS = {
   /** Source code, releases and issues. */
   repo: "https://github.com/by-mr-kkd/easygas-ide",
 } as const;
+
+/** "มีอะไรใหม่": the website's news thread of one version (easygaside.tech/news/<v> finds it, or the news room). */
+export const whatsNewUrl = (version: string): string => `https://easygaside.tech/news/v${version.replace(/^v/i, "")}`;

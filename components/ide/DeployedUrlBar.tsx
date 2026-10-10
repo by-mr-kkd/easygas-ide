@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   ArrowPathIcon,
   ArrowTopRightOnSquareIcon,
+  TableCellsIcon,
   BoltIcon,
   CheckIcon,
   ClipboardIcon,
@@ -25,7 +26,8 @@ const shareUrlFor = (u: string): string => `${u}${u.includes("?") ? "&" : "?"}${
  * "deploy ใหม่" (re-PATCH the same deployment → same /exec URL). The /exec URL is stable across
  * re-deploys, so it's safe to share once.
  */
-export function DeployedUrlBar({ url: execUrl, projectId, googleEmail = null }: { url: string; projectId: string; googleEmail?: string | null }) {
+/** `sheetUrl`: the project lives in a Google Sheet (kind "bound") — the bar also opens that Sheet. */
+export function DeployedUrlBar({ url: execUrl, projectId, googleEmail = null, sheetUrl = null }: { url: string; projectId: string; googleEmail?: string | null; sheetUrl?: string | null }) {
   const [copied, setCopied] = useState(false);
   // the owner's one-time approval of the backend (Google's permission wall): a reminder with the link
   // stays under the bar until a probe sees the wall gone (remembered on the project after that)
@@ -236,6 +238,12 @@ export function DeployedUrlBar({ url: execUrl, projectId, googleEmail = null }: 
             {shareCopied ? "คัดลอกแล้ว" : "ลิงก์สำหรับแชร์ใน LINE"}
           </button>
         </Tooltip>
+      )}
+      {sheetUrl && (
+        <a href={sheetUrl} target="_blank" rel="noreferrer" title="เปิด Google Sheet ที่สคริปต์และข้อมูลอยู่" className="btn btn-ghost btn-sm shrink-0 max-sm:btn-icon">
+          <TableCellsIcon className="h-4 w-4" />
+          <span className="hidden sm:inline">เปิดชีต</span>
+        </a>
       )}
       <a
         href={url}

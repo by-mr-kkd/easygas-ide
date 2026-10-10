@@ -5,7 +5,7 @@ import { claspError, claspOrThrow, runClasp } from "@/lib/clasp";
 import { getFiles, hashFiles, writeFile } from "@/lib/files";
 import { srcDir } from "@/lib/local/paths";
 import { assertRemoteUnchanged, recordRemote } from "@/lib/import";
-import { enforceBoundManifest, parseBoundCreate, sheetUrl } from "@/lib/bound";
+import { enforceBoundManifest, hasDoGet, manifestHasWebApp, parseBoundCreate, sheetUrl } from "@/lib/bound";
 import { enforceWebAppManifest } from "@/lib/manifest";
 import { withBackendNotice } from "@/lib/pages/backend-page";
 import { withDispatcher, type SourceFile } from "@/lib/pages/dispatcher";
@@ -158,7 +158,8 @@ export async function pushHeadPreview(project: EgsProject): Promise<{ devUrl: st
 /**
  * Publish an imported script: its manifest is left as it is, Google's copy is checked for outside edits
  * first, and the script's EXISTING deployment is moved to the new version (same URL). A script without a
- * deployment (e.g. one bound to a sheet) only gets its code updated: no deployment is created for it.
+ * deployment gets one only when it serves a page (doGet) and its manifest already has a web-app section;
+ * otherwise (a Sheet's menus, triggers) only its code is updated.
  */
 async function deployImported(project: EgsProject, opts: { pagesUrl?: string }): Promise<DeployResult> {
   const scriptId = project.script_id;
@@ -191,64 +192,67 @@ async function deployImported(project: EgsProject, opts: { pagesUrl?: string }):
     if (!Number.isFinite(versionNumber)) throw new Error("clasp_version_unparsed");
     await claspOrThrow(["update-deployment", existing.deployment_id, "-V", String(versionNumber)], dir);
     await saveDeployment(project.id, { ...existing, version_number: versionNumber, content_hash: deployHash, updated_at: new Date().toISOString() });
+  } else if (hasDoGet(own) && manifestHasWebApp(own)) {
+    // a page that was never deployed (a tutorial script run only from the editor): give it its /exec once.
+    // The manifest is the user's own and stays as it is; without a web-app section there is no /exec to make.
+    const versionOut = await claspOrThrow(["create-version", `EasyGAS ${new Date().toISOString()}`], dir);
+    const versionNumber = Number(versionOut.match(/version\s+(\d+)/i)?.[1]);
+    if (!Number.isFinite(versionNumber)) throw new Error("clasp_version_unparsed");
+    const out = await claspOrThrow(["create-deployment", "-V", String(versionNumber), `--description=${project.name}`], dir);
+    const deploymentId = out.match(/(AKfy[\w-]+)/)?.[1];
+    if (!deploymentId) throw new Error("clasp_deployment_unparsed");
+    const now = new Date().toISOString();
+    const execUrl = `https://script.google.com/macros/s/${deploymentId}/exec`;
+    await saveDeployment(project.id, {
+      id: randomUUID(),
+      project_id: project.id,
+      deployment_id: deploymentId,
+      entry_type: "webapp",
+      exec_url: execUrl,
+      version_number: versionNumber,
+      content_hash: deployHash,
+      oauth_scopes: [],
+      created_at: now,
+      updated_at: now,
+    });
+    return { execUrl, scriptId, needsTriggerSetup, scriptEditorUrl, unchanged: false, scopesAdded: [] };
   }
   return { execUrl: existing?.exec_url || undefined, scriptId, needsTriggerSetup, scriptEditorUrl, unchanged: false, scopesAdded: [] };
 }
 
 /**
- * A project bound to a Google Sheet that this app made (new, or cloned from a share): the first publish
- * creates a NEW Sheet with the script inside it, later ones push into that script. No web-app deployment,
- * and the manifest is not turned into a web app's.
+ * First publish of a project that lives in a Sheet (kind "bound"): a NEW Google Sheet with the script inside
+ * it, in one clasp call. Its ids are saved at once so a later failure never leaves an orphan to re-create.
  */
-async function deployBound(project: EgsProject): Promise<DeployResult> {
+async function createBoundScript(project: EgsProject, manifest: string): Promise<{ scriptId: string; sheetId: string }> {
   const dir = srcDir(project.id);
-  if ((await getFiles(project.id)).length === 0) throw new Error("no_files");
-  const manifest = enforceBoundManifest(await readManifest(project.id));
-  await writeFile(project.id, MANIFEST, manifest);
-  const files = (await getFiles(project.id)).filter((f) => isPushed(f.path));
-  const hash = hashFiles(files);
-  const needsTriggerSetup = files.some((f) => INSTALL_TRIGGERS_RE.test(f.content));
-
-  let scriptId = project.script_id;
-  let sheetId = project.bound_sheet_id;
-  const done = (unchanged: boolean): DeployResult => ({
-    scriptId: scriptId!,
-    needsTriggerSetup,
-    scriptEditorUrl: `https://script.google.com/d/${scriptId}/edit`,
-    sheetUrl: sheetId ? sheetUrl(sheetId) : undefined,
-    unchanged,
-    scopesAdded: [],
-  });
-  if (scriptId && project.bound_push?.hash === hash) return done(true);
-
-  await fsWriteFile(join(dir, ".claspignore"), CLASPIGNORE, "utf8");
-  if (scriptId) {
-    await writeClaspConfig(project.id, scriptId);
-  } else {
-    await rm(join(dir, ".clasp.json"), { force: true });
-    const r = await runClasp(["create-script", "--type", "sheets", `--title=${project.name}`, "--rootDir", ".", "--json"], { projectDir: dir });
-    const ids = parseBoundCreate(r.stdout);
-    if (!ids) throw claspError("create-script", r);
-    scriptId = ids.scriptId;
-    sheetId = ids.sheetId;
-    await updateProject(project.id, { script_id: scriptId, bound_sheet_id: sheetId });
-    await writeClaspConfig(project.id, scriptId);
-    await writeFile(project.id, MANIFEST, manifest); // clasp pulled Google's default manifest over ours
-  }
-
-  await claspOrThrow(["push", "--force"], dir);
-  await updateProject(project.id, { bound_push: { hash, at: new Date().toISOString() } });
-  return done(false);
+  await rm(join(dir, ".clasp.json"), { force: true });
+  const r = await runClasp(["create-script", "--type", "sheets", `--title=${project.name}`, "--rootDir", ".", "--json"], { projectDir: dir });
+  const ids = parseBoundCreate(r.stdout);
+  if (!ids) throw claspError("create-script", r);
+  await updateProject(project.id, { script_id: ids.scriptId, bound_sheet_id: ids.sheetId });
+  await writeClaspConfig(project.id, ids.scriptId);
+  await writeFile(project.id, MANIFEST, manifest); // clasp pulled Google's default manifest over ours
+  return ids;
 }
 
-/** `opts.pagesUrl`: where the GitHub copy of the front page lives (defaults to the last publish). */
+/**
+ * New and cloned projects. A standalone web app is published as a public web app. A project that lives in a
+ * Sheet ("bound") gets a NEW Sheet with its script on the first publish, then pushes into it — and, when it
+ * serves a page (doGet: the tutorial setup, getActiveSpreadsheet() + a web page), the same web-app deployment
+ * and stable /exec link as a web app. Without a page it is used from the Sheet (menus, sidebars, triggers).
+ * `opts.pagesUrl`: where the GitHub copy of the front page lives (defaults to the last publish).
+ */
 export async function deployProject(_userId: string, project: EgsProject, opts: { pagesUrl?: string } = {}): Promise<DeployResult> {
   if (project.origin === "imported") return deployImported(project, opts);
-  if (project.kind === "bound") return deployBound(project);
   const dir = srcDir(project.id);
-  if ((await getFiles(project.id)).length === 0) throw new Error("no_files");
+  const bound = project.kind === "bound";
+  const before = await getFiles(project.id);
+  if (before.length === 0) throw new Error("no_files");
 
-  const manifest = enforceWebAppManifest(await readManifest(project.id));
+  const web = !bound || hasDoGet(before) || project.hosting === "github";
+  const current = await readManifest(project.id);
+  const manifest = web ? enforceWebAppManifest(current) : enforceBoundManifest(current);
   await writeFile(project.id, MANIFEST, manifest);
   const own = (await getFiles(project.id)).filter((f) => isPushed(f.path));
   // throws before anything is pushed when a GitHub-hosted project defines its own doPost
@@ -256,13 +260,28 @@ export async function deployProject(_userId: string, project: EgsProject, opts: 
   const deployHash = hashFiles(files);
   const needsTriggerSetup = files.some((f) => INSTALL_TRIGGERS_RE.test(f.content));
   const existing = project.deployment;
+  let sheetId = project.bound_sheet_id;
+  const sheet = (): string | undefined => (bound && sheetId ? sheetUrl(sheetId) : undefined);
 
-  if (existing?.content_hash === deployHash && existing.exec_url && project.script_id) {
+  // a Sheet script without a page has no deployment: "unchanged" = these files were already pushed
+  if (!web && project.script_id && project.bound_push?.hash === deployHash) {
+    return {
+      scriptId: project.script_id,
+      needsTriggerSetup,
+      scriptEditorUrl: `https://script.google.com/d/${project.script_id}/edit`,
+      sheetUrl: sheet(),
+      unchanged: true,
+      scopesAdded: [],
+    };
+  }
+
+  if (web && existing?.content_hash === deployHash && existing.exec_url && project.script_id) {
     return {
       execUrl: existing.exec_url,
       scriptId: project.script_id,
       needsTriggerSetup,
       scriptEditorUrl: `https://script.google.com/d/${project.script_id}/edit`,
+      sheetUrl: sheet(),
       unchanged: true,
       scopesAdded: [],
     };
@@ -277,12 +296,18 @@ export async function deployProject(_userId: string, project: EgsProject, opts: 
   let scriptId = project.script_id;
   if (scriptId) {
     await writeClaspConfig(project.id, scriptId);
+  } else if (bound) {
+    ({ scriptId, sheetId } = await createBoundScript(project, manifest));
   } else {
     scriptId = await createScript(project, manifest);
     await updateProject(project.id, { script_id: scriptId });
   }
 
   await pushWithExtras(project, files, own);
+  if (bound) await updateProject(project.id, { bound_push: { hash: deployHash, at: new Date().toISOString() } });
+  if (!web) {
+    return { scriptId, needsTriggerSetup, scriptEditorUrl: `https://script.google.com/d/${scriptId}/edit`, sheetUrl: sheet(), unchanged: false, scopesAdded: [] };
+  }
   const versionOut = await claspOrThrow(["create-version", `deploy ${new Date().toISOString()}`], dir);
   const versionNumber = Number(versionOut.match(/version\s+(\d+)/i)?.[1]);
   if (!Number.isFinite(versionNumber)) throw new Error("clasp_version_unparsed");
@@ -319,6 +344,7 @@ export async function deployProject(_userId: string, project: EgsProject, opts: 
     scriptId,
     needsTriggerSetup,
     scriptEditorUrl: `https://script.google.com/d/${scriptId}/edit`,
+    sheetUrl: sheet(),
     unchanged: false,
     scopesAdded,
   };

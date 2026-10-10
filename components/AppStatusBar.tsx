@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { ArrowPathIcon, CheckCircleIcon, DevicePhoneMobileIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
+import { WhatsNewLink } from "@/components/WhatsNewLink";
 import { QuotaStatus } from "@/components/ide/QuotaStatus";
 import { FacebookIcon, GitHubIcon } from "@/components/ui/BrandIcons";
 import { readUpdateState } from "@/lib/app-update";
 import { CLAUDE_QUOTA_SETTING } from "@/lib/engines/claude-quota";
-import { LINKS } from "@/lib/links";
+import { LINKS, whatsNewUrl } from "@/lib/links";
+import { APP_VERSION } from "@/lib/rulebook/store";
 import { proActive, remoteSnapshot } from "@/lib/remote/runtime";
 import { getBoolSetting } from "@/lib/settings";
 import type { SetupStatus } from "@/lib/setup-status";
@@ -40,6 +42,8 @@ export async function AppStatusBar({ setup }: { setup: SetupStatus }) {
   // the two monthly-plan AIs have a quota to show
   const quotaEngine = setup.engineReady && (setup.engine === "codex-cli" || setup.engine === "claude-cli") ? setup.engine : null;
 
+  // a version newer than this one is downloading or waiting to be installed
+  const newer = (update?.status === "ready" || update?.status === "downloading") && update.version ? update.version : null;
   const updateLabel =
     update?.status === "ready" && update.version
       ? `${update.version} พร้อมแล้ว · ปิดแล้วเปิดใหม่`
@@ -75,6 +79,8 @@ export async function AppStatusBar({ setup }: { setup: SetupStatus }) {
           {updateLabel}
         </Item>
       )}
+      {/* the news thread of the version in use — or of the newer one on its way (then it greets once per launch) */}
+      <WhatsNewLink href={whatsNewUrl(newer ?? (update?.current || APP_VERSION))} fresh={!!newer} className={ITEM} />
       <span className="my-1.5 w-px bg-line" aria-hidden />
       <Item href="/about" title="เกี่ยวกับ EasyGAS IDE">
         Powered by <span className="font-semibold text-fg">Mr.KKD</span>

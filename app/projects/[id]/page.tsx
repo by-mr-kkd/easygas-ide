@@ -10,7 +10,7 @@ import { remoteSnapshot } from "@/lib/remote/runtime";
 import { remoteDeviceOf } from "@/lib/remote/turn-notify";
 import { headers } from "next/headers";
 import { resolvePrefs, sanitizePrefs } from "@/lib/preferences";
-import { getDeployedMap, getProject, listProjects } from "@/lib/projects";
+import { getDeployedMap, getProject, listProjects, updateProject } from "@/lib/projects";
 import { getSettings } from "@/lib/settings";
 import { getSetupStatus } from "@/lib/setup-status";
 import { tourSeenKey } from "@/lib/tour";
@@ -19,14 +19,14 @@ import { CLAUDE_QUOTA_SETTING } from "@/lib/engines/claude-quota";
 const isOn = (v: string | undefined) => v === "on" || v === "true" || v === "1";
 import { routeTarget, type CapabilityNeeds } from "@/lib/deployment-targets/router";
 import { premiumStatus } from "@/lib/premium/status";
-import { sheetUrl } from "@/lib/bound";
+import { sheetUrl, usesContainer } from "@/lib/bound";
 import { unreadAnswers } from "@/lib/support/fast-track";
 import { machineInfo } from "@/lib/support/machine-info";
 import { githubStatus } from "@/lib/pages/github-auth";
 
 export default async function ProjectBuilderPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const project = await getProject(id);
+  let project = await getProject(id);
   if (!project) notFound();
 
   const [files, setup, aiOptions, aiChoice, chatImages, allProjects, deployedMap, settings, premium, github, chatRows] = await Promise.all([
@@ -42,6 +42,12 @@ export default async function ProjectBuilderPage({ params }: { params: Promise<{
     githubStatus().catch(() => ({ available: false, connected: false })),
     getStoredRows(id).catch(() => []),
   ]);
+  // imported or cloned before the app knew: code that reads the active spreadsheet lives in a Sheet, so the
+  // AI must not be told "standalone: getActiveSpreadsheet() is null" (it would move the data elsewhere). A clone
+  // already published as a standalone script keeps its kind: its script cannot move into a Sheet.
+  if (project.kind === "webapp" && (project.origin === "imported" || (project.origin === "cloned" && !project.script_id)) && usesContainer(files)) {
+    project = await updateProject(id, { kind: "bound" });
+  }
   const remote = await remoteSnapshot().catch(() => null);
   // Pro, opened from a paired phone that has not turned notifications on yet
   const phone = remoteDeviceOf(await headers());

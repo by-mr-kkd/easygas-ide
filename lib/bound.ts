@@ -40,3 +40,31 @@ export function enforceBoundManifest(current: string | null): string {
     return current; // malformed manifest — leave as-is (lint/critic flags it)
   }
 }
+
+type CodeFile = { path: string; content: string };
+const isCode = (f: CodeFile): boolean => /\.(gs|js)$/i.test(f.path);
+
+/**
+ * The code only works inside a container (a Sheet): it reads "the active" spreadsheet / sheet / range or the
+ * Sheet's UI. Tutorials teach exactly this (open a Sheet → Extensions → Apps Script), and such code is often
+ * ALSO a web app — so this, not the manifest's web-app section, says where the script must live.
+ */
+export function usesContainer(files: CodeFile[]): boolean {
+  return files.some((f) => isCode(f) && /\b(?:getActiveSpreadsheet|getActiveSheet|getActiveRange|getActiveCell|getUi)\s*\(/.test(f.content));
+}
+
+/** The script serves a web page (`doGet`): it gets a web-app deployment and an /exec link. */
+export const hasDoGet = (files: CodeFile[]): boolean => files.some((f) => isCode(f) && /\bfunction\s+doGet\s*\(/.test(f.content));
+
+/** The manifest has a web-app section (Google gives a deployment an /exec entry point only then). */
+export function manifestHasWebApp(files: CodeFile[]): boolean {
+  const m = files.find((f) => f.path === "appsscript.json")?.content;
+  try {
+    return Boolean(m && (JSON.parse(m) as { webapp?: unknown }).webapp);
+  } catch {
+    return false;
+  }
+}
+
+/** Where an existing script (imported, or a clone of a share) belongs: in a Sheet, or a standalone web app. */
+export const kindForExisting = (files: CodeFile[]): "webapp" | "bound" => (usesContainer(files) || !manifestHasWebApp(files) ? "bound" : "webapp");

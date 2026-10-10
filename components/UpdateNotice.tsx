@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { ArrowPathIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import { requestUpdateAction, updateNoticeAction } from "@/app/update-actions";
+import { whatsNewUrl } from "@/lib/links";
 
 const CHECK_MS = 5 * 60_000;
 const CLOSED_KEY = "egs:update-notice-closed";
@@ -56,7 +57,10 @@ export function UpdateNotice() {
       </span>
       <p className="min-w-0 leading-snug">
         <b className="block font-semibold text-fg">อัปเดต {version} พร้อมแล้ว</b>
-        <span className="text-muted">ติดตั้งเลย หรือปิดแล้วเปิดโปรแกรมใหม่ก็ได้</span>
+        <span className="text-muted">ติดตั้งเลย หรือปิดแล้วเปิดโปรแกรมใหม่ก็ได้ · </span>
+        <a href={whatsNewUrl(version)} target="_blank" rel="noopener noreferrer" className="link">
+          มีอะไรใหม่
+        </a>
       </p>
       <button
         type="button"
