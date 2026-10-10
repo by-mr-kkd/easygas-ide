@@ -19,6 +19,7 @@ import { addOwnLesson, approveLesson, deleteLesson, switchLesson } from "@/lib/l
 import { sanitizePrefs } from "@/lib/preferences";
 import { checkRulebookUpdate, maybeAutoCheckRulebook, type UpdateResult } from "@/lib/rulebook/update";
 import { CLAUDE_QUOTA_SETTING } from "@/lib/engines/claude-quota";
+import { openDataFolder } from "@/lib/open-folder";
 import { setAppSetting } from "@/lib/settings";
 import { ENGINES, KEY_IDS, getSettings, saveSettings, updateAppSettings, type EngineId, type KeyId } from "@/lib/settings";
 
@@ -245,5 +246,17 @@ export async function uninstallAppAction(deleteData: boolean): Promise<{ ok: boo
   } catch (e) {
     console.error("[settings] could not open the uninstaller:", e);
     return { ok: false, error: "เปิดตัวถอนการติดตั้งไม่สำเร็จ ถอนได้จาก Settings ของ Windows → Apps → Installed apps" };
+  }
+}
+
+/** Settings → ข้อมูลในเครื่อง: open the app's data folder in File Explorer. */
+export async function openDataFolderAction(): Promise<{ ok: true } | { ok: false; error: string }> {
+  await assertLocalRequest();
+  try {
+    await openDataFolder();
+    return { ok: true };
+  } catch (e) {
+    console.error("[open-folder]", e);
+    return { ok: false, error: "เปิดโฟลเดอร์ไม่สำเร็จ" };
   }
 }

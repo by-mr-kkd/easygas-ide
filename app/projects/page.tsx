@@ -9,6 +9,7 @@ import { PoweredBy } from "@/components/PoweredBy";
 import { RulebookAutoCheck } from "@/components/RulebookAutoCheck";
 import { CloneFromLink } from "@/components/projects/CloneFromLink";
 import { GoogleScriptsList } from "@/components/projects/GoogleScriptsList";
+import { HomeGreeting } from "@/components/projects/HomeGreeting";
 import { ProjectSidebar } from "@/components/projects/ProjectSidebar";
 import { PromptComposer } from "@/components/projects/PromptComposer";
 import { SetupChecklist } from "@/components/projects/SetupChecklist";
@@ -17,6 +18,7 @@ import { StartModeTabs, startModeFrom } from "@/components/projects/StartModeTab
 import { GuidedTour } from "@/components/tour/GuidedTour";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { getDeployedMap, listProjects } from "@/lib/projects";
+import { premiumStatus } from "@/lib/premium/status";
 import { getAppSetting } from "@/lib/settings";
 import { shouldNudgeApp } from "@/lib/remote/nudge";
 import { getSetupStatus } from "@/lib/setup-status";
@@ -24,15 +26,6 @@ import { listSharesRemote } from "@/lib/share/remote";
 import { tourSeenKey } from "@/lib/tour";
 
 export const metadata = { title: "หน้าหลัก — EasyGAS IDE" };
-
-/** the greeting follows the computer's clock (the phone sees the same one: it is this computer's app) */
-function greeting(): string {
-  const h = new Date().getHours();
-  if (h >= 5 && h < 12) return "สวัสดีตอนเช้า";
-  if (h >= 12 && h < 17) return "สวัสดีตอนบ่าย";
-  if (h >= 17 && h < 21) return "สวัสดีตอนเย็น";
-  return "สวัสดีตอนค่ำ";
-}
 
 /** the other ways in, under the work box; each is a place the box's tabs or the rail also reach */
 const ALT_STARTS = [
@@ -49,7 +42,7 @@ const ALT_STARTS = [
  * from the website. The status bar along the bottom says what the app is set up with.
  */
 export default async function ProjectsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const [projects, deployed, setup, tourSeen, params, appNudge, shared] = await Promise.all([
+  const [projects, deployed, setup, tourSeen, params, appNudge, shared, premium] = await Promise.all([
     listProjects(),
     getDeployedMap(),
     getSetupStatus(),
@@ -57,14 +50,16 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
     searchParams,
     shouldNudgeApp().catch(() => false),
     listSharesRemote("new").catch(() => null),
+    premiumStatus().catch(() => ({ active: false })),
   ]);
   const mode = startModeFrom(params.mode);
   // the easygas://clone/<slug> protocol lands here with the slug (electron/main.js)
   const cloneLink = typeof params.clone === "string" ? params.clone.slice(0, 300) : "";
 
   return (
-    <main className="flex min-h-screen flex-col bg-bg text-fg md:h-screen">
+    <main className="flex min-h-screen flex-col bg-bg text-fg md:h-screen md:overflow-hidden">
       <AppTopBar
+        pro={premium.active}
         center={<span className="truncate text-sm font-semibold">หน้าหลัก</span>}
         right={
           <>
@@ -82,29 +77,33 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
           <ProjectSidebar projects={projects} deployed={deployed} googleConnected={setup.google.loggedIn} />
         </div>
 
-        <section className="order-1 min-w-0 flex-1 md:order-2 md:min-h-0 md:overflow-y-auto md:bg-main">
+        {/* relative: an absolutely placed child (an sr-only label) anchors here, not to the page, so the window never scrolls */}
+        <section className="relative order-1 min-w-0 flex-1 md:order-2 md:min-h-0 md:overflow-y-auto md:bg-main">
           <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-4 py-5 md:px-7 md:py-6">
             {appNudge && <AppNudge />}
             {(!setup.engineReady || !setup.google.loggedIn) && <SetupChecklist setup={setup} />}
 
-            <header>
-              <h1 className="text-xl font-semibold sm:text-2xl">{greeting()}</h1>
-              <p className="hint">เริ่มงานใหม่ตรงนี้ หรือเปิดโปรเจกต์ที่ค้างไว้จากแผงโปรเจกต์</p>
-            </header>
+            {mode !== "existing" && (
+              <HomeGreeting now={Date.now()} projects={projects.length} deployed={projects.filter((p) => deployed[p.id]).length} />
+            )}
 
-            <section className="card overflow-hidden" aria-live="polite">
-              <div className="flex flex-wrap items-center gap-2 border-b border-line bg-sunken px-3 py-2">
-                <StartModeTabs active={mode} />
-                <Link
-                  href="/settings?s=ai"
-                  title="AI ที่ใช้ตอนนี้ · กดเพื่อเปลี่ยน"
-                  className={`btn btn-ghost btn-sm ml-auto hidden sm:inline-flex ${setup.engineReady ? "" : "text-warn-text"}`}
-                >
-                  <SparklesIcon className="h-4 w-4 text-ai" aria-hidden />
-                  {setup.engineReady ? shortEngineLabel(setup.engineLabel) : "ตั้งค่า AI"}
-                </Link>
-              </div>
-              <div className="p-4 sm:p-5">
+            {/* the Google screen has its own framed list, so the box around it is dropped there (no frame in a frame) */}
+            <section className={mode === "existing" ? "" : "card overflow-hidden"} aria-live="polite">
+              {/* the Google screen (rail → Google) is the scripts list alone, without the start tabs */}
+              {mode !== "existing" && (
+                <div className="flex flex-wrap items-center gap-2 border-b border-line bg-sunken px-3 py-2">
+                  <StartModeTabs active={mode} />
+                  <Link
+                    href="/settings?s=ai"
+                    title="AI ที่ใช้ตอนนี้ · กดเพื่อเปลี่ยน"
+                    className={`btn btn-ghost btn-sm ml-auto hidden sm:inline-flex ${setup.engineReady ? "" : "text-warn-text"}`}
+                  >
+                    <SparklesIcon className="h-4 w-4 text-ai" aria-hidden />
+                    {setup.engineReady ? shortEngineLabel(setup.engineLabel) : "ตั้งค่า AI"}
+                  </Link>
+                </div>
+              )}
+              <div className={mode === "existing" ? "" : "p-4 sm:p-5"}>
                 {mode === "new" ? (
                   <PromptComposer engineReady={setup.engineReady} />
                 ) : mode === "clone" ? (
@@ -132,29 +131,32 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
               </div>
             </section>
 
-            <div className="grid gap-6 lg:grid-cols-2">
-              <section aria-labelledby="alt-title" className="min-w-0">
-                <h2 id="alt-title" className="mb-1 text-[12.5px] font-semibold text-muted">
-                  เริ่มแบบอื่น
-                </h2>
-                <ul className="-mx-2 flex flex-col">
-                  {ALT_STARTS.map((a) => (
-                    <li key={a.href}>
-                      <Link href={a.href} className="flex min-h-11 items-center gap-2.5 rounded-lg px-2 py-1.5 transition hover:bg-sunken">
-                        <span className={`icon-chip shrink-0 ${a.tone}`}>
-                          <a.Icon className="h-4 w-4" aria-hidden />
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[13.5px] font-medium leading-snug">{a.title}</span>
-                          <span className="block truncate text-[11.5px] leading-snug text-muted">{a.hint}</span>
-                        </span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-              <SharedLatest list={shared} />
-            </div>
+            {/* the Google tab is the scripts list only: these two have their own screens (and the other tabs) */}
+            {mode !== "existing" && (
+              <div className="grid gap-6 lg:grid-cols-2">
+                <section aria-labelledby="alt-title" className="min-w-0">
+                  <h2 id="alt-title" className="mb-1 text-[12.5px] font-semibold text-muted">
+                    เริ่มแบบอื่น
+                  </h2>
+                  <ul className="-mx-2 flex flex-col">
+                    {ALT_STARTS.map((a) => (
+                      <li key={a.href}>
+                        <Link href={a.href} className="flex min-h-11 items-center gap-2.5 rounded-lg px-2 py-1.5 transition hover:bg-sunken">
+                          <span className={`icon-chip shrink-0 ${a.tone}`}>
+                            <a.Icon className="h-4 w-4" aria-hidden />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[13.5px] font-medium leading-snug">{a.title}</span>
+                            <span className="block truncate text-[11.5px] leading-snug text-muted">{a.hint}</span>
+                          </span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+                <SharedLatest list={shared} />
+              </div>
+            )}
 
             <AnnouncementBanner />
             <div className="md:hidden">

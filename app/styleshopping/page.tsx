@@ -1,4 +1,5 @@
 import { StyleShopping } from "@/components/style/StyleShopping";
+import { premiumStatus } from "@/lib/premium/status";
 import { getProject } from "@/lib/projects";
 import { STYLE_CATALOG, STYLE_CATEGORIES } from "@/lib/style-catalog";
 
@@ -17,13 +18,17 @@ export default async function StyleShoppingPage({
 }) {
   const { project } = await searchParams;
   // an unknown or malformed id is ignored: the page just works in "new project" mode
-  const target = typeof project === "string" ? await getProject(project) : null;
+  const [target, premium] = await Promise.all([
+    typeof project === "string" ? getProject(project) : null,
+    premiumStatus().catch(() => ({ active: false })),
+  ]);
 
   return (
     <StyleShopping
       catalog={STYLE_CATALOG}
       categories={STYLE_CATEGORIES}
       targetProject={target ? { id: target.id, name: target.name } : undefined}
+      pro={premium.active}
     />
   );
 }

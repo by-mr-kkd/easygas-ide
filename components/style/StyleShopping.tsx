@@ -39,11 +39,13 @@ export function StyleShopping({
   catalog,
   categories,
   targetProject,
+  pro = false,
 }: {
   catalog: StyleItem[];
   categories: StyleCategory[];
   /** when set, the styles are sent into this existing project instead of creating a new one */
   targetProject?: { id: string; name: string };
+  pro?: boolean;
 }) {
   const router = useRouter();
   const openerRef = useRef<HTMLButtonElement>(null);
@@ -103,7 +105,7 @@ export function StyleShopping({
 
   async function submit() {
     const kickoff = prompt.trim();
-    if (!kickoff || pending) return;
+    if (!kickoff || pending || selectedItems.length === 0) return;
     setPending(true);
     setSubmitError(null);
     try {
@@ -129,6 +131,7 @@ export function StyleShopping({
   return (
     <div className="flex h-screen flex-col bg-bg text-fg">
       <AppTopBar
+        pro={pro}
         center={<span className="truncate text-sm font-semibold">เลือกสไตล์</span>}
         right={<ThemeToggle />}
       />

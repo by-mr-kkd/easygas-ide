@@ -7,16 +7,22 @@ import type { ReactNode } from "react";
  * app it is also the window's title bar: `.titlebar` makes its empty space drag the window and keeps
  * the right edge clear of the minimise / maximise / close buttons — keep it exactly h-12 (48px, the
  * same number as TITLEBAR_HEIGHT in electron/main.js).
- * `center` = where you are (a page name, or the project switcher); `right` = that screen's actions.
+ * `center` = where you are (a page name, or the project switcher); `right` = that screen's actions;
+ * `pro` = this install has Pro (the yellow tag after the name).
  */
-export function AppTopBar({ center, right }: { center?: ReactNode; right?: ReactNode }) {
+export function AppTopBar({ center, right, pro = false }: { center?: ReactNode; right?: ReactNode; pro?: boolean }) {
   return (
     <header className="titlebar sticky top-0 z-30 flex h-12 flex-none items-center gap-2.5 border-b border-line bg-panel2 pl-3 sm:pl-4">
-      <Link href="/projects" className="flex shrink-0 items-center gap-2" title="โปรเจกต์ทั้งหมด">
+      <Link href="/projects" className="flex shrink-0 items-center gap-2" title="หน้าหลัก">
         <Image src="/icon/android-icon-192x192.png" alt="" width={24} height={24} className="rounded-md" />
         <b className="hidden text-[15px] tracking-tight sm:block">
           Easy<span className="text-accent-text">GAS</span>
         </b>
+        {pro && (
+          <span title="EasyGAS Pro" className="rounded bg-[#F5B301] px-1.5 py-px text-[10px] font-bold leading-4 text-[#3D2A00]">
+            PRO
+          </span>
+        )}
       </Link>
       {center && (
         <>

@@ -129,7 +129,7 @@ export async function SettingsShell({
 
   return (
     <div className="min-h-screen bg-bg">
-      <AppTopBar center={<span className="truncate text-sm font-semibold">ตั้งค่า</span>} right={<ThemeToggle />} />
+      <AppTopBar pro={premium.active} center={<span className="truncate text-sm font-semibold">ตั้งค่า</span>} right={<ThemeToggle />} />
       <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6">
         <Link href={project ? `/projects/${project.id}` : "/projects"} className="btn btn-ghost btn-sm max-w-full">
           <ArrowLeftIcon className="h-4 w-4 shrink-0" />

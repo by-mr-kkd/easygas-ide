@@ -14,6 +14,7 @@ import { premiumStatus } from "../premium/status.ts";
 import { readPremium } from "../premium/store.ts";
 import { dataRoot } from "../local/paths.ts";
 import { readJson, writeJsonAtomic } from "../local/json-store.ts";
+import type { CodeAttachment } from "./code.ts";
 
 export const SUPPORT_SITE = "https://easygaside.tech";
 const CHECK_MS = 10 * 60_000;
@@ -88,9 +89,9 @@ async function call<T>(body: Record<string, unknown>): Promise<T> {
 export const ticketUrl = (id: string, token: string | null): string =>
   `${SUPPORT_SITE}/board/t/${id}${token ? `?k=${encodeURIComponent(token)}` : ""}`;
 
-export async function sendTicket(input: { title: string; body: string; name: string }): Promise<{ id: string; url: string }> {
+export async function sendTicket(input: { title: string; body: string; name: string; code?: CodeAttachment | null }): Promise<{ id: string; url: string }> {
   if (!(await premiumStatus()).active) throw new SupportError("Fast Track ใช้ได้เฉพาะ Pro");
-  const r = await call<{ id?: unknown; token?: unknown }>({ action: "create", ...input });
+  const r = await call<{ id?: unknown; token?: unknown }>({ action: "create", ...input, code: input.code ?? undefined });
   if (typeof r.id !== "string" || typeof r.token !== "string") throw new SupportError("ส่งไม่สำเร็จ ลองใหม่อีกครั้ง");
   const f = await readFile();
   f.tickets = [{ id: r.id, token: r.token, title: input.title.trim().slice(0, 140), createdAt: new Date().toISOString(), seenAdminAt: null }, ...f.tickets].slice(0, 200);
@@ -127,6 +128,60 @@ export async function listTickets(): Promise<Ticket[]> {
   const unread = tickets.filter((t) => t.unread).length;
   if (unread !== f.unread) await writeFile({ ...f, unread });
   return tickets;
+}
+
+/** What the server says about attached code: the project name and how many files (the code stays there). */
+export type CodeNote = { project: string; files: number } | null;
+
+export interface TicketMessage {
+  id: string;
+  body: string;
+  author: string;
+  admin: boolean;
+  at: string;
+  code: CodeNote;
+}
+
+export interface TicketDetail {
+  id: string;
+  title: string;
+  url: string;
+  locked: boolean;
+  adminRepliedAt: string | null;
+  /** the question first, then every reply */
+  messages: TicketMessage[];
+}
+
+type DetailRow = {
+  thread?: { id: string; title: string; body: string; author_name: string; created_at: string; locked: boolean; admin_replied_at: string | null; code: CodeNote };
+  replies?: { id: string; body: string; author_name: string; author_kind: string; created_at: string; code: CodeNote }[];
+};
+
+/** One ticket with its conversation, to read and answer inside the app. */
+export async function getTicket(id: string): Promise<TicketDetail> {
+  if (!(await premiumStatus()).active) throw new SupportError("Fast Track ใช้ได้เฉพาะ Pro");
+  const r = await call<DetailRow>({ action: "get", id });
+  if (!r.thread) throw new SupportError("ไม่พบคำถามนี้");
+  const t = r.thread;
+  const replies = r.replies ?? [];
+  const mine = (await readFile()).tickets.find((x) => x.id === t.id);
+  return {
+    id: t.id,
+    title: t.title,
+    url: ticketUrl(t.id, mine?.token ?? null),
+    locked: t.locked,
+    adminRepliedAt: t.admin_replied_at ?? null,
+    messages: [
+      { id: t.id, body: t.body, author: t.author_name, admin: false, at: t.created_at, code: t.code ?? null },
+      ...replies.map((x) => ({ id: x.id, body: x.body, author: x.author_name, admin: x.author_kind === "admin", at: x.created_at, code: x.code ?? null })),
+    ],
+  };
+}
+
+/** The asker answers back from the app, optionally with the code again. */
+export async function replyTicket(id: string, body: string, code?: CodeAttachment | null): Promise<void> {
+  if (!(await premiumStatus()).active) throw new SupportError("Fast Track ใช้ได้เฉพาะ Pro");
+  await call<{ id?: unknown }>({ action: "reply", id, body, code: code ?? undefined });
 }
 
 /** The user opened a ticket: its answers so far are read. */

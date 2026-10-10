@@ -14,6 +14,7 @@ import {
 } from "@heroicons/react/24/outline";
 import { useProjectStore } from "@/store/useProjectStore";
 import { AppTopBar } from "@/components/AppTopBar";
+import { HelpButton } from "@/components/ide/HelpDialog";
 import { GuidedTour } from "@/components/tour/GuidedTour";
 import { QuotaStatus } from "./QuotaStatus";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
@@ -52,6 +53,8 @@ const VIEWS: { id: View; label: string; Icon: typeof EyeIcon; wideOnly?: boolean
 export function IdeShell({
   projectId,
   projectName,
+  pro = false,
+  support = null,
   initialFiles,
   initialImages,
   initialMessages,
@@ -80,6 +83,10 @@ export function IdeShell({
   /** Settings → AI: the user allowed reading Claude's quota. */
   claudeQuotaAllowed?: boolean;
   projectName: string;
+  /** this install has Pro: the top bar shows the tag */
+  pro?: boolean;
+  /** Pro: the help button's Fast Track (machine line for the question, answers not opened yet) */
+  support?: { machineInfo: string; unread: number } | null;
   initialFiles: { path: string; content: string }[];
   initialImages?: { url: string }[];
   /** The conversation so far (lib/messages-text chatHistoryOf), and whether an AI turn is running right now. */
@@ -224,6 +231,7 @@ export function IdeShell({
   return (
     <main className="flex h-dvh flex-col overflow-hidden bg-bg text-fg">
       <AppTopBar
+        pro={pro}
         center={<ProjectSwitcher currentId={projectId} currentName={projectName} projects={projects} />}
         right={
           <>
@@ -249,6 +257,7 @@ export function IdeShell({
               </div>
             )}
             <ThemeToggle className="btn-sm max-sm:hidden" />
+            {pro && support && <HelpButton project={{ id: projectId, name: projectName }} machineInfo={support.machineInfo} unread={support.unread} />}
             <Link href={settingsHref("ai")} title="ตั้งค่า" aria-label="ตั้งค่า" className="btn btn-ghost btn-sm btn-icon">
               <Cog6ToothIcon className="h-[18px] w-[18px]" />
             </Link>

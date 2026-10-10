@@ -142,3 +142,29 @@ export function scopeLabel(scope: string): string {
   };
   return MAP[s] ?? s;
 }
+
+// ---------- app only: Fast Track code attachments ----------
+
+export const REDACTED = "«ซ่อนคีย์ไว้»";
+const PRIVATE_KEY_BLOCK = /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g;
+
+/**
+ * The same credentials scanShare refuses, masked in place instead (code attached to a support question goes
+ * to the owner only, and the asker often does not know how to take a key out). Returns how many were masked.
+ */
+export function redactCredentials(text: string): { text: string; count: number } {
+  let count = 0;
+  const hide = () => {
+    count++;
+    return REDACTED;
+  };
+  let out = text.replace(PRIVATE_KEY_BLOCK, hide);
+  for (const { re } of BLOCK) out = out.replace(re, hide);
+  out = out.replace(ASSIGN, (whole: string, _name: string, value: string) => {
+    const v = value.trim();
+    if (PLACEHOLDER.test(v) || /\s/.test(v) || v === REDACTED) return whole;
+    count++;
+    return whole.replace(value, REDACTED);
+  });
+  return { text: out, count };
+}

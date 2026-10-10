@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { savePrefsAction } from "./actions";
 import { UninstallApp } from "@/components/settings/UninstallApp";
 import { AppUpdateCard } from "@/components/settings/AppUpdateCard";
+import { DataFolder } from "@/components/settings/DataFolder";
 import { autoUpdateEnabled, readUpdateState } from "@/lib/app-update";
 import { EngineForm } from "@/components/settings/EngineForm";
 import { PremiumSection } from "@/components/premium/PremiumSection";
@@ -26,6 +27,8 @@ import { LLM_PROVIDERS, providerConfig } from "@/lib/llm/catalog";
 import { dataRoot } from "@/lib/local/paths";
 import { resolvePrefs } from "@/lib/preferences";
 import { premiumStatus } from "@/lib/premium/status";
+import { listProjects } from "@/lib/projects";
+import { machineInfo } from "@/lib/support/machine-info";
 import { getSetupStatus } from "@/lib/setup-status";
 import { getApiKey, getSettings, keyIdFor, type KeyId } from "@/lib/settings";
 
@@ -78,13 +81,6 @@ const HEAD: Record<SettingsSection, { title: string; hint: string }> = {
 };
 
 /** One line about this install for a Fast Track question: version, Windows, the AI in use (no keys, no paths). */
-async function machineInfo(): Promise<string> {
-  const settings = await getSettings();
-  const ai = settings.engine === "api" ? `API ${settings.provider}` : `${settings.engine}${settings.cliModel ? ` (${settings.cliModel})` : ""}`;
-  const os = process.platform === "win32" ? "Windows" : process.platform;
-  return `EasyGAS IDE ${APP_VERSION} · ${os} · AI: ${ai}`;
-}
-
 /** The remote section's data — for the person at the computer only ("remote" when a phone asks). */
 async function loadRemoteSection() {
   if (await isRemoteRequest()) return "remote" as const;
@@ -144,7 +140,13 @@ export default async function SettingsPage({
 
       {section === "premium" && premium && <PremiumSection status={premium} />}
 
-      {section === "support" && premium && <SupportSection pro={premium.active} machineInfo={await machineInfo()} />}
+      {section === "support" && premium && (
+        <SupportSection
+          pro={premium.active}
+          machineInfo={await machineInfo()}
+          projects={(await listProjects()).map((p) => ({ id: p.id, name: p.name }))}
+        />
+      )}
 
       {section === "remote" &&
         (remote === "remote" ? (
@@ -160,8 +162,7 @@ export default async function SettingsPage({
       {section === "data" && (
         <>
           <AppUpdateCard version={APP_VERSION} enabled={await autoUpdateEnabled()} state={await readUpdateState()} />
-          <p className="card break-all px-4 py-3 font-mono text-[13px] text-fg">{dataRoot()}</p>
-          <p className="hint mt-2">โปรเจกต์ทั้งหมดและการตั้งค่าของคุณเก็บอยู่ในโฟลเดอร์นี้ ไม่ได้ส่งไปเก็บที่อื่น</p>
+          <DataFolder path={dataRoot()} />
           <UninstallApp
             available={findUninstaller({ env: process.env, platform: process.platform, execPath: process.execPath, exists: existsSync }) !== null}
           />

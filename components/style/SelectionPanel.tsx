@@ -150,10 +150,10 @@ export function SelectionPanel({
         <button
           type="button"
           onClick={onSubmit}
-          disabled={!prompt.trim() || pending}
+          disabled={count === 0 || !prompt.trim() || pending}
           className="btn btn-primary btn-lg w-full"
         >
-          {pending ? pendingLabel : submitLabel}
+          {pending ? pendingLabel : count === 0 ? "เลือกสไตล์อย่างน้อย 1 รายการ" : submitLabel}
         </button>
         {error && (
           <div role="alert" className="callout callout-danger">

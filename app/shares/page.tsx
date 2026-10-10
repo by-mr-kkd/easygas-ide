@@ -8,6 +8,7 @@ import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { listSharesRemote, ShareApiError, type ShareList } from "@/lib/share/remote";
 import { shareDateLabel } from "@/lib/share/summary";
 import { getSetupStatus } from "@/lib/setup-status";
+import { premiumStatus } from "@/lib/premium/status";
 
 export const metadata = { title: "ระบบที่คนแชร์ — EasyGAS IDE" };
 
@@ -19,8 +20,9 @@ export const metadata = { title: "ระบบที่คนแชร์ — Ea
 export default async function SharesPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const params = await searchParams;
   const order = params.order === "clones" ? "clones" : "new";
-  const [setup, result] = await Promise.all([
+  const [setup, premium, result] = await Promise.all([
     getSetupStatus(),
+    premiumStatus().catch(() => ({ active: false })),
     listSharesRemote(order).then(
       (list): { list: ShareList; error: null } => ({ list, error: null }),
       (e: unknown): { list: null; error: string } => ({ list: null, error: e instanceof ShareApiError ? e.message : "โหลดรายการไม่สำเร็จ ลองใหม่อีกครั้ง" }),
@@ -29,11 +31,11 @@ export default async function SharesPage({ searchParams }: { searchParams: Promi
   const shares = result.list?.shares.map((s) => ({ ...s, dateLabel: shareDateLabel(s.createdAt) })) ?? [];
 
   return (
-    <main className="flex min-h-screen flex-col bg-bg text-fg md:h-screen">
-      <AppTopBar center={<span className="truncate text-sm font-semibold">ระบบที่คนแชร์</span>} right={<ThemeToggle className="md:hidden" />} />
+    <main className="flex min-h-screen flex-col bg-bg text-fg md:h-screen md:overflow-hidden">
+      <AppTopBar pro={premium.active} center={<span className="truncate text-sm font-semibold">ระบบที่คนแชร์</span>} right={<ThemeToggle className="md:hidden" />} />
       <div className="flex flex-1 md:min-h-0">
         <AppRail active="shares" />
-        <section className="min-w-0 flex-1 md:min-h-0 md:overflow-y-auto md:bg-main">
+        <section className="relative min-w-0 flex-1 md:min-h-0 md:overflow-y-auto md:bg-main">
           <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 py-5 md:px-7 md:py-6">
             <header className="flex flex-wrap items-end justify-between gap-3">
               <div>
