@@ -7,6 +7,7 @@ import { saveEngineAction, setClaudeQuotaAction } from "@/app/settings/actions";
 import type { LlmProvider } from "@/lib/llm/catalog";
 import type { EngineId, KeyId } from "@/lib/settings";
 import { ApiKeyForm } from "./ApiKeyForm";
+import { CliOverview } from "./CliOverview";
 import { CliSetup } from "./CliSetup";
 
 interface ProviderOption {
@@ -216,6 +217,12 @@ export function EngineForm(props: {
 
   return (
     <div className="space-y-3">
+      <CliOverview
+        found={{ claude: props.claudeFound, codex: props.codexFound, muse: props.museFound }}
+        engine={choice.engine}
+        onUse={(engine) => commit({ ...choice, engine })}
+      />
+      <h2 className="pt-2 text-sm font-semibold text-fg">เลือก AI ที่ใช้</h2>
       <div role="radiogroup" aria-label="AI ที่ใช้สร้างโค้ด" className="space-y-2">
         {ENGINE_CARDS.map((c) => {
           const selected = choice.engine === c.id;

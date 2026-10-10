@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowDownTrayIcon,
@@ -10,8 +10,8 @@ import {
   ChevronRightIcon,
   ClipboardDocumentIcon,
 } from "@heroicons/react/24/outline";
-import { checkCliAction, openCliTerminalAction, type CliCheck } from "@/app/settings/actions";
 import { CLI_INSTALL, type InstallableCli } from "@/lib/engines/cli-install";
+import { checkCli, openCli, useCliStatus } from "./cli-status";
 
 const BTN = "btn btn-secondary btn-sm";
 const PRIMARY = "btn btn-primary btn-sm";
@@ -23,69 +23,24 @@ const CODE = "select-all break-all rounded-lg border border-line bg-sunken px-3 
  *    running the vendor's official installer (the copy-paste steps stay as the manual route);
  *  - "ล็อกอิน": opens a window running the tool's own sign-in — the app never handles credentials;
  *  - "ตรวจอีกครั้ง": looks again and runs the tool, so no restart is needed.
+ * The status is shared with the overview at the top of the page (./cli-status).
  */
 export function CliSetup({ tool, found }: { tool: InstallableCli; found: boolean }) {
   const info = CLI_INSTALL[tool];
   const router = useRouter();
-  const [busy, setBusy] = useState<"check" | "install" | "login" | null>(null);
-  const [result, setResult] = useState<CliCheck | null>(null);
+  const { result, busy, message, isFound } = useCliStatus(tool, found);
   const [confirming, setConfirming] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const [copyError, setCopyError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const isFound = result ? result.found : found;
-
-  // a found tool is asked once on load whether it is signed in, so the page says so without a click
-  useEffect(() => {
-    if (!found) return;
-    let gone = false;
-    setBusy("check");
-    checkCliAction(tool)
-      .then((r) => {
-        if (!gone) setResult(r);
-      })
-      .catch(() => {
-        // the button below still works; nothing to say yet
-      })
-      .finally(() => {
-        if (!gone) setBusy(null);
-      });
-    return () => {
-      gone = true;
-    };
-  }, [tool, found]);
-
   async function recheck() {
-    setBusy("check");
-    setMessage(null);
-    try {
-      setResult(await checkCliAction(tool));
-      router.refresh();
-    } catch {
-      setMessage("ตรวจไม่สำเร็จ ลองใหม่อีกครั้ง");
-    } finally {
-      setBusy(null);
-    }
+    await checkCli(tool);
+    router.refresh();
   }
 
-  async function open(kind: "install" | "login") {
-    setBusy(kind);
-    setMessage(null);
+  function open(kind: "install" | "login") {
     setConfirming(false);
-    try {
-      const r = await openCliTerminalAction(tool, kind);
-      setMessage(
-        r.ok
-          ? kind === "install"
-            ? "เปิดหน้าต่าง PowerShell แล้ว รอจนติดตั้งเสร็จ แล้วกด ล็อกอิน ต่อ"
-            : "เปิดหน้าต่างล็อกอินแล้ว ทำตามในหน้าต่างนั้น เสร็จแล้วกด ตรวจอีกครั้ง"
-          : (r.error ?? "เปิดหน้าต่างไม่สำเร็จ"),
-      );
-    } catch {
-      setMessage("เปิดหน้าต่างไม่สำเร็จ ลองทำตามขั้นตอนด้านล่างเอง");
-    } finally {
-      setBusy(null);
-    }
+    void openCli(tool, kind);
   }
 
   async function copy() {
@@ -93,7 +48,7 @@ export function CliSetup({ tool, found }: { tool: InstallableCli; found: boolean
       await navigator.clipboard.writeText(info.command);
       setCopied(true);
     } catch {
-      setMessage("คัดลอกไม่สำเร็จ เลือกข้อความแล้วกด Ctrl+C เอง");
+      setCopyError("คัดลอกไม่สำเร็จ เลือกข้อความแล้วกด Ctrl+C เอง");
     }
   }
 
@@ -109,9 +64,9 @@ export function CliSetup({ tool, found }: { tool: InstallableCli; found: boolean
       ล็อกอิน {info.name}
     </button>
   );
-  const notice = message && (
+  const notice = (message || copyError) && (
     <p className="text-[13px] font-medium text-fg" aria-live="polite">
-      {message}
+      {copyError ?? message}
     </p>
   );
 
