@@ -52,10 +52,13 @@ export function CommandPalette({
   googleConnected,
   deployed,
   onJumpPane,
+  canVerify = true,
 }: {
   projectId: string;
   googleConnected: boolean;
   deployed: boolean;
+  /** false for a Sheet-bound project (no web page to run) */
+  canVerify?: boolean;
   onJumpPane?: (pane: Pane) => void;
 }) {
   const router = useRouter();
@@ -135,7 +138,7 @@ export function CommandPalette({
         icon: ArrowPathIcon,
         run: () => requestAction("recheck"),
       });
-      list.push({
+      if (canVerify) list.push({
         id: "verify",
         label: "ทดสอบรันจริง",
         hint: "เปิดแอปจริงแล้วซ่อมให้ถ้าเจอปัญหา",
@@ -194,7 +197,7 @@ export function CommandPalette({
       run: () => router.push("/styleshopping"),
     });
     return list;
-  }, [order, hasFiles, deployed, googleConnected, projectId, setActive, runAgent, requestAction, router, onJumpPane]);
+  }, [order, hasFiles, deployed, googleConnected, projectId, setActive, runAgent, requestAction, router, onJumpPane, canVerify]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

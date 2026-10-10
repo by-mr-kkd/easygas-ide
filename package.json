@@ -1,6 +1,6 @@
 {
   "name": "easygas-ide",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "private": true,
   "description": "EasyGAS IDE — local AI coding app for Google Apps Script. Bring your own AI (API key or subscription CLI) and deploy to your own Google account.",
   "license": "SEE LICENSE IN LICENSE",

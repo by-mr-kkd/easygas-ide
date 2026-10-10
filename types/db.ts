@@ -23,7 +23,10 @@ export interface EgsProject {
   target: TargetId;
   spec: Record<string, unknown> | null;
   script_id: string | null;
+  /** kind "bound": the Google Sheet the script lives in (set by the first publish, lib/bound.ts) */
   bound_sheet_id: string | null;
+  /** kind "bound": the files last pushed into that script (a bound project has no web-app deployment) */
+  bound_push?: { hash: string; at: string } | null;
   scratch_script_id: string | null;
   token_spend_input: number;
   token_spend_output: number;

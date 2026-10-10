@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readdir } from "node:fs/promises";
+import { sheetUrl } from "@/lib/bound";
 import { readJson, writeJsonAtomic } from "@/lib/local/json-store";
 import { projectMetaPath, projectsRoot, srcDir } from "@/lib/local/paths";
 import { LOCAL_USER_ID, type EgsDeployment, type EgsProject, type ProjectKind } from "@/types/db";
@@ -145,7 +146,11 @@ export async function saveDeployment(id: string, deployment: EgsDeployment): Pro
 /** Map of project_id → live exec URL for deployed web apps. */
 export async function getDeployedMap(): Promise<Record<string, string>> {
   const map: Record<string, string> = {};
-  for (const p of await listProjects()) if (p.deployment?.exec_url) map[p.id] = p.deployment.exec_url;
+  for (const p of await listProjects()) {
+    if (p.deployment?.exec_url) map[p.id] = p.deployment.exec_url;
+    // a Sheet-bound project has no /exec: published = pushed into its Sheet
+    else if (p.kind === "bound" && p.bound_sheet_id && p.bound_push) map[p.id] = sheetUrl(p.bound_sheet_id);
+  }
   return map;
 }
 

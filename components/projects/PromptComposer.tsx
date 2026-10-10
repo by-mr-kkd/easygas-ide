@@ -3,11 +3,30 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRightIcon, LightBulbIcon, QueueListIcon, Squares2X2Icon } from "@heroicons/react/24/outline";
+import { ArrowRightIcon, GlobeAltIcon, LightBulbIcon, QueueListIcon, Squares2X2Icon, TableCellsIcon } from "@heroicons/react/24/outline";
 import { newProjectReturnId } from "@/app/projects/actions";
 
 const NAME_MAX = 60;
 const WIZARD_PROJECT_NAME = "โปรเจกต์ใหม่";
+
+/** what is being built: a web page people open, or a script inside a Google Sheet (lib/bound.ts) */
+const KINDS = [
+  {
+    id: "webapp",
+    label: "เว็บแอป",
+    Icon: GlobeAltIcon,
+    hint: "ได้ลิงก์หน้าเว็บให้คนเปิดใช้",
+    tip: "หน้าเว็บที่คนเปิดจากลิงก์ได้ เช่น ฟอร์มจองคิว หน้าสรุปยอด เก็บข้อมูลลง Google Sheet ให้อัตโนมัติ",
+  },
+  {
+    id: "bound",
+    label: "ผูกกับ Google Sheet",
+    Icon: TableCellsIcon,
+    hint: "สร้างชีตใหม่พร้อมสคริปต์ในชีต ใช้งานจากเมนูในชีต",
+    tip: "ตอนเผยแพร่ แอปจะสร้าง Google Sheet ใหม่พร้อมสคริปต์ในตัว ใช้งานจากเมนูบนชีต ปุ่ม แถบด้านข้าง หรือการตั้งเวลา ไม่มีลิงก์หน้าเว็บ",
+  },
+] as const;
+type Kind = (typeof KINDS)[number]["id"];
 
 /** one click puts the text in the box; the label is what fits on a chip */
 const EXAMPLES: { label: string; text: string }[] = [
@@ -57,6 +76,7 @@ export function PromptComposer({ engineReady }: { engineReady: boolean }) {
   const [prompt, setPrompt] = useState("");
   const [pending, setPending] = useState<"prompt" | "wizard" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [projectKind, setProjectKind] = useState<Kind>("webapp");
 
   function fail(message: string) {
     busy.current = false;
@@ -70,7 +90,7 @@ export function PromptComposer({ engineReady }: { engineReady: boolean }) {
     setPending(kind);
     setError(null);
     try {
-      const r = await newProjectReturnId(name);
+      const r = await newProjectReturnId(name, projectKind);
       if ("error" in r) return fail(r.error);
       try {
         for (const [key, value] of Object.entries(stash)) sessionStorage.setItem(key, value);
@@ -110,6 +130,27 @@ export function PromptComposer({ engineReady }: { engineReady: boolean }) {
       >
         <h1 className="text-xl font-semibold sm:text-[22px]">อยากได้ระบบอะไร?</h1>
         <p className="hint mb-3">เล่าเป็นภาษาพูดได้ AI จะเขียนโค้ดและทำหน้าจอตัวอย่างให้ดูก่อน ยังไม่แตะบัญชี Google จนกว่าจะกดเผยแพร่</p>
+        <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <div className="seg" role="radiogroup" aria-label="ระบบแบบไหน">
+            {KINDS.map((k) => (
+              <button
+                key={k.id}
+                type="button"
+                role="radio"
+                aria-checked={projectKind === k.id}
+                aria-pressed={projectKind === k.id}
+                onClick={() => setProjectKind(k.id)}
+                disabled={pending !== null}
+                title={k.tip}
+                className="seg-item"
+              >
+                <k.Icon className="h-4 w-4" aria-hidden />
+                {k.label}
+              </button>
+            ))}
+          </div>
+          <span className="hint">{KINDS.find((k) => k.id === projectKind)?.hint}</span>
+        </div>
         <textarea
           ref={fieldRef}
           rows={4}

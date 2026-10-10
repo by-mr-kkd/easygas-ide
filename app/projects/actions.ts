@@ -30,8 +30,9 @@ function buildSpec(name: string): Record<string, unknown> {
  * Create a project and RETURN its id (no redirect) — the projects home and the style picker stash
  * their kickoff prompt in sessionStorage before navigating into the IDE.
  */
-export async function newProjectReturnId(name: string): Promise<{ id: string } | { error: string }> {
-  return { id: await createProject(name, "webapp", buildSpec(name)) };
+export async function newProjectReturnId(name: string, kind: unknown = "webapp"): Promise<{ id: string } | { error: string }> {
+  // "bound" = a script inside a new Google Sheet (lib/bound.ts); anything else is a web app
+  return { id: await createProject(name, kind === "bound" ? "bound" : "webapp", buildSpec(name)) };
 }
 
 /**

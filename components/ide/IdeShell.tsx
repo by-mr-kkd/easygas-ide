@@ -15,6 +15,7 @@ import {
 import { useProjectStore } from "@/store/useProjectStore";
 import { AppTopBar } from "@/components/AppTopBar";
 import { HelpButton } from "@/components/ide/HelpDialog";
+import { BoundSheetBar } from "@/components/ide/BoundSheetBar";
 import { GuidedTour } from "@/components/tour/GuidedTour";
 import { QuotaStatus } from "./QuotaStatus";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
@@ -55,6 +56,7 @@ export function IdeShell({
   projectName,
   pro = false,
   support = null,
+  bound = null,
   initialFiles,
   initialImages,
   initialMessages,
@@ -87,6 +89,8 @@ export function IdeShell({
   pro?: boolean;
   /** Pro: the help button's Fast Track (machine line for the question, answers not opened yet) */
   support?: { machineInfo: string; unread: number } | null;
+  /** kind "bound": the project's script lives in a Google Sheet (sheetUrl once it has been published) */
+  bound?: { sheetUrl: string | null; scriptId: string | null } | null;
   initialFiles: { path: string; content: string }[];
   initialImages?: { url: string }[];
   /** The conversation so far (lib/messages-text chatHistoryOf), and whether an AI turn is running right now. */
@@ -131,6 +135,7 @@ export function IdeShell({
   const requestAction = useProjectStore((s) => s.requestAction);
   const [hintOpen, setHintOpen] = useState(true);
   const [deployUrl, setDeployUrl] = useState<string | null>(deployedUrl ?? null);
+  const [sheetUrl, setSheetUrl] = useState<string | null>(bound?.sheetUrl ?? null);
   const [google, setGoogle] = useState({ connected: googleConnected, email: googleEmail });
   const [connectOpen, setConnectOpen] = useState(false);
   // narrow window (below lg): one pane at a time, switched by the bottom tabs
@@ -268,7 +273,11 @@ export function IdeShell({
                 projectId={projectId}
                 googleConnected={google.connected}
                 googleEmail={google.email}
-                deployed={!!deployUrl}
+                deployed={!!deployUrl || !!sheetUrl}
+                empty={fileCount === 0}
+                bound={!!bound}
+                boundHasScript={!!bound?.scriptId}
+                onBoundPublished={setSheetUrl}
                 onDeployed={setDeployUrl}
                 onConnectGoogle={() => setConnectOpen(true)}
               />
@@ -279,6 +288,7 @@ export function IdeShell({
 
       {/* live /exec URL + its actions */}
       {deployUrl && <DeployedUrlBar url={deployUrl} projectId={projectId} googleEmail={google.email} />}
+      {!deployUrl && sheetUrl && <BoundSheetBar sheetUrl={sheetUrl} scriptId={bound?.scriptId ?? null} />}
 
       {webHint && webHint.length > 0 && hintOpen && (
         <div className="callout callout-warn flex-none rounded-none border-x-0 border-t-0">
@@ -332,7 +342,7 @@ export function IdeShell({
           <>
             <section data-tour="code" className={paneClass("code")}>
               <FileTree />
-              <EditorToolbar projectId={projectId} />
+              <EditorToolbar projectId={projectId} canVerify={!bound} />
               <div className="min-h-0 flex-1">
                 <EditorPane />
               </div>
@@ -429,7 +439,7 @@ export function IdeShell({
         </nav>
       )}
 
-      <CommandPalette projectId={projectId} googleConnected={google.connected} deployed={!!deployUrl} onJumpPane={jumpPane} />
+      <CommandPalette projectId={projectId} googleConnected={google.connected} deployed={!!deployUrl || !!sheetUrl} canVerify={!bound} onJumpPane={jumpPane} />
       <ConnectGoogleDialog
         open={connectOpen}
         projectId={projectId}

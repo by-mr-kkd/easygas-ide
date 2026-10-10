@@ -80,7 +80,7 @@ export function ProjectSidebar({
         <h2 id="projects-title" className="text-[12.5px] font-semibold text-muted">
           โปรเจกต์ของฉัน
         </h2>
-        {projects.length > 0 && <span className="badge ml-auto h-5 tabular-nums">{projects.length}</span>}
+        {projects.length > 0 && <span className="count ml-auto">{projects.length}</span>}
       </div>
 
       {projects.length >= SEARCH_FROM && (
@@ -112,7 +112,11 @@ export function ProjectSidebar({
       )}
 
       <div className="mt-auto flex flex-wrap items-center gap-2 border-t border-line px-3.5 py-2.5 text-[12px]">
-        {deployedCount > 0 && <span className="text-muted">เผยแพร่แล้ว {deployedCount}</span>}
+        {deployedCount > 0 && (
+          <span className="flex items-center gap-1.5 text-muted">
+            เผยแพร่แล้ว <span className="count">{deployedCount}</span>
+          </span>
+        )}
         {googleConnected && (
           <Link href="/projects?mode=existing" className="link ml-auto flex items-center gap-1 no-underline">
             <ArrowDownTrayIcon className="h-3.5 w-3.5" />

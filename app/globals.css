@@ -15,6 +15,9 @@
 :root {
   --bg: #f5f6f8;
   --surface: #ffffff;
+  /* scrollbars sit back: a faint thumb, a little stronger while the pointer is over that area */
+  --scrollbar: rgba(100, 116, 139, 0.22);
+  --scrollbar-hover: rgba(100, 116, 139, 0.42);
   --sunken: #f0f2f5;
   --line: #e2e5ea;
   --line-strong: #cbd1d9;
@@ -48,6 +51,8 @@
 .dark {
   --bg: #0e1216;
   --surface: #161b21;
+  --scrollbar: rgba(148, 163, 184, 0.16);
+  --scrollbar-hover: rgba(148, 163, 184, 0.34);
   --sunken: #1d242c;
   --line: #28303a;
   --line-strong: #3a4450;
@@ -132,6 +137,14 @@ body {
   :focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
+  }
+  /* thin, faint scrollbars everywhere (Monaco's are set in lib/monaco-theme.ts, the preview's in PreviewPane) */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar) transparent;
+  }
+  *:hover {
+    scrollbar-color: var(--scrollbar-hover) transparent;
   }
   ::selection {
     background: var(--accent-soft);
@@ -368,6 +381,24 @@ body {
     border-color: transparent;
     background: var(--accent-soft);
     color: var(--accent-text);
+  }
+  /* a number that should be seen at a glance (how many projects, how many shares): a tinted pill, bold digits */
+  .count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.75rem;
+    height: 1.5rem;
+    padding: 0 0.5rem;
+    border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent-text);
+    font-size: 0.8125rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    white-space: nowrap;
   }
   .badge-warn {
     border-color: var(--warn-line);

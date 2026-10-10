@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { useEffect, useRef } from "react";
 import { useProjectStore } from "@/store/useProjectStore";
 import { useIsDark } from "@/components/ui/useIsDark";
+import { defineEgsThemes, EGS_SCROLLBAR, egsTheme } from "@/lib/monaco-theme";
 
 // Monaco logs a benign "Canceled" error whenever it aborts an in-flight async op (hover/suggestion/
 // layout) on blur or re-layout. It doesn't affect anything, but Next's dev overlay surfaces it as a
@@ -112,7 +113,8 @@ export function EditorPane() {
       // (which `key=` forced, disposing the editor mid-async → noisy "Canceled" errors).
       path={activePath}
       height="100%"
-      theme={dark ? "vs-dark" : "vs"}
+      theme={egsTheme(dark)}
+      beforeMount={defineEgsThemes}
       language={langOf(activePath)}
       value={files[activePath]?.content ?? ""}
       onChange={onChange}
@@ -130,6 +132,7 @@ export function EditorPane() {
         automaticLayout: true,
         padding: { top: 12 },
         tabSize: 2,
+        scrollbar: EGS_SCROLLBAR,
       }}
     />
   );

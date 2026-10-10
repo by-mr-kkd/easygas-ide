@@ -5,6 +5,7 @@ import { claspError, claspOrThrow, runClasp } from "@/lib/clasp";
 import { getFiles, hashFiles, writeFile } from "@/lib/files";
 import { srcDir } from "@/lib/local/paths";
 import { assertRemoteUnchanged, recordRemote } from "@/lib/import";
+import { enforceBoundManifest, parseBoundCreate, sheetUrl } from "@/lib/bound";
 import { enforceWebAppManifest } from "@/lib/manifest";
 import { withBackendNotice } from "@/lib/pages/backend-page";
 import { withDispatcher, type SourceFile } from "@/lib/pages/dispatcher";
@@ -81,6 +82,8 @@ export interface DeployResult {
   unchanged: boolean;
   /** Manifest scopes added vs the previous deploy; the owner must re-authorize the script for these. */
   scopesAdded: string[];
+  /** kind "bound": the Google Sheet the script lives in (there is no /exec URL) */
+  sheetUrl?: string;
 }
 
 async function readManifest(projectId: string): Promise<string | null> {
@@ -192,9 +195,56 @@ async function deployImported(project: EgsProject, opts: { pagesUrl?: string }):
   return { execUrl: existing?.exec_url || undefined, scriptId, needsTriggerSetup, scriptEditorUrl, unchanged: false, scopesAdded: [] };
 }
 
+/**
+ * A project bound to a Google Sheet that this app made (new, or cloned from a share): the first publish
+ * creates a NEW Sheet with the script inside it, later ones push into that script. No web-app deployment,
+ * and the manifest is not turned into a web app's.
+ */
+async function deployBound(project: EgsProject): Promise<DeployResult> {
+  const dir = srcDir(project.id);
+  if ((await getFiles(project.id)).length === 0) throw new Error("no_files");
+  const manifest = enforceBoundManifest(await readManifest(project.id));
+  await writeFile(project.id, MANIFEST, manifest);
+  const files = (await getFiles(project.id)).filter((f) => isPushed(f.path));
+  const hash = hashFiles(files);
+  const needsTriggerSetup = files.some((f) => INSTALL_TRIGGERS_RE.test(f.content));
+
+  let scriptId = project.script_id;
+  let sheetId = project.bound_sheet_id;
+  const done = (unchanged: boolean): DeployResult => ({
+    scriptId: scriptId!,
+    needsTriggerSetup,
+    scriptEditorUrl: `https://script.google.com/d/${scriptId}/edit`,
+    sheetUrl: sheetId ? sheetUrl(sheetId) : undefined,
+    unchanged,
+    scopesAdded: [],
+  });
+  if (scriptId && project.bound_push?.hash === hash) return done(true);
+
+  await fsWriteFile(join(dir, ".claspignore"), CLASPIGNORE, "utf8");
+  if (scriptId) {
+    await writeClaspConfig(project.id, scriptId);
+  } else {
+    await rm(join(dir, ".clasp.json"), { force: true });
+    const r = await runClasp(["create-script", "--type", "sheets", `--title=${project.name}`, "--rootDir", ".", "--json"], { projectDir: dir });
+    const ids = parseBoundCreate(r.stdout);
+    if (!ids) throw claspError("create-script", r);
+    scriptId = ids.scriptId;
+    sheetId = ids.sheetId;
+    await updateProject(project.id, { script_id: scriptId, bound_sheet_id: sheetId });
+    await writeClaspConfig(project.id, scriptId);
+    await writeFile(project.id, MANIFEST, manifest); // clasp pulled Google's default manifest over ours
+  }
+
+  await claspOrThrow(["push", "--force"], dir);
+  await updateProject(project.id, { bound_push: { hash, at: new Date().toISOString() } });
+  return done(false);
+}
+
 /** `opts.pagesUrl`: where the GitHub copy of the front page lives (defaults to the last publish). */
 export async function deployProject(_userId: string, project: EgsProject, opts: { pagesUrl?: string } = {}): Promise<DeployResult> {
   if (project.origin === "imported") return deployImported(project, opts);
+  if (project.kind === "bound") return deployBound(project);
   const dir = srcDir(project.id);
   if ((await getFiles(project.id)).length === 0) throw new Error("no_files");
 

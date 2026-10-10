@@ -12,7 +12,8 @@ import { VersionHistory } from "./VersionHistory";
  * ประวัติ (versions), ทดสอบรันจริง (Gate 2 run-and-repair, routed to the chat flow), and
  * ให้ AI ตรวจซ้ำ (Gate 0 lint + Gate 1 rulebook critic → markers/badges/issues panel).
  */
-export function EditorToolbar({ projectId }: { projectId: string }) {
+/** `canVerify` = false for a Sheet-bound project: "ทดสอบรันจริง" opens the script as a web app, which it is not */
+export function EditorToolbar({ projectId, canVerify = true }: { projectId: string; canVerify?: boolean }) {
   const files = useProjectStore((s) => s.files);
   const order = useProjectStore((s) => s.order);
   const setIssues = useProjectStore((s) => s.setIssues);
@@ -123,6 +124,7 @@ export function EditorToolbar({ projectId }: { projectId: string }) {
       {note && <span className="truncate text-xs text-muted">{note}</span>}
 
       <VersionHistory projectId={projectId} />
+      {canVerify && (
       <Tooltip
         label="เปิดแอปจริงเพื่อทดสอบการรัน แล้วซ่อมให้ถ้าเจอปัญหา (ต้องเผยแพร่ก่อน)"
         placement="bottom"
@@ -136,6 +138,7 @@ export function EditorToolbar({ projectId }: { projectId: string }) {
           ทดสอบรันจริง
         </button>
       </Tooltip>
+      )}
       <button
         onClick={recheck}
         disabled={checking}

@@ -17,6 +17,7 @@ import {
 import { listVersionsAction, restoreVersionAction, versionDiffAction } from "@/app/projects/version-actions";
 import { saveDirtyFiles } from "@/lib/client/save-files";
 import type { VersionMeta, VersionSource } from "@/lib/versions";
+import { defineEgsThemes, EGS_SCROLLBAR, egsTheme } from "@/lib/monaco-theme";
 
 const DiffEditor = dynamic(() => import("@monaco-editor/react").then((m) => m.DiffEditor), {
   ssr: false,
@@ -172,8 +173,9 @@ export function VersionHistory({ projectId }: { projectId: string }) {
                       original={diff.version.find((f) => f.path === diffFile)?.content ?? ""}
                       modified={diff.current.find((f) => f.path === diffFile)?.content ?? ""}
                       language={langOf(diffFile)}
-                      theme={dark ? "vs-dark" : "vs"}
-                      options={{ readOnly: true, renderSideBySide: true, minimap: { enabled: false }, fontSize: 12, automaticLayout: true }}
+                      theme={egsTheme(dark)}
+                      beforeMount={defineEgsThemes}
+                      options={{ readOnly: true, renderSideBySide: true, minimap: { enabled: false }, fontSize: 12, automaticLayout: true, scrollbar: EGS_SCROLLBAR }}
                     />
                   )}
                 </div>

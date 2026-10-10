@@ -35,9 +35,17 @@ export function SharesList({ shares, stale }: { shares: ShareCardData[]; stale: 
             className="field h-9 w-full pl-8 text-sm"
           />
         </label>
-        <span className="hint ml-auto">
-          {shown.length === shares.length ? `${shares.length} ระบบ` : `${shown.length} จาก ${shares.length} ระบบ`}
-          {stale && " · ข้อมูลล่าสุดที่โหลดได้ (ติดต่อเว็บไม่ได้ตอนนี้)"}
+        <span className="hint ml-auto flex flex-wrap items-center gap-1.5">
+          {shown.length === shares.length ? (
+            <>
+              <span className="count">{shares.length}</span> ระบบ
+            </>
+          ) : (
+            <>
+              <span className="count">{shown.length}</span> จาก {shares.length} ระบบ
+            </>
+          )}
+          {stale && <span>· ข้อมูลล่าสุดที่โหลดได้ (ติดต่อเว็บไม่ได้ตอนนี้)</span>}
         </span>
       </div>
 

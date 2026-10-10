@@ -19,6 +19,7 @@ import { CLAUDE_QUOTA_SETTING } from "@/lib/engines/claude-quota";
 const isOn = (v: string | undefined) => v === "on" || v === "true" || v === "1";
 import { routeTarget, type CapabilityNeeds } from "@/lib/deployment-targets/router";
 import { premiumStatus } from "@/lib/premium/status";
+import { sheetUrl } from "@/lib/bound";
 import { unreadAnswers } from "@/lib/support/fast-track";
 import { machineInfo } from "@/lib/support/machine-info";
 import { githubStatus } from "@/lib/pages/github-auth";
@@ -61,6 +62,11 @@ export default async function ProjectBuilderPage({ params }: { params: Promise<{
       projectId={id}
       projectName={project.name}
       pro={premium.active}
+      bound={
+        project.kind === "bound"
+          ? { sheetUrl: project.bound_sheet_id && project.bound_push ? sheetUrl(project.bound_sheet_id) : null, scriptId: project.script_id }
+          : null
+      }
       support={premium.active ? { machineInfo: await machineInfo(), unread: await unreadAnswers().catch(() => 0) } : null}
       imported={project.origin === "imported"}
       tourSeen={settings.app[tourSeenKey("ide")] === "1"}

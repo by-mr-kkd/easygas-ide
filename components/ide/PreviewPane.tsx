@@ -14,7 +14,8 @@ const MOBILE_WIDTH = 390; // px — iPhone-ish viewport for the mobile preview
  * and it needs the owner's login), so to run it for real use the เผยแพร่ button → open the /exec link.
  * The console stays folded away until the page logs an error — most users never need it.
  */
-const SHIM = `<script>
+// a thin, faint scrollbar in the preview only (the app's own styles still win; the published page is untouched)
+const SHIM = `<style>*{scrollbar-width:thin;scrollbar-color:rgba(100,116,139,.28) transparent}</style><script>
 (function(){
   function ser(a){try{return typeof a==='object'?JSON.stringify(a):String(a)}catch(e){return String(a)}}
   function post(level,args){try{parent.postMessage({__egs:1,level:level,text:Array.prototype.map.call(args,ser).join(' ')},'*')}catch(e){}}

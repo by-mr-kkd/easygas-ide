@@ -774,12 +774,17 @@ export function ChatPanel({
         {/* shortcuts for a project that already has code */}
         {hasFiles && !busy && (
           <div className="mb-2 flex flex-wrap items-center gap-1.5 [@media(max-height:520px)]:hidden">
-            <button onClick={() => send("อธิบายว่าโค้ดในโปรเจกต์นี้ทำงานยังไง แบบสรุปสั้น ๆ เป็นข้อ ๆ")} className="btn btn-soft tone-info btn-sm">
+            <button
+              onClick={() => send("อธิบายว่าโค้ดในโปรเจกต์นี้ทำงานยังไง แบบสรุปสั้น ๆ เป็นข้อ ๆ")}
+              title="ให้ AI สรุปเป็นข้อ ๆ ว่าโค้ดในโปรเจกต์นี้ทำงานอย่างไร อ่านอย่างเดียว ไม่แก้ไฟล์"
+              className="btn btn-soft tone-info btn-sm"
+            >
               <LightBulbIcon className="h-4 w-4" />
               อธิบายโค้ด
             </button>
             <button
               onClick={() => send("ตรวจโค้ดทั้งหมดหาบั๊กและจุดที่ไม่ตรง best practice ของ Google Apps Script แล้วแก้ให้เรียบร้อย")}
+              title="ให้ AI ตรวจโค้ดทั้งหมดหาบั๊กและจุดที่ผิดหลัก Apps Script แล้วแก้ให้เลย ของเดิมย้อนได้จากประวัติ"
               className="btn btn-soft tone-warn btn-sm"
             >
               <BugAntIcon className="h-4 w-4" />

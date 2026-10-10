@@ -23,6 +23,8 @@ type Result =
   | {
       kind: "ok";
       execUrl?: string;
+      /** a Sheet-bound project: the Sheet its script lives in */
+      sheetUrl?: string;
       needsTriggerSetup: boolean;
       scriptEditorUrl: string;
       scopesAdded: string[];
@@ -61,8 +63,19 @@ export function DeployButton({
   deployed = false,
   onDeployed,
   onConnectGoogle,
+  empty = false,
+  bound = false,
+  boundHasScript = false,
+  onBoundPublished,
 }: {
   projectId: string;
+  /** kind "bound": published into a new Google Sheet (lib/bound.ts) — no hosting choice, no /exec */
+  bound?: boolean;
+  /** the bound project already has its script (published before, or imported from a Sheet): publishing pushes into it */
+  boundHasScript?: boolean;
+  onBoundPublished?: (sheetUrl: string) => void;
+  /** the project has no files yet: nothing to publish, so the button is off (no dialogs, no hosting choice saved) */
+  empty?: boolean;
   googleConnected?: boolean;
   /** the connected Google account, named in the "approve the backend" step after a GitHub publish */
   googleEmail?: string | null;
@@ -94,6 +107,8 @@ export function DeployButton({
 
   /** The GitHub flow has its own dialog (premium + GitHub checks live there); the GAS flow confirms first. */
   function askToPublish() {
+    if (empty) return;
+    if (bound) return setConfirmOpen(true); // a Sheet's script has no front page to host anywhere
     // re-read first: the first camera request of a session switches the project to GitHub hosting after
     // this button mounted, and a stale state would publish to Google only
     void pagesStateAction(projectId)
@@ -141,12 +156,14 @@ export function DeployButton({
         setRes({
           kind: "ok",
           execUrl: data.execUrl,
+          sheetUrl: data.sheetUrl,
           needsTriggerSetup: !!data.needsTriggerSetup,
           scriptEditorUrl: data.scriptEditorUrl,
           scopesAdded: Array.isArray(data.scopesAdded) ? data.scopesAdded : [],
           probe: data.probe,
         });
         if (data.execUrl) onDeployed?.(data.execUrl); // surface the URL in the persistent bar
+        if (data.sheetUrl) onBoundPublished?.(data.sheetUrl);
       } else if (data.error === "USER_SETTINGS_DISABLED") {
         setRes({ kind: "enable_api", enableUrl: data.enableUrl, message: data.message });
       } else {
@@ -176,7 +193,14 @@ export function DeployButton({
 
   return (
     <>
-      {!googleConnected ? (
+      {empty ? (
+        <Tooltip label="ยังไม่มีโค้ดให้เผยแพร่ เล่าให้ AI ฟังก่อนว่าอยากได้ระบบอะไร" placement="bottom" className="shrink-0">
+          <button type="button" disabled aria-disabled="true" className="btn btn-primary btn-sm">
+            <RocketLaunchIcon className="h-4 w-4 shrink-0" />
+            เผยแพร่
+          </button>
+        </Tooltip>
+      ) : !googleConnected ? (
         <Tooltip label="การเผยแพร่ต้องใช้บัญชี Google ของคุณ กดเพื่อเชื่อม" placement="bottom" className="shrink-0">
           <button type="button" onClick={onConnectGoogle} className="btn btn-primary btn-sm">
             <RocketLaunchIcon className="h-4 w-4 shrink-0" />
@@ -237,10 +261,24 @@ export function DeployButton({
         title="เผยแพร่ขึ้นบัญชี Google ของคุณ?"
         body={
           <>
-            แอปจะไปอยู่ในบัญชี Google ของคุณ พร้อมลิงก์สำหรับเปิดใช้งานจริง
-            <br />
-            ครั้งแรก Google จะถามขออนุญาตหนึ่งครั้ง
-            {pagesState?.premium && pagesState.github.available && !deployed && (
+            {bound ? (
+              boundHasScript ? (
+                "โค้ดล่าสุดจะถูกส่งเข้าไปในสคริปต์ของชีตเดิม ข้อมูลในชีตไม่ถูกแตะ"
+              ) : (
+                <>
+                  แอปจะสร้าง Google Sheet ใหม่ใน Drive ของคุณ พร้อมใส่สคริปต์นี้ไว้ในชีต
+                  <br />
+                  ครั้งแรกที่ใช้เมนูหรือปุ่มในชีต Google จะถามขออนุญาตหนึ่งครั้ง
+                </>
+              )
+            ) : (
+              <>
+                แอปจะไปอยู่ในบัญชี Google ของคุณ พร้อมลิงก์สำหรับเปิดใช้งานจริง
+                <br />
+                ครั้งแรก Google จะถามขออนุญาตหนึ่งครั้ง
+              </>
+            )}
+            {!bound && pagesState?.premium && pagesState.github.available && !deployed && (
               <>
                 <br />
                 <button type="button" onClick={() => pickHosting("github")} className="link mt-1">
@@ -262,8 +300,19 @@ export function DeployButton({
               <div className="flex flex-col gap-3">
                 <h3 className="flex items-center gap-2 text-[15px] font-semibold">
                   <CheckCircleIcon className="h-6 w-6 shrink-0 text-accent-text" />
-                  เผยแพร่สำเร็จ แอปอยู่ในบัญชี Google ของคุณแล้ว
+                  {res.sheetUrl ? "เผยแพร่สำเร็จ สคริปต์อยู่ใน Google Sheet ของคุณแล้ว" : "เผยแพร่สำเร็จ แอปอยู่ในบัญชี Google ของคุณแล้ว"}
                 </h3>
+                {res.sheetUrl && (
+                  <>
+                    <a href={res.sheetUrl} target="_blank" rel="noreferrer" className="btn btn-primary">
+                      เปิดชีตของคุณ <ArrowTopRightOnSquareIcon className="h-4 w-4" />
+                    </a>
+                    <p className="hint">
+                      เปิดชีตแล้วรอสักครู่ เมนูของระบบจะขึ้นที่แถบบน ครั้งแรกที่กดเมนู Google จะขอสิทธิ์ ให้กด{" "}
+                      <b>Continue → Advanced → Allow</b> ครั้งเดียว
+                    </p>
+                  </>
+                )}
                 {res.execUrl && (
                   <>
                     <a href={res.execUrl} target="_blank" rel="noreferrer" className="btn btn-primary">
@@ -292,10 +341,12 @@ export function DeployButton({
                       </button>
                     </div>
                   ))}
-                <p className="hint">
-                  ครั้งแรกที่เปิด Google จะขอสิทธิ์เข้าถึง เช่น Sheets หรือ Gmail ให้เจ้าของแอปกด{" "}
-                  <b>Review permissions → Advanced → Allow</b> ครั้งเดียวพอ คนอื่นที่เปิดลิงก์ไม่ต้องกดอีก
-                </p>
+                {!res.sheetUrl && (
+                  <p className="hint">
+                    ครั้งแรกที่เปิด Google จะขอสิทธิ์เข้าถึง เช่น Sheets หรือ Gmail ให้เจ้าของแอปกด{" "}
+                    <b>Review permissions → Advanced → Allow</b> ครั้งเดียวพอ คนอื่นที่เปิดลิงก์ไม่ต้องกดอีก
+                  </p>
+                )}
                 {res.needsTriggerSetup && (
                   <div className="callout callout-warn">
                     <ClockIcon className="mt-0.5 h-4 w-4 shrink-0" />

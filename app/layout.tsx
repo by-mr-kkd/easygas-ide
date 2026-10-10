@@ -4,6 +4,7 @@ import { IBM_Plex_Mono, IBM_Plex_Sans_Thai } from "next/font/google";
 import { MobileNav } from "@/components/MobileNav";
 import { PremiumRefresher } from "@/components/premium/PremiumRefresher";
 import { UpdateNotice } from "@/components/UpdateNotice";
+import { TitleTooltips } from "@/components/ui/TitleTooltips";
 import "./globals.css";
 
 // UI text. The same family the generated tools use by default, so the app and its output match.
@@ -60,6 +61,7 @@ export default async function RootLayout({
         <MobileNav />
         <PremiumRefresher />
         <UpdateNotice />
+        <TitleTooltips />
       </body>
     </html>
   );
