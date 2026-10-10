@@ -1,6 +1,7 @@
 import "server-only";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { dataRoot } from "@/lib/local/paths";
 import { getAppSetting } from "@/lib/settings";
 
@@ -53,4 +54,17 @@ export async function readUpdateState(): Promise<UpdateState | null> {
 /** On unless the user switched it off (the default is on). */
 export async function autoUpdateEnabled(): Promise<boolean> {
   return (await getAppSetting(AUTO_UPDATE_KEY)) !== "off";
+}
+
+export type UpdateRequest = "check" | "install";
+
+/**
+ * Settings' "ตรวจสอบการอัปเดต" / "ติดตั้งและเปิดใหม่": a request the shell picks up (it watches the file).
+ * A fresh id each time, so the same action twice is two requests; written atomically.
+ */
+export async function requestUpdate(action: UpdateRequest): Promise<void> {
+  const file = join(dataRoot(), "update-request.json");
+  await mkdir(dirname(file), { recursive: true });
+  await writeFile(`${file}.tmp`, JSON.stringify({ action, id: randomUUID(), at: new Date().toISOString() }));
+  await rename(`${file}.tmp`, file);
 }

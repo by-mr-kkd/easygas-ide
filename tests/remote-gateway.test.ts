@@ -239,6 +239,16 @@ test("Pro API: only from easygaside.tech, preflight answered, closed when not Pr
   }
 });
 
+test("Pro API: ping answers without a token and never counts toward the lockout", async () => {
+  for (let i = 0; i < 8; i++) {
+    const r = await api("ping", { cache: "no-store" });
+    assert.equal(r.status, 200);
+    assert.equal(r.headers.get("access-control-allow-origin"), APP);
+  }
+  // eight pings later a wrong token is still "unpaired", not "locked"
+  assert.equal((await api("hello", { headers: { authorization: "Bearer nobody.nope" } })).status, 401);
+});
+
 test("Pro API: pair with the code, then hello / push with the Bearer token", async () => {
   pairing = newPairingCode(Date.now());
   const wrong = await api("pair", { method: "POST", body: JSON.stringify({ code: pairing.code === "000000" ? "111111" : "000000" }) });

@@ -24,7 +24,9 @@ const TITLEBAR_HEIGHT = 48; // px — matches the top bar's height (h-12) in com
 // The app's data lives in %APPDATA%\EasyGAS IDE (lib/local/paths.ts). Electron's own files (cache,
 // window state, logs) go in a subfolder so the two never mix.
 app.setName(PRODUCT);
-app.setPath("userData", path.join(app.getPath("appData"), PRODUCT, "electron"));
+// EASYGAS_DATA_DIR (testing) moves Electron's folder too, so a test copy has its own single-instance lock and
+// can run beside the installed app
+app.setPath("userData", path.join(process.env.EASYGAS_DATA_DIR?.trim() ? path.resolve(process.env.EASYGAS_DATA_DIR.trim()) : path.join(app.getPath("appData"), PRODUCT), "electron"));
 
 let win = null;
 let server = null;
@@ -43,10 +45,16 @@ const remoteStatePath = () => path.join(dataDir(), "remote-state.json");
 // launch when Settings → ข้อมูลในเครื่อง → "อัปเดตอัตโนมัติเมื่อเปิดโปรแกรม" is on (settings.json
 // app.app_auto_update, default on): downloads in the background and installs when the app quits. We write
 // <data>/update-state.json; the server only reads it (lib/app-update.ts) for the Settings card and the notice.
+// The other way round, Settings' "ตรวจสอบการอัปเดต" / "ติดตั้งและเปิดใหม่" buttons write
+// <data>/update-request.json ({action, id}); we watch it, as remote-state.json.
 const updateStatePath = () => path.join(dataDir(), "update-state.json");
+const updateRequestPath = () => path.join(dataDir(), "update-request.json");
 const UPDATE_CHECK_DELAY_MS = 8_000;
 let updateState = null;
 let updater = null;
+/** the user asked for this check: a download it brings installs on quit even with auto-update off */
+let manualUpdate = false;
+let lastUpdateRequest = null;
 
 function autoUpdateOn() {
   try {
@@ -69,15 +77,14 @@ function writeUpdateState(patch) {
   }
 }
 
-function startAutoUpdate() {
-  if (!app.isPackaged) return;
-  // a fresh state every launch: a "ready" left by the last run was installed when that run quit
-  if (!autoUpdateOn()) return writeUpdateState({ status: "off", version: null, percent: null, error: null });
-  writeUpdateState({ status: "checking", version: null, percent: null, error: null });
+/** electron-updater, set up once (at launch when auto-update is on, else at the first manual check). */
+function ensureUpdater() {
+  if (updater) return updater;
   try {
     ({ autoUpdater: updater } = require("electron-updater"));
   } catch (e) {
-    return writeUpdateState({ status: "error", error: `updater: ${e.message}` });
+    writeUpdateState({ status: "error", error: `updater: ${e.message}` });
+    return null;
   }
   updater.logger = null;
   updater.autoDownload = true;
@@ -96,9 +103,49 @@ function startAutoUpdate() {
   updater.on("error", (e) => {
     if (updateState?.status !== "ready") writeUpdateState({ status: "error", error: String(e?.message ?? e).slice(0, 200) });
   });
-  setTimeout(() => {
-    if (!quitting) updater.checkForUpdates().catch(() => {}); // failures arrive through "error"
-  }, UPDATE_CHECK_DELAY_MS);
+  return updater;
+}
+
+function checkForUpdate() {
+  if (quitting || ["checking", "downloading", "ready"].includes(updateState?.status)) return;
+  const u = ensureUpdater();
+  if (!u) return;
+  writeUpdateState({ status: "checking", error: null });
+  u.checkForUpdates().catch(() => {}); // failures arrive through "error"
+}
+
+/** "ติดตั้งและเปิดใหม่": install the downloaded version now and start it again. */
+function installUpdateNow() {
+  if (!updater || updateState?.status !== "ready") return;
+  quitting = true;
+  updater.quitAndInstall(true, true);
+}
+
+function readUpdateRequest(initial) {
+  let req;
+  try {
+    req = JSON.parse(fs.readFileSync(updateRequestPath(), "utf8"));
+  } catch {
+    return;
+  }
+  if (!req || typeof req.id !== "string" || req.id === lastUpdateRequest) return;
+  lastUpdateRequest = req.id;
+  if (initial) return; // left by the last run: not a request to this one
+  if (req.action === "check") {
+    manualUpdate = true;
+    checkForUpdate();
+  } else if (req.action === "install") installUpdateNow();
+}
+
+function startAutoUpdate() {
+  if (!app.isPackaged) return;
+  readUpdateRequest(true);
+  fs.watchFile(updateRequestPath(), { interval: 1000 }, () => readUpdateRequest(false));
+  // a fresh state every launch: a "ready" left by the last run was installed when that run quit
+  writeUpdateState({ status: "off", version: null, percent: null, error: null });
+  if (!autoUpdateOn()) return;
+  if (!ensureUpdater()) return;
+  setTimeout(checkForUpdate, UPDATE_CHECK_DELAY_MS);
 }
 let remote = { enabled: false, on: false, url: null, devices: 0, event: null };
 let tray = null;
@@ -545,9 +592,10 @@ if (!app.requestSingleInstanceLock()) {
   app.on("window-all-closed", () => app.quit());
   app.on("before-quit", () => {
     quitting = true;
-    // switched off after the download: keep this version
-    if (updater && !autoUpdateOn()) updater.autoInstallOnAppQuit = false;
+    // switched off after the download: keep this version (unless the user fetched it by hand this run)
+    if (updater && !autoUpdateOn() && !manualUpdate) updater.autoInstallOnAppQuit = false;
     fs.unwatchFile(remoteStatePath());
+    fs.unwatchFile(updateRequestPath());
     if (awake !== null) powerSaveBlocker.stop(awake);
     if (tray) tray.destroy();
     stopServer();

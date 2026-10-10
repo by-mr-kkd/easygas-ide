@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ArrowPathIcon, XMarkIcon } from "@heroicons/react/24/outline";
-import { updateNoticeAction } from "@/app/update-actions";
+import { requestUpdateAction, updateNoticeAction } from "@/app/update-actions";
 
 const CHECK_MS = 5 * 60_000;
 const CLOSED_KEY = "egs:update-notice-closed";
@@ -13,6 +13,7 @@ const CLOSED_KEY = "egs:update-notice-closed";
  */
 export function UpdateNotice() {
   const [version, setVersion] = useState<string | null>(null);
+  const [installing, setInstalling] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -55,8 +56,19 @@ export function UpdateNotice() {
       </span>
       <p className="min-w-0 leading-snug">
         <b className="block font-semibold text-fg">อัปเดต {version} พร้อมแล้ว</b>
-        <span className="text-muted">ปิดแล้วเปิดโปรแกรมใหม่เพื่ออัปเดต</span>
+        <span className="text-muted">ติดตั้งเลย หรือปิดแล้วเปิดโปรแกรมใหม่ก็ได้</span>
       </p>
+      <button
+        type="button"
+        disabled={installing}
+        onClick={() => {
+          setInstalling(true);
+          void requestUpdateAction("install").then((r) => !r.ok && setInstalling(false), () => setInstalling(false));
+        }}
+        className="btn btn-primary btn-sm shrink-0"
+      >
+        {installing ? "กำลังติดตั้ง…" : "ติดตั้งเลย"}
+      </button>
       <button type="button" onClick={close} aria-label="ปิด" className="btn btn-ghost btn-sm btn-icon shrink-0">
         <XMarkIcon className="h-4 w-4" />
       </button>

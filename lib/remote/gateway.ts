@@ -235,6 +235,8 @@ export function createGateway(ctx: GatewayContext): http.Server {
       return res.end();
     }
     if (!ctx.pro()) return json(res, 403, { error: "not_pro", message: "คอมเครื่องนี้ไม่ได้ใช้ Pro" }, origin);
+    // "is this computer up?" from the Pro app: no token, so it must not count as a wrong one (lockout)
+    if (path === "ping") return json(res, 200, { ok: true }, origin);
 
     if (path === "pair" && req.method === "POST") {
       const body = await readJson(req);
