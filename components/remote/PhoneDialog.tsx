@@ -128,7 +128,7 @@ export function PhoneDialog({
             ) : (
               <div className="rounded-xl border border-line bg-sunken p-4">
                 <ol className="space-y-1.5 text-sm text-fg">
-                  <li>1. กดเปิดใช้ด้านล่าง</li>
+                  <li>1. กดปุ่ม เชื่อมต่อมือถือ ด้านล่าง</li>
                   <li>2. สแกน QR ด้วยกล้องมือถือ</li>
                   <li>3. ใช้ EasyGAS IDE ในเบราว์เซอร์มือถือได้เลย</li>
                 </ol>
@@ -137,7 +137,7 @@ export function PhoneDialog({
                 </p>
                 <button type="button" className="btn btn-primary mt-3" disabled={busy} onClick={() => void toggle(true)}>
                   <DevicePhoneMobileIcon className="h-4 w-4" />
-                  เปิดใช้จากมือถือ
+                  เชื่อมต่อมือถือ
                 </button>
               </div>
             ))}

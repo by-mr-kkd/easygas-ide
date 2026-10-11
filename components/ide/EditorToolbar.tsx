@@ -8,12 +8,23 @@ import { Tooltip } from "@/components/ui/Tooltip";
 import { VersionHistory } from "./VersionHistory";
 
 /**
- * Toolbar above the editor: autosave status + the three quality gates within reach —
+ * The editor's buttons: save status + the three quality gates within reach —
  * ประวัติ (versions), ทดสอบรันจริง (Gate 2 run-and-repair, routed to the chat flow), and
  * ให้ AI ตรวจซ้ำ (Gate 0 lint + Gate 1 rulebook critic → markers/badges/issues panel).
+ * `pane` = its own strip above the editor (narrow window); `toolbar` = inline in the toolbar row of a
+ * wide window. One instance is mounted at a time: it also owns the unsaved-changes warning and the
+ * palette's "recheck" request.
  */
 /** `canVerify` = false for a Sheet-bound project: "ทดสอบรันจริง" opens the script as a web app, which it is not */
-export function EditorToolbar({ projectId, canVerify = true }: { projectId: string; canVerify?: boolean }) {
+export function EditorToolbar({
+  projectId,
+  canVerify = true,
+  variant = "pane",
+}: {
+  projectId: string;
+  canVerify?: boolean;
+  variant?: "pane" | "toolbar";
+}) {
   const files = useProjectStore((s) => s.files);
   const order = useProjectStore((s) => s.order);
   const setIssues = useProjectStore((s) => s.setIssues);
@@ -101,8 +112,16 @@ export function EditorToolbar({ projectId, canVerify = true }: { projectId: stri
 
   if (!hasFiles) return null;
 
+  const inToolbar = variant === "toolbar";
+
   return (
-    <div className="flex flex-none flex-wrap items-center gap-1.5 border-b border-line px-2 py-1.5">
+    <div
+      className={
+        inToolbar
+          ? "flex min-w-0 items-center gap-1.5"
+          : "flex flex-none flex-wrap items-center gap-1.5 border-b border-line px-2 py-1.5"
+      }
+    >
       {/* a real button only while there is something to save; otherwise a plain status line */}
       {dirty || saving ? (
         <button onClick={save} disabled={saving} className="btn btn-warn btn-sm">
@@ -117,11 +136,11 @@ export function EditorToolbar({ projectId, canVerify = true }: { projectId: stri
         </button>
       ) : (
         <span className="flex items-center gap-1 px-1 text-xs text-faint">
-          <CheckCircleIcon className="h-4 w-4" /> บันทึกแล้ว
+          <CheckCircleIcon className="h-4 w-4" /> {inToolbar ? "" : "บันทึกแล้ว"}
         </span>
       )}
-      <span className="min-w-0 flex-1" />
-      {note && <span className="truncate text-xs text-muted">{note}</span>}
+      {!inToolbar && <span className="min-w-0 flex-1" />}
+      {note && <span className={`truncate text-xs text-muted ${inToolbar ? "max-w-[220px]" : ""}`}>{note}</span>}
 
       <VersionHistory projectId={projectId} />
       {canVerify && (

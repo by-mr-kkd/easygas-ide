@@ -9,15 +9,27 @@ function dotColor(path: string): string {
   return "#9aa7b6";
 }
 
-export function FileTree() {
+/**
+ * The project's files as tabs. `pane` = its own strip above the editor (narrow window);
+ * `toolbar` = inline in the toolbar row of a wide window, where it sits next to the editor's buttons.
+ */
+export function FileTree({ variant = "pane" }: { variant?: "pane" | "toolbar" }) {
   const order = useProjectStore((s) => s.order);
   const active = useProjectStore((s) => s.activePath);
   const working = useProjectStore((s) => s.workingPath);
   const issues = useProjectStore((s) => s.issues);
   const setActive = useProjectStore((s) => s.setActive);
 
+  if (variant === "toolbar" && order.length === 0) return null;
+
   return (
-    <div className="flex h-11 flex-none items-center gap-1 overflow-x-auto border-b border-line px-2">
+    <div
+      className={
+        variant === "toolbar"
+          ? "flex min-w-0 max-w-[560px] items-center gap-1 overflow-x-auto"
+          : "flex h-11 flex-none items-center gap-1 overflow-x-auto border-b border-line px-2"
+      }
+    >
       {order.length === 0 ? (
         <span className="hint px-1">ยังไม่มีไฟล์</span>
       ) : (

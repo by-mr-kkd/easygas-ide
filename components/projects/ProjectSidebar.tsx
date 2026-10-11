@@ -1,35 +1,45 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowDownTrayIcon, FolderOpenIcon, GlobeAltIcon, MagnifyingGlassIcon, TableCellsIcon, TrashIcon } from "@heroicons/react/24/outline";
+import { ArrowDownTrayIcon, FolderOpenIcon, GlobeAltIcon, MagnifyingGlassIcon, SparklesIcon, TableCellsIcon, TrashIcon } from "@heroicons/react/24/outline";
+import { busyProjectsAction } from "@/app/projects/actions";
 import { DeleteProjectDialog } from "./DeleteProjectDialog";
 import type { EgsProject } from "@/types/db";
 
 const KIND_LABEL: Record<string, string> = { webapp: "เว็บแอป", bound: "ผูก Sheet" };
 /** a search box appears once the list is longer than this */
 const SEARCH_FROM = 5;
+/** how often the list asks which projects the AI is working on (a local call) */
+const BUSY_POLL_MS = 5000;
 
-function Row({ project, deployed, onDelete }: { project: EgsProject; deployed: boolean; onDelete: () => void }) {
-  const KindIcon = project.kind === "bound" ? TableCellsIcon : GlobeAltIcon;
+function Row({ project, deployed, busy, onDelete }: { project: EgsProject; deployed: boolean; busy: boolean; onDelete: () => void }) {
+  const KindIcon = busy ? SparklesIcon : project.kind === "bound" ? TableCellsIcon : GlobeAltIcon;
   return (
     <li className="group relative">
       <Link
         href={`/projects/${project.id}`}
         className="flex items-center gap-2.5 rounded-lg py-1.5 pl-2 pr-10 transition hover:bg-line/60 focus-visible:bg-line/60 md:pr-2 md:group-hover:pr-10 md:group-focus-within:pr-10"
       >
-        <span className={`icon-chip shrink-0 ${deployed ? "tone-accent" : "tone-info"}`}>
+        <span className={`icon-chip shrink-0 ${busy ? "tone-ai animate-pulse" : deployed ? "tone-accent" : "tone-info"}`}>
           <KindIcon className="h-4 w-4" aria-hidden />
         </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[13px] font-medium leading-snug text-fg">{project.name}</span>
-          <span className="flex items-center gap-1.5 text-[11.5px] leading-snug text-muted">
-            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${deployed ? "bg-accent" : "bg-line-strong"}`} aria-hidden />
-            <span className="truncate">
-              {deployed ? "เผยแพร่แล้ว" : "ยังไม่เผยแพร่"} · {project.origin === "imported" ? "จาก Google" : project.origin === "cloned" ? "โคลนจากลิงก์" : (KIND_LABEL[project.kind] ?? project.kind)} ·{" "}
-              {new Date(project.updated_at).toLocaleDateString("th-TH", { day: "numeric", month: "short" })}
+          {busy ? (
+            <span className="flex items-center gap-1.5 text-[11.5px] font-medium leading-snug text-ai">
+              <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-ai" aria-hidden />
+              <span className="truncate">AI กำลังทำงานอยู่ · กดเพื่อดู</span>
             </span>
-          </span>
+          ) : (
+            <span className="flex items-center gap-1.5 text-[11.5px] leading-snug text-muted">
+              <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${deployed ? "bg-accent" : "bg-line-strong"}`} aria-hidden />
+              <span className="truncate">
+                {deployed ? "เผยแพร่แล้ว" : "ยังไม่เผยแพร่"} · {project.origin === "imported" ? "จาก Google" : project.origin === "cloned" ? "โคลนจากลิงก์" : (KIND_LABEL[project.kind] ?? project.kind)} ·{" "}
+                {new Date(project.updated_at).toLocaleDateString("th-TH", { day: "numeric", month: "short" })}
+              </span>
+            </span>
+          )}
         </span>
       </Link>
       {/* shown on hover / keyboard on a wide window; always on a touch-sized one */}
@@ -49,31 +59,52 @@ function Row({ project, deployed, onDelete }: { project: EgsProject; deployed: b
 /**
  * The project panel of the home screen: every project in this app, newest first, one click to open. On a
  * wide window it is the left panel of the app shell (full height, its own scrollbar); on a phone the same
- * list comes under the work box as a card.
+ * list sits right under the work box as a card. A project the AI is working on (`busy`, followed while the
+ * page is open) comes first and says so — handy from a phone, while the computer builds.
  */
 export function ProjectSidebar({
   projects,
   deployed,
+  busy: initialBusy = [],
   googleConnected,
 }: {
   projects: EgsProject[];
   deployed: Record<string, string | undefined>;
+  busy?: string[];
   googleConnected: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [deleting, setDeleting] = useState<EgsProject | null>(null);
+  const [busy, setBusy] = useState<string[]>(initialBusy);
   const deployedCount = projects.filter((p) => deployed[p.id]).length;
+
+  useEffect(() => {
+    const tick = () => {
+      if (document.visibilityState !== "visible") return;
+      busyProjectsAction()
+        .then((ids) => setBusy((cur) => (cur.join() === ids.join() ? cur : ids)))
+        .catch(() => {});
+    };
+    const t = setInterval(tick, BUSY_POLL_MS);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, []);
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return q ? projects.filter((p) => p.name.toLowerCase().includes(q)) : projects;
-  }, [projects, query]);
+    const list = q ? projects.filter((p) => p.name.toLowerCase().includes(q)) : projects;
+    // working ones first, the rest keep their newest-first order
+    return [...list.filter((p) => busy.includes(p.id)), ...list.filter((p) => !busy.includes(p.id))];
+  }, [projects, query, busy]);
 
   return (
     <aside
       aria-labelledby="projects-title"
       data-tour="projects"
-      className="card mx-4 mb-5 flex flex-col overflow-hidden md:m-0 md:min-h-0 md:w-[260px] md:shrink-0 md:rounded-none md:border-0 md:border-r md:bg-panel"
+      className="card flex flex-col overflow-hidden md:m-0 md:h-full md:min-h-0 md:w-[260px] md:shrink-0 md:rounded-none md:border-0 md:border-r md:bg-panel"
     >
       <div className="flex items-center gap-2 px-3.5 pb-1.5 pt-3">
         <FolderOpenIcon className="h-4 w-4 shrink-0 text-muted" aria-hidden />
@@ -106,11 +137,13 @@ export function ProjectSidebar({
       ) : (
         <ul className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-1.5">
           {shown.map((p) => (
-            <Row key={p.id} project={p} deployed={!!deployed[p.id]} onDelete={() => setDeleting(p)} />
+            <Row key={p.id} project={p} deployed={!!deployed[p.id]} busy={busy.includes(p.id)} onDelete={() => setDeleting(p)} />
           ))}
         </ul>
       )}
 
+      {/* nothing to say here yet: no empty strip */}
+      {(deployedCount > 0 || googleConnected) && (
       <div className="mt-auto flex flex-wrap items-center gap-2 border-t border-line px-3.5 py-2.5 text-[12px]">
         {deployedCount > 0 && (
           <span className="flex items-center gap-1.5 text-muted">
@@ -124,6 +157,7 @@ export function ProjectSidebar({
           </Link>
         )}
       </div>
+      )}
 
       {deleting && <DeleteProjectDialog project={deleting} onClose={() => setDeleting(null)} />}
     </aside>

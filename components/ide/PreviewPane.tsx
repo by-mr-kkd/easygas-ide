@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useRef } from "react";
-import { CommandLineIcon, ComputerDesktopIcon, DevicePhoneMobileIcon, EyeIcon } from "@heroicons/react/24/outline";
+import { CommandLineIcon } from "@heroicons/react/24/outline";
 import { useProjectStore, type FileEntry } from "@/store/useProjectStore";
 import { assemblePreview } from "@/lib/preview-includes";
 import { Tooltip } from "@/components/ui/Tooltip";
@@ -13,6 +13,8 @@ const MOBILE_WIDTH = 390; // px — iPhone-ish viewport for the mobile preview
  * The real GAS web app can't be embedded inline (Google blocks framing script.googleusercontent.com
  * and it needs the owner's login), so to run it for real use the เผยแพร่ button → open the /exec link.
  * The console stays folded away until the page logs an error — most users never need it.
+ * The pane has no header: on a wide window its controls sit in the toolbar row (PreviewTools), on a
+ * narrow one a small floating pill over the frame carries the badge and the console.
  */
 // a thin, faint scrollbar in the preview only (the app's own styles still win; the published page is untouched)
 const SHIM = `<style>*{scrollbar-width:thin;scrollbar-color:rgba(100,116,139,.28) transparent}</style><script>
@@ -52,8 +54,11 @@ export function PreviewPane() {
   const files = useProjectStore((s) => s.files);
   const srcdoc = useMemo(() => buildSrcdoc(files), [files]);
   const [logs, setLogs] = useState<ConsoleLine[]>([]);
-  const [view, setView] = useState<"desktop" | "mobile">("desktop");
-  const [consoleOpen, setConsoleOpen] = useState(false);
+  const view = useProjectStore((s) => s.previewDevice);
+  const consoleOpen = useProjectStore((s) => s.previewConsole);
+  const setConsoleOpen = useProjectStore((s) => s.setPreviewConsole);
+  const setPreviewErrors = useProjectStore((s) => s.setPreviewErrors);
+  const setPreviewReady = useProjectStore((s) => s.setPreviewReady);
   const frameRef = useRef<HTMLIFrameElement>(null);
   const errorCount = logs.filter((l) => l.level === "error").length;
 
@@ -70,49 +75,38 @@ export function PreviewPane() {
   }, []);
 
   useEffect(() => setLogs([]), [srcdoc]);
+  // the toolbar shows the device switch and the console button only once there is a page
+  useEffect(() => {
+    setPreviewReady(srcdoc !== null);
+    return () => setPreviewReady(false);
+  }, [srcdoc, setPreviewReady]);
   // an error is the one thing worth interrupting for: open the console by itself
   useEffect(() => {
+    setPreviewErrors(errorCount);
     if (errorCount > 0) setConsoleOpen(true);
-  }, [errorCount]);
+  }, [errorCount, setPreviewErrors, setConsoleOpen]);
 
   return (
-    <div className="flex h-full w-full flex-col">
-      <div className="flex h-11 flex-none items-center gap-2 border-b border-line px-3">
-        <span className="icon-chip tone-info">
-          <EyeIcon className="h-4 w-4" />
-        </span>
-        <h2 className="text-sm font-semibold">พรีวิว</h2>
-        <Tooltip
-          label="หน้าตาเหมือนของจริง แต่ปุ่มที่บันทึกหรือดึงข้อมูลยังไม่ทำงาน ต้องเผยแพร่ก่อนแล้วเปิดจากลิงก์ของแอป"
-          placement="bottom"
-        >
-          <span className="badge cursor-help">จำลอง</span>
-        </Tooltip>
-        <span className="flex-1" />
-        {srcdoc && (
-          <>
-            <div className="seg" role="group" aria-label="ขนาดจอ">
-              <Tooltip label="จอคอมพิวเตอร์" placement="bottom">
-                <button onClick={() => setView("desktop")} aria-label="จอคอมพิวเตอร์" aria-pressed={view === "desktop"} className="seg-item px-2">
-                  <ComputerDesktopIcon className="h-4 w-4" />
-                </button>
-              </Tooltip>
-              <Tooltip label="จอมือถือ" placement="bottom">
-                <button onClick={() => setView("mobile")} aria-label="จอมือถือ" aria-pressed={view === "mobile"} className="seg-item px-2">
-                  <DevicePhoneMobileIcon className="h-4 w-4" />
-                </button>
-              </Tooltip>
-            </div>
-            <Tooltip label="ข้อความและ error จากหน้าพรีวิว" placement="bottom">
-              <button onClick={() => setConsoleOpen((o) => !o)} aria-pressed={consoleOpen} className="btn btn-ghost btn-sm">
-                <CommandLineIcon className="h-4 w-4" />
-                <span className="hidden sm:inline">Console</span>
-                {errorCount > 0 && <span className="rounded-full bg-danger-soft px-1.5 text-xs font-semibold text-danger">{errorCount}</span>}
-              </button>
-            </Tooltip>
-          </>
-        )}
-      </div>
+    <div className="relative flex h-full w-full flex-col">
+      {/* narrow window: the toolbar row has no room for the preview's tools — a small pill over the frame instead */}
+      {srcdoc && (
+        <div className="absolute right-3 top-3 z-10 flex items-center gap-1 rounded-lg border border-line bg-surface p-0.5 shadow-[var(--shadow-pop)] lg:hidden">
+          <Tooltip label="หน้าตาเหมือนของจริง แต่ปุ่มที่บันทึกหรือดึงข้อมูลยังไม่ทำงาน ต้องเผยแพร่ก่อน" placement="bottom">
+            <span className="badge cursor-help border-transparent">จำลอง</span>
+          </Tooltip>
+          <button
+            type="button"
+            onClick={() => setConsoleOpen(!consoleOpen)}
+            aria-pressed={consoleOpen}
+            aria-label="คอนโซล"
+            title="ข้อความและ error จากหน้าพรีวิว"
+            className="btn btn-ghost btn-sm btn-icon"
+          >
+            <CommandLineIcon className="h-4 w-4" />
+            {errorCount > 0 && <span className="absolute -right-0.5 -top-0.5 rounded-full bg-danger-soft px-1 text-[10px] font-semibold text-danger">{errorCount}</span>}
+          </button>
+        </div>
+      )}
 
       {srcdoc ? (
         <div className={`min-h-0 flex-1 overflow-auto ${view === "mobile" ? "grid place-items-start justify-center bg-sunken p-3" : "bg-white"}`}>

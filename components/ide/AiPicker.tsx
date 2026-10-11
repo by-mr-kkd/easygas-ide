@@ -15,7 +15,8 @@ const optionOf = (options: AiOption[], c: AiChoice | null): AiOption | undefined
 export function aiLabel(options: AiOption[], choice: AiChoice | null): string {
   const option = optionOf(options, choice);
   if (!option) return "เลือก AI";
-  return choice?.model ? `${option.label} · ${choice.model}` : option.label;
+  const model = choice?.model || option.defaultModel;
+  return model ? `${option.label} · ${model}` : option.label;
 }
 
 /**
@@ -41,8 +42,8 @@ export function AiPicker({
   const setChoice = useProjectStore((s) => s.setAiChoice);
   const [open, setOpen] = useState(false);
   const [custom, setCustom] = useState("");
-  // model ids fetched from a provider, per option (kept while the page is open)
-  const [listed, setListed] = useState<Record<string, string[]>>({});
+  // what each provider offers the user's key, per option (kept while the page is open; the server remembers a day)
+  const [listed, setListed] = useState<Record<string, { models: string[]; recommended: string | null; defaultModel: string }>>({});
   const [listing, setListing] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
@@ -79,20 +80,27 @@ export function AiPicker({
     pick(model ? { ...rest, model } : rest);
   };
 
-  async function fetchModels() {
+  async function fetchModels(force: boolean) {
     if (!current?.provider || listing) return;
     setListing(true);
     setNote(null);
     try {
-      const r = await listModelsAction(current.provider);
+      const r = await listModelsAction(current.provider, force);
       if ("error" in r) setNote(r.error);
-      else setListed((l) => ({ ...l, [keyOf(current)]: r.models }));
+      else setListed((l) => ({ ...l, [keyOf(current)]: r }));
     } catch {
       setNote("ดึงรายชื่อโมเดลไม่สำเร็จ พิมพ์ชื่อโมเดลเองได้");
     } finally {
       setListing(false);
     }
   }
+
+  // an API key's models come from the provider itself, so the list is never stale: load it on opening
+  const currentKey = current ? keyOf(current) : "";
+  useEffect(() => {
+    if (open && current?.canListModels && !listed[currentKey]) void fetchModels(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per provider while the page is open
+  }, [open, currentKey]);
 
   function useCustom(e: React.FormEvent) {
     e.preventDefault();
@@ -106,12 +114,18 @@ export function AiPicker({
     { id: "plan", title: "สมาชิกรายเดือน", Icon: CpuChipIcon },
     { id: "key", title: "API key จ่ายตามที่ใช้", Icon: KeyIcon },
   ];
-  const models = current
+  const fromProvider = current ? listed[keyOf(current)] : undefined;
+  const providerIds = fromProvider?.models ?? [];
+  const recommended = fromProvider?.recommended ?? null;
+  // the recommended one first, then the rest as the provider listed them (newest first)
+  const ordered = recommended ? [recommended, ...providerIds.filter((id) => id !== recommended)] : providerIds;
+  const models: { id: string; label: string; tag?: string }[] = current
     ? [
-        ...current.models,
-        ...(listed[keyOf(current)] ?? []).filter((id) => !current.models.some((m) => m.id === id)).map((id) => ({ id, label: id })),
+        // the default row names what a default pick really runs on, once the provider has said
+        ...current.models.map((m) => (m.id === "" && fromProvider ? { id: "", label: `ค่าเริ่มต้น (${fromProvider.defaultModel})` } : m)),
+        ...ordered.filter((id) => !current.models.some((m) => m.id === id)).map((id) => ({ id, label: id, tag: id === recommended ? "แนะนำ" : undefined })),
         // a typed-in model that is in neither list still has to show as the selected one
-        ...(choice?.model && !current.models.some((m) => m.id === choice.model) && !(listed[keyOf(current)] ?? []).includes(choice.model)
+        ...(choice?.model && !current.models.some((m) => m.id === choice.model) && !providerIds.includes(choice.model)
           ? [{ id: choice.model, label: choice.model }]
           : []),
       ]
@@ -195,6 +209,7 @@ export function AiPicker({
                     >
                       <CheckIcon className={`h-4 w-4 shrink-0 ${selected ? "" : "invisible"}`} />
                       <span className={`min-w-0 flex-1 truncate ${m.label === m.id ? "font-mono text-[13px]" : ""}`}>{m.label}</span>
+                      {m.tag && <span className="badge badge-ok shrink-0 text-[11px]">{m.tag}</span>}
                     </button>
                   );
                 })}
@@ -213,9 +228,9 @@ export function AiPicker({
                 </button>
               </form>
               {current.canListModels && (
-                <button type="button" onClick={fetchModels} disabled={listing} className="btn btn-ghost btn-sm mt-1 w-full justify-start">
+                <button type="button" onClick={() => void fetchModels(true)} disabled={listing} className="btn btn-ghost btn-sm mt-1 w-full justify-start">
                   <ArrowPathIcon className={`h-4 w-4 text-info ${listing ? "animate-spin" : ""}`} />
-                  {listing ? "กำลังดึงรายชื่อ…" : "ดึงรายชื่อโมเดลจากบัญชีของฉัน"}
+                  {listing ? "กำลังดึงรายชื่อ…" : fromProvider ? "ดึงรายชื่อโมเดลใหม่" : "ดึงรายชื่อโมเดลจากบัญชีของฉัน"}
                 </button>
               )}
               {note && <p className="hint px-2 pt-1">{note}</p>}

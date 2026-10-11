@@ -10,7 +10,9 @@ import { TOURS, type Rect, type TourId, type TourStep, bubblePosition, presentSt
 const BUBBLE_W = 320;
 const FIRST_RUN_DELAY_MS = 600;
 
-const findTarget = (target: string): HTMLElement | null => document.querySelector<HTMLElement>(`[data-tour="${target}"]`);
+// the first one on screen: some parts exist twice (the project list: a panel on a wide window, a card on a phone)
+const findTarget = (target: string): HTMLElement | null =>
+  [...document.querySelectorAll<HTMLElement>(`[data-tour="${target}"]`)].find((el) => el.getClientRects().length > 0) ?? null;
 
 const isShown = (el: HTMLElement): boolean => el.offsetParent !== null || getComputedStyle(el).position === "fixed";
 

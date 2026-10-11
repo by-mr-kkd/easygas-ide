@@ -29,6 +29,10 @@ function Item({ href, tone = "muted", title, children }: { href: string; tone?: 
  * (Google, the AI, the AI's quota left), each a link to where it is changed. Right: use from a phone,
  * the version / update, and the credits — About, the users' Facebook group, the source on GitHub — the
  * same links the page footer had. A phone has the tab bar there instead.
+ *
+ * It never overflows the window: the right half keeps its width and its words fall away before its
+ * icons do (full wording from xl, labels on the brand links from 2xl); the left half shrinks and clips
+ * last, so the corner the eye goes to is always there.
  */
 export async function AppStatusBar({ setup }: { setup: SetupStatus }) {
   const [remote, update, claudeQuotaAllowed] = await Promise.all([
@@ -59,47 +63,71 @@ export async function AppStatusBar({ setup }: { setup: SetupStatus }) {
         : update?.current
           ? `v${update.current}${update.status === "latest" ? " · ล่าสุดแล้ว" : ""}`
           : null;
+  // the same, in the few words a narrower window has room for
+  const updateShort =
+    update?.status === "ready" && update.version
+      ? `${update.version} พร้อมแล้ว`
+      : update?.status === "downloading" && update.version
+        ? `โหลด ${update.version}…`
+        : update?.current
+          ? `v${update.current}`
+          : null;
 
   return (
-    <footer aria-label="สถานะ" className="hidden h-[26px] shrink-0 items-stretch border-t border-line bg-panel2 px-1 text-[11.5px] text-muted md:flex">
-      <Item href="/settings?s=google">
-        <CheckCircleIcon className={`h-3.5 w-3.5 ${setup.google.loggedIn ? "text-accent-text" : "text-faint"}`} aria-hidden />
-        {setup.google.loggedIn ? "Google: เชื่อมแล้ว" : "Google: ยังไม่เชื่อม"}
-      </Item>
-      <Item href="/settings?s=ai" tone={setup.engineReady ? "muted" : "warn"}>
-        {setup.engineReady ? <span className="h-1.5 w-1.5 rounded-full bg-ai" aria-hidden /> : <ExclamationTriangleIcon className="h-3.5 w-3.5" aria-hidden />}
-        {setup.engineReady ? `AI: ${shortEngineLabel(setup.engineLabel)}` : "ตั้งค่า AI ก่อนเริ่มสร้าง"}
-      </Item>
-      {quotaEngine && (
-        <div className="flex items-center px-0.5">
-          <QuotaStatus engine={quotaEngine} claudeAllowed={claudeQuotaAllowed} settingsHref="/settings?s=ai" />
-        </div>
-      )}
-      <span className="flex-1" />
-      <Item href="/settings?s=remote">
-        <DevicePhoneMobileIcon className={`h-3.5 w-3.5 ${online ? "text-accent-text" : "text-faint"}`} aria-hidden />
-        ใช้จากมือถือ: {phoneLabel}
-      </Item>
-      {updateLabel && (
-        <Item href="/settings?s=data" tone={update?.status === "ready" ? "warn" : "muted"}>
-          <ArrowPathIcon className="h-3.5 w-3.5" aria-hidden />
-          {updateLabel}
+    <footer
+      aria-label="สถานะ"
+      className="hidden h-[26px] shrink-0 items-stretch overflow-hidden border-t border-line bg-panel2 px-1 text-[11.5px] text-muted md:flex"
+    >
+      {/* left: the setup — gives way first (shrinks, then clips) when the window is narrow */}
+      <div className="flex min-w-0 flex-1 items-stretch overflow-hidden">
+        <Item href="/settings?s=google" title={setup.google.loggedIn ? "Google: เชื่อมแล้ว" : "Google: ยังไม่เชื่อม"}>
+          <CheckCircleIcon className={`h-3.5 w-3.5 ${setup.google.loggedIn ? "text-accent-text" : "text-faint"}`} aria-hidden />
+          <span className="hidden lg:inline">{setup.google.loggedIn ? "Google: เชื่อมแล้ว" : "Google: ยังไม่เชื่อม"}</span>
+          <span className="lg:hidden">Google</span>
         </Item>
-      )}
-      {/* the news thread of the version in use — or of the newer one on its way (then it greets once per launch) */}
-      <WhatsNewLink href={whatsNewUrl(newer ?? (update?.current || APP_VERSION))} fresh={!!newer} className={ITEM} />
-      <span className="my-1.5 w-px bg-line" aria-hidden />
-      <Item href="/about" title="เกี่ยวกับ EasyGAS IDE">
-        Powered by <span className="font-semibold text-fg">Mr.KKD</span>
-      </Item>
-      <a href={LINKS.facebookGroup} target="_blank" rel="noopener noreferrer" title="กลุ่ม Facebook ผู้ใช้ EasyGAS" className={ITEM}>
-        <FacebookIcon className="h-3.5 w-3.5 text-[#1877F2]" />
-        <span className="hidden lg:inline">กลุ่ม Facebook</span>
-      </a>
-      <a href={LINKS.repo} target="_blank" rel="noopener noreferrer" title="โค้ดและเวอร์ชันบน GitHub" className={ITEM}>
-        <GitHubIcon className="h-3.5 w-3.5" />
-        <span className="hidden lg:inline">GitHub</span>
-      </a>
+        <Item href="/settings?s=ai" tone={setup.engineReady ? "muted" : "warn"}>
+          {setup.engineReady ? <span className="h-1.5 w-1.5 rounded-full bg-ai" aria-hidden /> : <ExclamationTriangleIcon className="h-3.5 w-3.5" aria-hidden />}
+          {setup.engineReady ? `AI: ${shortEngineLabel(setup.engineLabel)}` : "ตั้งค่า AI ก่อนเริ่มสร้าง"}
+        </Item>
+        {quotaEngine && (
+          <div className="flex min-w-0 items-center px-0.5">
+            <QuotaStatus engine={quotaEngine} claudeAllowed={claudeQuotaAllowed} settingsHref="/settings?s=ai" />
+          </div>
+        )}
+      </div>
+
+      {/* right: keeps its width; words drop before icons */}
+      <div className="flex shrink-0 items-stretch">
+        <Item href="/settings?s=remote" title={`ใช้จากมือถือ: ${phoneLabel}`}>
+          <DevicePhoneMobileIcon className={`h-3.5 w-3.5 ${online ? "text-accent-text" : "text-faint"}`} aria-hidden />
+          <span className="hidden xl:inline">ใช้จากมือถือ: </span>
+          {phoneLabel}
+        </Item>
+        {updateLabel && (
+          <Item href="/settings?s=data" tone={update?.status === "ready" ? "warn" : "muted"} title={updateLabel}>
+            <ArrowPathIcon className="h-3.5 w-3.5" aria-hidden />
+            <span className="hidden xl:inline">{updateLabel}</span>
+            <span className="xl:hidden">{updateShort}</span>
+          </Item>
+        )}
+        {/* the news thread of the version in use — or of the newer one on its way (then it greets once per launch) */}
+        <span className={newer ? "contents" : "hidden lg:contents"}>
+          <WhatsNewLink href={whatsNewUrl(newer ?? (update?.current || APP_VERSION))} fresh={!!newer} className={ITEM} />
+        </span>
+        <span className="my-1.5 w-px bg-line" aria-hidden />
+        <Item href="/about" title="เกี่ยวกับ EasyGAS IDE · Powered by Mr.KKD">
+          <span className="hidden xl:inline">Powered by&nbsp;</span>
+          <span className="font-semibold text-fg">Mr.KKD</span>
+        </Item>
+        <a href={LINKS.facebookGroup} target="_blank" rel="noopener noreferrer" title="กลุ่ม Facebook ผู้ใช้ EasyGAS" aria-label="กลุ่ม Facebook ผู้ใช้ EasyGAS" className={ITEM}>
+          <FacebookIcon className="h-3.5 w-3.5 text-[#1877F2]" />
+          <span className="hidden 2xl:inline">กลุ่ม Facebook</span>
+        </a>
+        <a href={LINKS.repo} target="_blank" rel="noopener noreferrer" title="โค้ดและเวอร์ชันบน GitHub" aria-label="โค้ดและเวอร์ชันบน GitHub" className={ITEM}>
+          <GitHubIcon className="h-3.5 w-3.5" />
+          <span className="hidden 2xl:inline">GitHub</span>
+        </a>
+      </div>
     </footer>
   );
 }

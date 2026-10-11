@@ -21,6 +21,8 @@ export interface EditorIssue {
   fix: string;
 }
 
+export type PreviewDevice = "desktop" | "mobile";
+
 interface ProjectState {
   files: Record<string, FileEntry>;
   order: string[];
@@ -54,7 +56,7 @@ interface ProjectState {
   setPaletteOpen: (open: boolean) => void;
   /** one-shot imperative action dispatched by the palette, consumed by the owning component
    *  (DeployButton→"deploy", DeployedUrlBar→"openDev"/"redeploy", EditorToolbar→"recheck",
-   *  IdeShell→"connectGoogle") */
+   *  ChatPanel→"style", IdeShell→"connectGoogle") */
   actionRequest: string | null;
   requestAction: (key: string) => void;
   clearActionRequest: () => void;
@@ -63,6 +65,17 @@ interface ProjectState {
   energy: number;
   initEnergy: (used: number) => void;
   addEnergy: (tokens: number) => void;
+  /** The preview's controls live in the toolbar row (PreviewTools) while the frame and its console live
+   *  in PreviewPane — this is what they share: the device frame, whether the console is open, how many
+   *  errors the page logged, and whether there is a page to show at all. */
+  previewDevice: PreviewDevice;
+  setPreviewDevice: (device: PreviewDevice) => void;
+  previewConsole: boolean;
+  setPreviewConsole: (open: boolean) => void;
+  previewErrors: number;
+  setPreviewErrors: (count: number) => void;
+  previewReady: boolean;
+  setPreviewReady: (ready: boolean) => void;
 }
 
 /**
@@ -82,6 +95,10 @@ export const useProjectStore = create<ProjectState>((set) => ({
   paletteOpen: false,
   actionRequest: null,
   energy: 0,
+  previewDevice: "desktop",
+  previewConsole: false,
+  previewErrors: 0,
+  previewReady: false,
 
   setInitial: (list) =>
     set(() => {
@@ -156,4 +173,9 @@ export const useProjectStore = create<ProjectState>((set) => ({
 
   initEnergy: (used) => set({ energy: used }),
   addEnergy: (tokens) => set((s) => ({ energy: s.energy + (tokens || 0) })),
+
+  setPreviewDevice: (device) => set({ previewDevice: device }),
+  setPreviewConsole: (open) => set((s) => (s.previewConsole === open ? {} : { previewConsole: open })),
+  setPreviewErrors: (count) => set((s) => (s.previewErrors === count ? {} : { previewErrors: count })),
+  setPreviewReady: (ready) => set((s) => (s.previewReady === ready ? {} : { previewReady: ready })),
 }));

@@ -36,10 +36,16 @@ export const metadata = { title: "ตั้งค่า — EasyGAS IDE" };
 
 const SECTIONS: readonly SettingsSection[] = ["ai", "google", "style", "remote", "premium", "support", "data"];
 
-const KEY_FORMS: { id: KeyId; label: string; hint: string }[] = [
+const KEY_FORMS: { id: KeyId; label: string; hint: string; note?: string }[] = [
   { id: "anthropic", label: "Anthropic (Claude)", hint: "สร้างคีย์ที่ console.anthropic.com" },
   { id: "openai", label: "OpenAI (ChatGPT)", hint: "สร้างคีย์ที่ platform.openai.com" },
-  { id: "gemini", label: "Google Gemini", hint: "สร้างคีย์ที่ aistudio.google.com" },
+  {
+    id: "gemini",
+    label: "Google Gemini",
+    hint: "สร้างคีย์ที่ aistudio.google.com",
+    // seen live 2026-10-11: a free key got 20 requests a day for gemini-3.8-flash, and one build uses 10-20
+    note: "แบบฟรีของ Gemini จำกัดจำนวนครั้งต่อวัน บางโมเดลแค่ราว 20 ครั้ง/วัน และการสร้างระบบ 1 ครั้งเรียก AI 10–20 ครั้ง ถ้าขึ้นว่าโควตาหมด (429) ให้รอวันถัดไป สลับโมเดลที่ปุ่มเลือก AI หรือเปิดการชำระเงินใน Google AI Studio",
+  },
   { id: "deepseek", label: "DeepSeek", hint: "สร้างคีย์ที่ platform.deepseek.com" },
   { id: "zai", label: "GLM (z.ai)", hint: "สร้างคีย์ที่ z.ai" },
   { id: "meta", label: "Meta (Muse)", hint: "สร้างคีย์ที่ dev.meta.ai (Model API dashboard)" },

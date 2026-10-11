@@ -7,6 +7,7 @@ import { PREF_FIELDS } from "@/lib/preferences";
 import { buildSystemPromptParts, buildTurnContext, readRuleCards, saveProjectPreference } from "@/lib/rulebook/context";
 import { deleteFile, getFile, getFiles, writeFile } from "@/lib/files";
 import { appendMessages, getHistory } from "@/lib/messages";
+import { hasHistoryNote, HISTORY_NOTE_REFUSAL } from "@/lib/history-marks";
 import { getProject, updateProject } from "@/lib/projects";
 import type { AttachedImage } from "@/lib/chat-images";
 import { lintScope } from "@/lib/import";
@@ -245,6 +246,7 @@ export async function executeEgsTool(
     if (name === "write_file") {
       const path = String(input.path);
       const content = String(input.content ?? "");
+      if (hasHistoryNote(content)) return { isError: true, content: HISTORY_NOTE_REFUSAL };
       await writeFile(projectId, path, content);
       emit({ type: "file_mutation", op: "write", path, content });
       return lintWritten(projectId, path, content, emit);
@@ -253,6 +255,7 @@ export async function executeEgsTool(
       const path = String(input.path);
       const oldStr = String(input.old_str ?? "");
       const newStr = String(input.new_str ?? "");
+      if (hasHistoryNote(newStr) || hasHistoryNote(oldStr)) return { isError: true, content: HISTORY_NOTE_REFUSAL };
       const file = await getFile(projectId, path);
       if (!file) return { isError: true, content: `ไม่พบไฟล์ ${path}` };
       const occurrences = file.content.split(oldStr).length - 1;
@@ -737,6 +740,9 @@ async function runCriticGate(
     const repairMsg =
       "ตรวจคุณภาพ (rulebook critic) พบปัญหาต่อไปนี้ แก้ไฟล์ที่เกี่ยวข้องให้เรียบร้อยด้วย edit_file/write_file:\n" +
       actionable.map((i) => `- ${i.file}: ${i.problem} — แนวทาง: ${i.fix}`).join("\n");
+    // the repair streams its own words into the same message: start them on a new paragraph, not glued to
+    // the last line of the list above ("...state.products.ได้ครับ")
+    emit({ type: "text", delta: "\n\n" });
     const repair = await runTurn(client, {
       ...args,
       images: [], // repair is a derived turn — don't re-send/re-bill the original images

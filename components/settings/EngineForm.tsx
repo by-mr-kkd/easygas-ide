@@ -21,6 +21,8 @@ interface KeyOption {
   id: KeyId;
   label: string;
   hint: string;
+  /** what to know about this provider's key (free-tier limits …), shown under the field */
+  note?: string;
   hasKey: boolean;
 }
 
@@ -129,7 +131,7 @@ export function EngineForm(props: {
             ))}
           </select>
         </div>
-        {selectedKey && <ApiKeyForm key={selectedKey.id} keyId={selectedKey.id} label={selectedKey.label} hint={selectedKey.hint} hasKey={selectedKey.hasKey} required />}
+        {selectedKey && <ApiKeyForm key={selectedKey.id} keyId={selectedKey.id} label={selectedKey.label} hint={selectedKey.hint} note={selectedKey.note} hasKey={selectedKey.hasKey} required />}
         <p className="hint">
           คีย์เก็บไว้ในเครื่องของคุณเท่านั้น และส่งตรงไปยังผู้ให้บริการ AI ที่คุณเลือก ไม่ผ่านเซิร์ฟเวอร์อื่น
           โปรเจกต์ที่สร้างไปแล้วจะใช้ผู้ให้บริการเดิมต่อ (ประวัติแชทผูกกับรูปแบบของผู้ให้บริการนั้น)
@@ -142,7 +144,7 @@ export function EngineForm(props: {
             </summary>
             <div className="mt-2 space-y-2">
               {otherKeys.map((k) => (
-                <ApiKeyForm key={k.id} keyId={k.id} label={k.label} hint={k.hint} hasKey={k.hasKey} />
+                <ApiKeyForm key={k.id} keyId={k.id} label={k.label} hint={k.hint} note={k.note} hasKey={k.hasKey} />
               ))}
             </div>
           </details>

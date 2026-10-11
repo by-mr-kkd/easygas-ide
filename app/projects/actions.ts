@@ -1,15 +1,16 @@
 "use server";
 
-import Anthropic from "@anthropic-ai/sdk";
-import OpenAI from "openai";
 import { revalidatePath } from "next/cache";
-import { MODEL_ID, sanitizeChoice } from "@/lib/ai-choice";
+import { sanitizeChoice } from "@/lib/ai-choice";
 import { LLM_PROVIDERS } from "@/lib/llm/catalog";
-import { resolveProvider } from "@/lib/llm/provider";
+import { providerWithKey } from "@/lib/llm/provider";
+import { listedModels } from "@/lib/llm/model-list";
+import { orderModels, pickModel, recommendModel } from "@/lib/llm/model-pick";
+import { getSettings } from "@/lib/settings";
 import { detectCapabilityNeeds, routeTarget } from "@/lib/deployment-targets/router";
 import { briefToMessage, isEmptyBrief, sanitizeBrief } from "@/lib/brief";
 import { sanitizePrefs, type StylePrefs } from "@/lib/preferences";
-import { isProjectBusy } from "@/lib/agent-lock";
+import { busyProjectIds, isProjectBusy } from "@/lib/agent-lock";
 import { latestAnnouncement, type Announcement } from "@/lib/announcement";
 import { createProject, getProject, mutateProject, softDeleteProject } from "@/lib/projects";
 
@@ -98,40 +99,34 @@ export async function saveProjectAiAction(id: string, input: unknown): Promise<{
   return { ok: true };
 }
 
-/** Model ids that are plainly not chat models — kept out of the picker's list. */
-const NOT_A_CHAT_MODEL = /embed|whisper|tts|audio|transcri|moderation|dall-e|image|realtime|rerank|sam-|speech|video/i;
-const MAX_LISTED_MODELS = 200;
+/** Which projects the AI is working on now (the home screen's list follows it while open). */
+export async function busyProjectsAction(): Promise<string[]> {
+  return busyProjectIds();
+}
 
 /**
- * The models the user's own key can use, asked from the provider (the chat picker's "ดึงรายชื่อ").
- * Returns ids only; the key stays on the server.
+ * The models the user's own key can use, asked from the provider (remembered a day, lib/llm/model-list),
+ * with the one to recommend and the one a default pick runs on. The picker loads it when it opens;
+ * `force` = the "ดึงรายชื่อใหม่" button. Returns ids only; the key stays on the server.
  */
-export async function listModelsAction(provider: unknown): Promise<{ models: string[] } | { error: string }> {
+export async function listModelsAction(
+  provider: unknown,
+  force = false,
+): Promise<{ models: string[]; recommended: string | null; defaultModel: string } | { error: string }> {
   const p = LLM_PROVIDERS.find((x) => x === provider);
   if (!p) return { error: "ผู้ให้บริการไม่ถูกต้อง" };
-  const cfg = await resolveProvider(p);
+  const cfg = await providerWithKey(p);
   if (!cfg.apiKey) return { error: `ยังไม่ได้ใส่ API key ของ ${cfg.label}` };
   try {
-    const ids: string[] = [];
-    if (cfg.family === "anthropic") {
-      for await (const m of new Anthropic({ apiKey: cfg.apiKey }).models.list()) {
-        ids.push(m.id);
-        if (ids.length >= MAX_LISTED_MODELS) break;
-      }
-    } else {
-      for await (const m of new OpenAI({ apiKey: cfg.apiKey, baseURL: cfg.baseURL }).models.list()) {
-        ids.push(m.id);
-        if (ids.length >= MAX_LISTED_MODELS * 3) break;
-      }
-    }
-    // Gemini's OpenAI-compatible list prefixes ids with "models/"
-    const models = [...new Set(ids.map((id) => id.replace(/^models\//, "")))]
-      .filter((id) => MODEL_ID.test(id) && !NOT_A_CHAT_MODEL.test(id))
-      .sort((a, b) => a.localeCompare(b, "en", { numeric: true }))
-      .slice(0, MAX_LISTED_MODELS);
-    return models.length > 0 ? { models } : { error: "ผู้ให้บริการไม่ได้ส่งรายชื่อโมเดลกลับมา พิมพ์ชื่อโมเดลเองได้" };
-  } catch (e) {
-    console.error("[models] list failed:", (e as Error).message);
-    return { error: "ดึงรายชื่อโมเดลไม่สำเร็จ พิมพ์ชื่อโมเดลเองได้" };
+    const models = (await listedModels(cfg, { force: force === true })) ?? [];
+    if (models.length === 0) return { error: "ผู้ให้บริการไม่ได้ส่งรายชื่อโมเดลกลับมา พิมพ์ชื่อโมเดลเองได้" };
+    const settingsModel = (await getSettings()).models[p]?.trim() || null;
+    return {
+      models: orderModels(p, models),
+      recommended: recommendModel(p, models),
+      defaultModel: settingsModel || pickModel(p, { builtIn: cfg.model, listed: models }).model,
+    };
+  } catch {
+    return { error: "ดึงรายชื่อโมเดลไม่สำเร็จ ตรวจ API key หรืออินเทอร์เน็ต แล้วลองใหม่ หรือพิมพ์ชื่อโมเดลเอง" };
   }
 }

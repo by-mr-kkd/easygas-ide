@@ -34,6 +34,12 @@ export async function releaseProjectRun(projectId: string, token: string): Promi
   if (locks.get(projectId)?.token === token) locks.delete(projectId);
 }
 
+/** The projects a run holds right now (AI turn, re-check, publish): the home screen lists them first. */
+export function busyProjectIds(): string[] {
+  const now = Date.now();
+  return [...locks.entries()].filter(([, l]) => now - l.at < STALE_MS).map(([id]) => id);
+}
+
 /** True while a run holds the project (for writes that must not land underneath it, e.g. file saves). */
 export function isProjectBusy(projectId: string): boolean {
   const held = locks.get(projectId);

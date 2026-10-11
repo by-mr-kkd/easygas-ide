@@ -18,6 +18,7 @@ import { StartModeTabs, startModeFrom } from "@/components/projects/StartModeTab
 import { GuidedTour } from "@/components/tour/GuidedTour";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { getDeployedMap, listProjects } from "@/lib/projects";
+import { busyProjectIds } from "@/lib/agent-lock";
 import { premiumStatus } from "@/lib/premium/status";
 import { getAppSetting } from "@/lib/settings";
 import { shouldNudgeApp } from "@/lib/remote/nudge";
@@ -53,6 +54,8 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
     premiumStatus().catch(() => ({ active: false })),
   ]);
   const mode = startModeFrom(params.mode);
+  // projects the AI is working on right now (the list puts them first and keeps following)
+  const busy = busyProjectIds();
   // the easygas://clone/<slug> protocol lands here with the slug (electron/main.js)
   const cloneLink = typeof params.clone === "string" ? params.clone.slice(0, 300) : "";
 
@@ -72,9 +75,9 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
       <div className="flex flex-1 flex-col md:min-h-0 md:flex-row">
         <AppRail active={mode === "existing" ? "google" : "home"} />
 
-        {/* the project panel: beside the work area on a wide window, under it on a phone */}
-        <div className="order-2 flex min-w-0 flex-col md:order-1 md:min-h-0">
-          <ProjectSidebar projects={projects} deployed={deployed} googleConnected={setup.google.loggedIn} />
+        {/* the project panel beside the work area on a wide window; a phone gets the same list under the work box */}
+        <div className="order-2 hidden min-w-0 flex-col md:order-1 md:flex md:min-h-0">
+          <ProjectSidebar projects={projects} deployed={deployed} busy={busy} googleConnected={setup.google.loggedIn} />
         </div>
 
         {/* relative: an absolutely placed child (an sr-only label) anchors here, not to the page, so the window never scrolls */}
@@ -130,6 +133,13 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
                 )}
               </div>
             </section>
+
+            {/* phone: your own projects come before other ways in and other people's shares */}
+            {mode !== "existing" && (
+              <div className="md:hidden">
+                <ProjectSidebar projects={projects} deployed={deployed} busy={busy} googleConnected={setup.google.loggedIn} />
+              </div>
+            )}
 
             {/* the Google tab is the scripts list only: these two have their own screens (and the other tabs) */}
             {mode !== "existing" && (

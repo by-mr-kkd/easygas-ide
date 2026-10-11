@@ -21,12 +21,15 @@ export function QuotaStatus({
   claudeAllowed,
   settingsHref,
   quiet = false,
+  compact = false,
 }: {
   engine: QuotaEngine;
   claudeAllowed: boolean;
   settingsHref: string;
   /** under the phone's chat box: faint text, only the dot shows the level */
   quiet?: boolean;
+  /** in a narrow place (under the IDE's chat box): always the one-line summary, never the per-window bars */
+  compact?: boolean;
 }) {
   const [result, setResult] = useState<QuotaResult | null>(null);
   const [busy, setBusy] = useState(false);
@@ -88,18 +91,18 @@ export function QuotaStatus({
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className={`flex h-6 items-center gap-1.5 rounded px-1.5 transition hover:bg-sunken hover:text-fg ${windows.length && !quiet ? "xl:hidden" : ""} ${quiet ? "text-faint" : LEVEL_TEXT[level]}`}
+        className={`flex h-6 items-center gap-1.5 rounded px-1.5 transition hover:bg-sunken hover:text-fg ${windows.length && !quiet && !compact ? "2xl:hidden" : ""} ${quiet ? "text-faint" : LEVEL_TEXT[level]}`}
       >
         <span className={`h-1.5 w-1.5 rounded-full ${result?.ok ? LEVEL_DOT[level] : "bg-line-strong"}`} />
         <span className="truncate">{text}</span>
       </button>
-      {windows.length > 0 && !quiet && (
+      {windows.length > 0 && !quiet && !compact && (
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
           title="กดเพื่อดูรายละเอียดหรืออ่านใหม่"
-          className="hidden h-6 items-center gap-3 rounded px-1.5 transition hover:bg-sunken hover:text-fg xl:flex"
+          className="hidden h-6 items-center gap-3 rounded px-1.5 transition hover:bg-sunken hover:text-fg 2xl:flex"
         >
           {windows.map((w) => {
             const left = 100 - w.usedPercent;

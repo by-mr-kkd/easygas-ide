@@ -6,6 +6,8 @@ import {
   type ProviderConfig,
 } from "@/lib/llm/catalog";
 import { getProject, updateProject } from "@/lib/projects";
+import { listedModels } from "@/lib/llm/model-list";
+import { pickModel } from "@/lib/llm/model-pick";
 import { getApiKey, getAppSetting, getSettings } from "@/lib/settings";
 
 /**
@@ -32,15 +34,21 @@ export async function getDefaultProvider(): Promise<LlmProvider> {
  * Full config with the user's key, model and base URL overrides applied (use this on the request
  * path). Precedence: settings.json → env/static default in catalog.
  */
-export async function resolveProvider(p: LlmProvider): Promise<ProviderConfig> {
+export async function resolveProvider(p: LlmProvider, opts: { wanted?: string | null } = {}): Promise<ProviderConfig & { replacedModel?: string }> {
+  const cfg = await providerWithKey(p);
+  // the user's pick (chat picker, then Settings) is always honoured; only the app's own default is checked
+  // against what the key can use, and swapped for the provider's current model when it is gone
+  const wanted = opts.wanted?.trim() || (await getSettings()).models[p]?.trim() || null;
+  if (wanted) return { ...cfg, model: wanted };
+  const pick = pickModel(p, { builtIn: cfg.model, listed: await listedModels(cfg) });
+  return { ...cfg, model: pick.model, ...(pick.replaced ? { replacedModel: pick.replaced } : {}) };
+}
+
+/** Key and base URL applied, the model left at the app's default (no look at the provider's list). */
+export async function providerWithKey(p: LlmProvider): Promise<ProviderConfig> {
   const base = providerConfig(p);
   const s = await getSettings();
-  return {
-    ...base,
-    model: s.models[p]?.trim() || base.model,
-    baseURL: s.baseUrls[p]?.trim() || base.baseURL,
-    apiKey: await getApiKey(p),
-  };
+  return { ...base, baseURL: s.baseUrls[p]?.trim() || base.baseURL, apiKey: await getApiKey(p) };
 }
 
 /** Kept for call-site compatibility: there is one local user, whose provider is the Settings one. */

@@ -28,6 +28,8 @@ import { buildSystemPromptParts } from "@/lib/rulebook/context";
 const MAX_ITERATIONS = 8;
 const REPAIR_MAX_ITERATIONS = 6;
 const MAX_TOKENS_FALLBACK = 16000; // used when an arm has no explicit maxOutputTokens (≈ gpt-4o ceiling)
+/** an empty step (no text, no tool call) is re-asked this many times per turn before the turn ends */
+const MAX_EMPTY_RETRIES = 2;
 const AUTO_CONTINUE_MAX = 2; // auto-fire "ทำต่อ" this many times when a build caps mid-way
 
 type Msg = OpenAI.Chat.Completions.ChatCompletionMessageParam;
@@ -124,6 +126,7 @@ async function runOpenAiTurn(
   let capped = false;
   let emittedText = false;
   let forcedToolRetry = false;
+  let emptyRetries = 0; // per turn: an empty step is re-asked at most MAX_EMPTY_RETRIES times
   let inputTokens = 0;
   let outputTokens = 0;
   let cacheReadTokens = 0; // OpenAI-format providers (DeepSeek/z.ai/…) auto-cache; capture the split
@@ -191,7 +194,9 @@ async function runOpenAiTurn(
 
     let text = "";
     let reasoning = ""; // DeepSeek thinking-model chain-of-thought (separate channel); preserved in history
-    const toolAcc = new Map<string | number, { id: string; name: string; args: string }>();
+    // extra: provider-specific fields of the call that must go back unchanged — Gemini 3 puts its thought
+    // signature in extra_content.google.thought_signature and answers the next request with a 400 without it
+    const toolAcc = new Map<string | number, { id: string; name: string; args: string; extra?: unknown }>();
     let lastToolKey: string | number | null = null;
     let toolSeq = 0;
     let finish: string | null = null;
@@ -231,6 +236,8 @@ async function runOpenAiTurn(
         if (tc.id) entry.id = tc.id;
         if (tc.function?.name) entry.name = tc.function.name;
         if (tc.function?.arguments) entry.args += tc.function.arguments;
+        const extra = (tc as { extra_content?: unknown }).extra_content;
+        if (extra) entry.extra = extra;
       }
     }
 
@@ -257,13 +264,14 @@ async function runOpenAiTurn(
     }));
 
     if (calls.length === 0) {
-      // Force ONE retry to coax a tool call ONLY when the model returned NOTHING (no text, no tools)
-      // on the first step of a fresh build — a weak tool-user (Gemini) sometimes stalls. P1-11: do NOT
-      // retry when there IS text (a legit Q&A answer) and NOT on reasoning arms — there tool_choice is
-      // never sent, so the retry is a byte-identical DUPLICATE of a ~110s reasoning call (the biggest
-      // single contributor to deepseek-pro's 112s average).
-      if (iter === 0 && !forcedToolRetry && !internal && !cfg.reasoning && !text.trim()) {
+      // Re-ask (tool_choice "required") ONLY when the model returned NOTHING (no text, no tools). A
+      // finished turn always says something, so an empty step is a stall — Gemini does it at any step,
+      // e.g. right after writing Code.gs with Index.html still missing (2026-10-11), not only on the first.
+      // P1-11: do NOT retry when there IS text (a legit Q&A answer) and NOT on reasoning arms — there
+      // tool_choice is never sent, so the retry is a byte-identical DUPLICATE of a ~110s reasoning call.
+      if (!forcedToolRetry && emptyRetries < MAX_EMPTY_RETRIES && !cfg.reasoning && !text.trim()) {
         forcedToolRetry = true;
+        emptyRetries++;
         continue; // re-run this step
       }
       messages.push(withReasoning({ role: "assistant", content: text }, reasoning, cfg.reasoning));
@@ -279,8 +287,9 @@ async function runOpenAiTurn(
           content: text || null,
           tool_calls: calls.map((c) => ({
             id: c.id,
-            type: "function",
+            type: "function" as const,
             function: { name: c.name, arguments: c.args || "{}" },
+            ...(c.extra ? { extra_content: c.extra } : {}),
           })),
         },
         reasoning,
@@ -321,8 +330,11 @@ async function runOpenAiTurn(
       last.content = `${last.content}\n\n${header}\n${issues.map((m) => "- " + m).join("\n")}`;
     }
 
-    if (finish !== "tool_calls") {
-      capped = finish === "length";
+    // the model asked for tools, so it expects their results: go round again. Not keyed on finish_reason ===
+    // "tool_calls": Gemini 3 answers "stop" even with tool calls (seen 2026-10-11), and stopping there ended
+    // every build after its first file. Only a cut-off answer ("length") stops the loop here.
+    if (finish === "length") {
+      capped = true;
       break;
     }
     if (iter === (internal ? REPAIR_MAX_ITERATIONS : MAX_ITERATIONS) - 1) capped = true;
@@ -409,6 +421,9 @@ async function runOpenAiCriticGate(
     const repairMsg =
       "ตรวจคุณภาพ (rulebook critic) พบปัญหาต่อไปนี้ แก้ไฟล์ที่เกี่ยวข้องให้เรียบร้อยด้วย edit_file/write_file:\n" +
       actionable.map((i) => `- ${i.file}: ${i.problem} — แนวทาง: ${i.fix}`).join("\n");
+    // the repair streams its own words into the same message: start them on a new paragraph, not glued to
+    // the last line of the list above ("...state.products.ได้ครับ")
+    emit({ type: "text", delta: "\n\n" });
     const repair = await runOpenAiTurn(client, cfg, { ...args, images: [], userMessage: repairMsg, internal: true });
     acc(repair);
 

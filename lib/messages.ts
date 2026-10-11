@@ -1,6 +1,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { appendJsonl, readJsonl } from "@/lib/local/json-store";
 import { messagesPath } from "@/lib/local/paths";
+import { editCutNote, fileCutNote, RESULT_CUT_TAIL } from "@/lib/history-marks";
 import { toOpenAiMessages, type StoredRow } from "@/lib/messages-text";
 import type { MessageRole, TurnType } from "@/types/db";
 
@@ -37,15 +38,15 @@ function compactContent(content: unknown): unknown {
     if (b.type === "tool_use" && b.input && typeof b.input === "object") {
       const input = { ...(b.input as Record<string, unknown>) };
       if (typeof input.content === "string" && input.content.length > 0)
-        input.content = `<โค้ดถูกตัดจากประวัติ (${input.content.length} ตัวอักษร) — เรียก read_project เพื่อดูโค้ดล่าสุด>`;
+        input.content = fileCutNote(input.content.length);
       if (typeof input.new_str === "string" && input.new_str.length > MAX_TOOL_RESULT_CHARS)
-        input.new_str = `<ตัด ${input.new_str.length} ตัวอักษร>`;
+        input.new_str = editCutNote(input.new_str.length);
       if (typeof input.old_str === "string" && input.old_str.length > MAX_TOOL_RESULT_CHARS)
-        input.old_str = `<ตัด ${input.old_str.length} ตัวอักษร>`;
+        input.old_str = editCutNote(input.old_str.length);
       return { ...b, input };
     }
     if (b.type === "tool_result" && typeof b.content === "string" && b.content.length > MAX_TOOL_RESULT_CHARS)
-      return { ...b, content: b.content.slice(0, MAX_TOOL_RESULT_CHARS) + " …<ตัดส่วนที่เหลือ>" };
+      return { ...b, content: b.content.slice(0, MAX_TOOL_RESULT_CHARS) + RESULT_CUT_TAIL };
     return block;
   });
 }
@@ -173,15 +174,15 @@ function compactRawMessage(m: unknown): unknown {
       }
       let changed = false;
       if (typeof args.content === "string" && args.content.length > 0) {
-        args.content = `<โค้ดถูกตัดจากประวัติ (${args.content.length} ตัวอักษร) — เรียก read_project เพื่อดูโค้ดล่าสุด>`;
+        args.content = fileCutNote(args.content.length);
         changed = true;
       }
       if (typeof args.new_str === "string" && args.new_str.length > MAX_TOOL_RESULT_CHARS) {
-        args.new_str = `<ตัด ${args.new_str.length} ตัวอักษร>`;
+        args.new_str = editCutNote(args.new_str.length);
         changed = true;
       }
       if (typeof args.old_str === "string" && args.old_str.length > MAX_TOOL_RESULT_CHARS) {
-        args.old_str = `<ตัด ${args.old_str.length} ตัวอักษร>`;
+        args.old_str = editCutNote(args.old_str.length);
         changed = true;
       }
       return changed ? { ...tc, function: { ...fn, arguments: JSON.stringify(args) } } : tc;
@@ -189,7 +190,7 @@ function compactRawMessage(m: unknown): unknown {
     return { ...msg, tool_calls };
   }
   if (msg.role === "tool" && typeof msg.content === "string" && msg.content.length > MAX_TOOL_RESULT_CHARS) {
-    return { ...msg, content: `${(msg.content as string).slice(0, MAX_TOOL_RESULT_CHARS)} …<ตัดส่วนที่เหลือ>` };
+    return { ...msg, content: `${(msg.content as string).slice(0, MAX_TOOL_RESULT_CHARS)}${RESULT_CUT_TAIL}` };
   }
   return m;
 }

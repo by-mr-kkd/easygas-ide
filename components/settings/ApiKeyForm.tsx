@@ -14,12 +14,15 @@ export function ApiKeyForm({
   keyId,
   label,
   hint,
+  note,
   hasKey,
   required = false,
 }: {
   keyId: KeyId;
   label: string;
   hint: string;
+  /** what to know about this provider's key (free-tier limits …): shown whether a key is saved or not */
+  note?: string;
   hasKey: boolean;
   required?: boolean;
 }) {
@@ -46,6 +49,7 @@ export function ApiKeyForm({
     router.refresh();
   }
 
+  const noteLine = note && <p className="hint mt-1.5">{note}</p>;
   const errorLine = error && (
     <p role="alert" className="mt-2 text-[13px] font-medium text-danger">
       {error}
@@ -62,6 +66,7 @@ export function ApiKeyForm({
             เอาคีย์ออก
           </button>
         </div>
+        {noteLine}
         {errorLine}
       </div>
     );
@@ -94,6 +99,7 @@ export function ApiKeyForm({
           {busy ? "กำลังบันทึก…" : "บันทึกคีย์"}
         </button>
       </div>
+      {noteLine}
       {errorLine}
     </form>
   );

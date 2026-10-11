@@ -15,6 +15,8 @@ export interface EngineSession {
   told: PromptFingerprint | null;
   /** How many rows of messages.jsonl existed when it last answered; null = not recorded. */
   seen: number | null;
+  /** Chat turns the session has answered (only engines that retire sessions keep it); absent = not counted. */
+  turns?: number;
 }
 
 export type EngineSessions = Partial<Record<CliEngine, EngineSession>>;
@@ -29,7 +31,14 @@ export interface SessionFields {
 
 export function readEngineSession(project: SessionFields, engine: CliEngine): EngineSession {
   const own = project.engine_sessions?.[engine];
-  if (own) return { id: own.id ?? null, told: own.told ?? null, seen: typeof own.seen === "number" ? own.seen : null };
+  if (own) {
+    return {
+      id: own.id ?? null,
+      told: own.told ?? null,
+      seen: typeof own.seen === "number" ? own.seen : null,
+      ...(typeof own.turns === "number" ? { turns: own.turns } : {}),
+    };
+  }
   // A record from before per-engine sessions. Whose it was is not recorded, and it does not need to
   // be: every engine's instructions differ, so a fingerprint that does not match starts a new session.
   return { id: project.engine_session_id ?? null, told: project.engine_prompt ?? null, seen: null };
@@ -44,6 +53,15 @@ export function sessionPatch(project: SessionFields, engine: CliEngine, session:
     engine_session_id: null,
     engine_prompt: null,
   };
+}
+
+/**
+ * The session has answered `maxTurns` turns and should be retired: the next turn starts a new one that gets
+ * the recent conversation as a recap. For an engine that is sent the whole project every turn (Muse Code),
+ * a long-lived session only grows — slower and costlier each turn, until the CLI refuses it outright.
+ */
+export function sessionWorn(session: EngineSession, maxTurns: number): boolean {
+  return (session.turns ?? 0) >= maxTurns;
 }
 
 /** The rows a session has not seen: everything for a new session, the tail for a resumed one. */

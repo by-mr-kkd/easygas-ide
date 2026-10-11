@@ -8,7 +8,7 @@ type Part = { greet: string; line: string; Icon: typeof SunIcon; tone: string };
 /** the greeting follows the computer's clock; 00:00–04:59 is late night, not evening */
 function partOfDay(h: number): Part {
   if (h >= 5 && h < 12) return { greet: "สวัสดีตอนเช้า", line: "เริ่มวันใหม่ด้วยเครื่องมือดี ๆ สักตัว แล้วงานทั้งวันจะง่ายขึ้น", Icon: SunIcon, tone: "tone-warn" };
-  if (h >= 12 && h < 17) return { greet: "สวัสดีตอนบ่าย", line: "มีงานไหนที่ทำซ้ำทุกวัน เล่าให้ AI ฟัง แล้วให้มันทำเป็นระบบให้", Icon: SunIcon, tone: "tone-info" };
+  if (h >= 12 && h < 17) return { greet: "สวัสดีตอนบ่าย", line: "", Icon: SunIcon, tone: "tone-info" };
   if (h >= 17 && h < 21) return { greet: "สวัสดีตอนเย็น", line: "ใกล้เลิกงานแล้ว ปิดงานที่ค้างไว้ให้จบ พรุ่งนี้จะได้เริ่มสบาย ๆ", Icon: SparklesIcon, tone: "tone-accent" };
   if (h >= 21) return { greet: "สวัสดีตอนค่ำ", line: "ค่ำแล้ว ทำต่ออีกนิดได้ แต่อย่าลืมพักผ่อนด้วย", Icon: MoonIcon, tone: "tone-ai" };
   return { greet: "ดึกแล้วนะ", line: "ยังทำงานอยู่อีกเหรอ บันทึกงานไว้ แล้วไปพักสายตาบ้าง", Icon: MoonIcon, tone: "tone-ai" };
@@ -38,19 +38,20 @@ export function HomeGreeting({ now, projects, deployed }: { now: number; project
     >
       {/* the big faint icon on the right is decoration only */}
       <Icon className="pointer-events-none absolute -right-4 -top-6 h-36 w-36 opacity-[0.07]" style={{ color: "var(--tone)" }} aria-hidden />
-      <div className="relative flex flex-wrap items-center gap-x-4 gap-y-3">
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-surface shadow-sm" style={{ color: "var(--tone)" }}>
-          <Icon className="h-6 w-6" aria-hidden />
+      <div className="relative flex flex-wrap items-start gap-x-4 gap-y-3 sm:items-center">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface shadow-sm sm:h-11 sm:w-11" style={{ color: "var(--tone)" }}>
+          <Icon className="h-5 w-5 sm:h-6 sm:w-6" aria-hidden />
         </span>
-        <div className="min-w-0 flex-1">
+        {/* basis: on a phone the text keeps the row and the counts drop under it, never squeezing it */}
+        <div className="min-w-0 flex-1 basis-[calc(100%-3.5rem)] sm:basis-auto">
           <h1 className="text-xl font-semibold sm:text-2xl">{greet}</h1>
-          <p className="hint">{line}</p>
+          {line && <p className="hint text-pretty">{line}</p>}
           <p className="mt-1 text-[12px] text-muted" suppressHydrationWarning>
-            {dateLabel(time)} · <span className="tabular-nums">{timeLabel(time)} น.</span>
+            <span className="whitespace-nowrap">{dateLabel(time)}</span> · <span className="whitespace-nowrap tabular-nums">{timeLabel(time)} น.</span>
           </p>
         </div>
         {projects > 0 && (
-          <div className="flex shrink-0 gap-2 text-[12.5px]">
+          <div className="flex shrink-0 gap-2 pl-14 text-[12.5px] sm:pl-0">
             <span className="rounded-lg border border-line bg-surface px-3 py-1.5">
               <b className="tabular-nums text-fg">{projects}</b> <span className="text-muted">โปรเจกต์</span>
             </span>

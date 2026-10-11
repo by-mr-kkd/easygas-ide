@@ -638,6 +638,97 @@ body {
     }
   }
 
+  /* the AI's mark in the chat (components/ide/AiMark): a still disc when idle, a running ring and glow while a reply is written */
+  .ai-mark .ai-mark-ring,
+  .ai-mark .ai-mark-core {
+    transform-box: view-box;
+    transform-origin: 50% 50%;
+  }
+  .ai-mark .ai-mark-spark {
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+  .ai-mark .ai-mark-ring {
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .ai-mark-active {
+    filter: drop-shadow(0 0 3px rgba(14, 165, 233, 0.55));
+  }
+  .ai-mark-active .ai-mark-ring {
+    opacity: 1;
+    animation: egs-ai-spin 1.2s linear infinite;
+  }
+  .ai-mark-active .ai-mark-core {
+    animation: egs-ai-breathe 1.8s ease-in-out infinite;
+  }
+  .ai-mark-active .ai-mark-spark {
+    animation: egs-ai-twinkle 1.2s ease-in-out 0.3s infinite;
+  }
+  @keyframes egs-ai-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @keyframes egs-ai-breathe {
+    0%,
+    100% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.08);
+    }
+  }
+  @keyframes egs-ai-twinkle {
+    0%,
+    100% {
+      transform: scale(1);
+      opacity: 0.65;
+    }
+    50% {
+      transform: scale(1.12);
+      opacity: 1;
+    }
+  }
+  /* "typing…" before the first words arrive */
+  .typing-dots > span {
+    height: 6px;
+    width: 6px;
+    border-radius: 9999px;
+    background: #10b981;
+    opacity: 0.35;
+    animation: egs-typing 1.2s ease-in-out infinite;
+  }
+  .typing-dots > span:nth-child(2) {
+    background: #0ea5e9;
+    animation-delay: 0.15s;
+  }
+  .typing-dots > span:nth-child(3) {
+    background: #8b5cf6;
+    animation-delay: 0.3s;
+  }
+  @keyframes egs-typing {
+    0%,
+    60%,
+    100% {
+      transform: translateY(0);
+      opacity: 0.35;
+    }
+    30% {
+      transform: translateY(-4px);
+      opacity: 1;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ai-mark-active .ai-mark-ring,
+    .ai-mark-active .ai-mark-core,
+    .ai-mark-active .ai-mark-spark,
+    .typing-dots > span {
+      animation: none;
+      opacity: 1;
+    }
+  }
+
   /* a row that scrolls sideways without showing a scrollbar (tab rows on a narrow window) */
   .no-scrollbar {
     scrollbar-width: none;
@@ -654,5 +745,51 @@ body {
   .titlebar [role="listbox"],
   .titlebar .no-drag {
     -webkit-app-region: no-drag;
+  }
+}
+
+/* The IDE's activity rail (wide window): an icon with its word under it. aria-pressed marks the pane
+   shown beside the chat (a filled pill). The chat button is a different kind of control — it folds or
+   opens the chat column — so its pressed state is a green bar on the rail's edge, not a fill. */
+@layer components {
+  .rail-btn {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    width: 52px;
+    height: 46px;
+    border-radius: 0.5625rem;
+    color: var(--muted);
+    font-size: 0.65625rem;
+    font-weight: 500;
+    line-height: 1;
+    cursor: pointer;
+    transition: background-color 0.12s, color 0.12s;
+  }
+  .rail-btn:hover {
+    background: var(--sunken);
+    color: var(--fg);
+  }
+  .rail-btn[aria-pressed="true"] {
+    background: var(--accent-soft);
+    color: var(--accent-text);
+    font-weight: 600;
+  }
+  .rail-toggle[aria-pressed="true"] {
+    background: transparent;
+    color: var(--fg);
+  }
+  .rail-toggle[aria-pressed="true"]::before {
+    content: "";
+    position: absolute;
+    left: -4px;
+    top: 9px;
+    bottom: 9px;
+    width: 3px;
+    border-radius: 2px;
+    background: var(--accent);
   }
 }

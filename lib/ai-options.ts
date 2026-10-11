@@ -3,6 +3,8 @@ import { findClaudeExecutable } from "@/lib/engines/claude-cli";
 import { codexModels, findCodexExecutable } from "@/lib/engines/codex-cli";
 import { findMuseExecutable } from "@/lib/engines/muse-cli";
 import { LLM_PROVIDERS, providerConfig, type LlmProvider } from "@/lib/llm/catalog";
+import { cachedModels } from "@/lib/llm/model-list";
+import { pickModel } from "@/lib/llm/model-pick";
 import { getStoredRows } from "@/lib/messages";
 import { historyFormat } from "@/lib/messages-text";
 import { getApiKey, getSettings, type LocalSettings } from "@/lib/settings";
@@ -32,6 +34,8 @@ export interface AiOption {
   models: AiModelOption[];
   /** The provider can be asked for the account's model list. */
   canListModels: boolean;
+  /** API keys: the model a default pick runs on (shown on the AI button, so the user sees which one). */
+  defaultModel?: string;
 }
 
 const CLI_MODELS: Record<"claude-cli" | "codex-cli" | "muse-cli", AiModelOption[]> = {
@@ -102,9 +106,11 @@ export async function getAiOptions(project: EgsProject): Promise<AiOption[]> {
     const lockedOut = lock !== null && lock !== provider;
     // without a key a provider is only worth showing when it is the one the user would expect to see
     if (!hasKey && provider !== lock && provider !== settings.provider) continue;
+    const defaultModel = settings.models[provider]?.trim() || pickModel(provider, { builtIn: cfg.model, listed: await cachedModels(provider) }).model;
     options.push({
       engine: "api",
       provider,
+      defaultModel,
       label: cfg.label,
       group: "key",
       ready: hasKey && !lockedOut,
@@ -113,7 +119,7 @@ export async function getAiOptions(project: EgsProject): Promise<AiOption[]> {
         : hasKey
           ? null
           : "ยังไม่ได้ใส่ API key ใส่ได้ที่ ตั้งค่า",
-      models: [{ id: "", label: `ค่าเริ่มต้น (${settings.models[provider]?.trim() || cfg.model})` }],
+      models: [{ id: "", label: `ค่าเริ่มต้น (${defaultModel})` }],
       canListModels: hasKey,
     });
   }

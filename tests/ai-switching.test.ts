@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { MODEL_ID, cleanModel, sanitizeChoice } from "../lib/ai-choice.ts";
-import { missedSince, readEngineSession, sessionPatch } from "../lib/engines/engine-session.ts";
+import { missedSince, readEngineSession, sessionPatch, sessionWorn } from "../lib/engines/engine-session.ts";
 import { historyFormat, renderRecap, rowText, toOpenAiMessages, transcriptOf } from "../lib/messages-text.ts";
 
 // ── the pick that arrives with a message ────────────────────────────────────────────────────────
@@ -131,4 +131,20 @@ test("the recap quotes the missed turns, newest kept when it is too long, and is
   assert.ok(long.includes("turn 39"), "the newest turn is kept");
   assert.ok(!long.includes("turn 0 "), "the oldest is dropped");
   assert.match(long, /older turns left out/);
+});
+
+test("a session is worn after its turn budget; uncounted and young sessions are not", () => {
+  const base = { id: "s1", told: null, seen: 4 };
+  assert.equal(sessionWorn(base, 6), false); // an older record without a count: left alone until counted
+  assert.equal(sessionWorn({ ...base, turns: 5 }, 6), false);
+  assert.equal(sessionWorn({ ...base, turns: 6 }, 6), true);
+  assert.equal(sessionWorn({ ...base, turns: 9 }, 6), true);
+});
+
+test("the turn count survives a read and a patch that only moves `seen`", () => {
+  const project = { engine_sessions: { "muse-cli": { id: "s1", told: null, seen: 2, turns: 3 } } };
+  assert.equal(readEngineSession(project, "muse-cli").turns, 3);
+  const patched = sessionPatch(project, "muse-cli", { seen: 4 });
+  assert.equal(patched.engine_sessions?.["muse-cli"]?.turns, 3);
+  assert.equal(readEngineSession({ engine_sessions: { "muse-cli": { id: "s1", told: null, seen: 2 } } }, "muse-cli").turns, undefined);
 });

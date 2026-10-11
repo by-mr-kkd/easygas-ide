@@ -38,6 +38,22 @@ function agentErrorMessage(e: unknown, secrets: string[]): string {
     .replace(/\s+/g, " ")
     .trim();
   if (detail.length > 240) detail = detail.slice(0, 240) + "…";
+  // a 404 from an API provider is nearly always a model id this key may not use (retired, renamed, not
+  // offered to new keys) — say what to do instead of a bare "404 status code"
+  // Google answers errors as a JSON array the OpenAI SDK cannot read, so its message is a bare "429 status
+  // code (no body)": the status alone has to say what happened
+  if (status === 429) {
+    return "ระบบขัดข้อง: ใช้ API key นี้ถี่เกินหรือโควตาหมดแล้ว (429) ถ้าเป็นแบบฟรี บางเจ้าจำกัดจำนวนครั้งต่อวัน และการสร้างระบบหนึ่งครั้งเรียกหลายรอบ รอให้โควตาคืน เลือกโมเดลอื่นที่ปุ่มเลือก AI หรือเปิดการจ่ายเงินในบัญชีผู้ให้บริการ";
+  }
+  if (status === 503 || status === 529) {
+    return "ระบบขัดข้อง: ผู้ให้บริการ AI มีคนใช้เยอะในตอนนี้ ลองส่งใหม่อีกสักครู่ หรือเลือกโมเดลอื่น";
+  }
+  if (status === 401 || status === 403) {
+    return "ระบบขัดข้อง: ผู้ให้บริการไม่รับ API key นี้ (key ผิด ถูกลบ หรือยังไม่ได้เปิดสิทธิ์) ตรวจ key ที่ ตั้งค่า → AI";
+  }
+  if (status === 404) {
+    return "ระบบขัดข้อง: ผู้ให้บริการไม่พบโมเดลที่เลือก (404) โมเดลนี้อาจเลิกให้บริการแล้ว หรือ API key นี้ใช้ไม่ได้ กดปุ่มเลือก AI ในช่องพิมพ์ แล้วเลือกโมเดลที่มีป้าย “แนะนำ” หรือ “ค่าเริ่มต้น”";
+  }
   const head = typeof status === "number" ? `[${status}] ` : "";
   return detail ? `ระบบขัดข้อง: ${head}${detail}` : "ระบบขัดข้อง ลองใหม่อีกครั้ง";
 }
@@ -61,8 +77,7 @@ async function prepareApiRun(
         `เลือก ${providerConfig(lock).label} หรือ AI แบบสมาชิกรายเดือนแทน`,
     };
   }
-  const base = await resolveProvider(provider);
-  const cfg = { ...base, model: choice.model || base.model };
+  const cfg = await resolveProvider(provider, { wanted: choice.model });
   const apiKey = cfg.apiKey;
   if (!apiKey) return { error: `ยังไม่ได้ใส่ API key ของ ${cfg.label} ไปที่หน้า ตั้งค่า แล้วใส่คีย์ของคุณ` };
   if (project.llm_provider !== provider) await updateProject(project.id, { llm_provider: provider });
@@ -79,10 +94,15 @@ async function prepareApiRun(
     }
   }
 
-  return (emit) =>
-    provider === "claude"
-      ? runAgentLoop({ projectId: project.id, project, userMessage, images, apiKey, model: choice.model, emit })
+  return (emit) => {
+    // the app's default model is gone for this key: say which one answers instead (lib/llm/model-pick)
+    if (cfg.replacedModel) emit({ type: "status", text: `${cfg.label} เลิกให้ใช้ ${cfg.replacedModel} แล้ว ใช้ ${cfg.model} แทน` });
+    // Claude keeps its own codegen/plan routing unless the model was picked or had to be replaced
+    const claudeModel = choice.model || (cfg.replacedModel ? cfg.model : undefined);
+    return provider === "claude"
+      ? runAgentLoop({ projectId: project.id, project, userMessage, images, apiKey, model: claudeModel, emit })
       : runOpenAiAgentLoop({ projectId: project.id, project, userMessage, images, emit }, { ...cfg, apiKey });
+  };
 }
 
 function prepareRun(

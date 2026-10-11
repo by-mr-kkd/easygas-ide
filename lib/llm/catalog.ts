@@ -86,11 +86,14 @@ export function providerConfig(p: LlmProvider): ProviderConfig {
         reasoning: true, // V4 Pro thinking model: omit tool_choice + preserve reasoning_content
       };
     case "gemini":
+      // Google serves gemini-2.5-* only to keys that used them before (ai.google.dev/gemini-api/docs/deprecations,
+      // checked 2026-10-11): a new key gets a bare 404. 3.8 Flash = their recommended model for new projects
+      // (function calling, 64K output). Gemini 3 tool calls carry a thought signature, see openai-agent.ts.
       return {
         provider: "gemini",
         family: "openai",
         label: "Gemini",
-        model: process.env.GEMINI_MODEL ?? "gemini-2.5-flash",
+        model: process.env.GEMINI_MODEL ?? "gemini-3.8-flash",
         baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
         apiKey: process.env.GEMINI_API_KEY,
         maxOutputTokens: 16000,

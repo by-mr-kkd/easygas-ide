@@ -6,7 +6,6 @@ import Link from "next/link";
 import {
   BoltIcon,
   BugAntIcon,
-  ChatBubbleLeftRightIcon,
   CheckCircleIcon,
   ChevronRightIcon,
   ExclamationTriangleIcon,
@@ -17,7 +16,6 @@ import {
   QueueListIcon,
   SparklesIcon,
   Squares2X2Icon,
-  SwatchIcon,
   XMarkIcon,
 } from "@heroicons/react/24/outline";
 import { getProjectPrefsAction, projectRunningAction } from "@/app/projects/actions";
@@ -33,6 +31,7 @@ import { LessonOffers, type LessonOffer } from "./LessonOffers";
 import { UpgradeDialog } from "@/components/premium/UpgradeDialog";
 import { AuditCard } from "./AuditCard";
 import { ProjectStyleDialog } from "./ProjectStyleDialog";
+import { AiMark, TypingDots } from "./AiMark";
 
 const MAX_IMAGES = 4;
 
@@ -164,6 +163,8 @@ export function ChatPanel({
   const hasFiles = useProjectStore((s) => s.order.length > 0);
   const command = useProjectStore((s) => s.command);
   const consumeCommand = useProjectStore((s) => s.consumeCommand);
+  const actionRequest = useProjectStore((s) => s.actionRequest);
+  const clearActionRequest = useProjectStore((s) => s.clearActionRequest);
   const setChatActive = useProjectStore((s) => s.setChatActive);
   const aiChoice = useProjectStore((s) => s.aiChoice);
   // the picked AI as the picker lists it: whether it is set up, and what is missing when it is not
@@ -262,6 +263,14 @@ export function ChatPanel({
     else send(c.text);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [command, busy]);
+
+  // toolbar row / command palette → "สไตล์โปรเจกต์" (the dialog lives here, next to the chat it shapes)
+  useEffect(() => {
+    if (actionRequest !== "style") return;
+    clearActionRequest();
+    void openStyle();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actionRequest]);
 
   // The AI can save a choice mid-chat (save_preference), so load the current ones before editing.
   async function openStyle() {
@@ -627,27 +636,14 @@ export function ChatPanel({
 
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col">
-      <div className="flex h-11 flex-none items-center gap-2 border-b border-line px-3">
-        <span className="icon-chip tone-ai">
-          <ChatBubbleLeftRightIcon className="h-4 w-4" />
-        </span>
-        <h2 className="text-sm font-semibold">แชตกับ AI</h2>
-        <span className="flex-1" />
-        <Tooltip label="ไลบรารีและหน้าตาที่ AI ใช้กับโปรเจกต์นี้" placement="bottom">
-          <button onClick={openStyle} className="btn btn-ghost btn-sm">
-            <SwatchIcon className="h-4 w-4 text-info" />
-            สไตล์โปรเจกต์
-          </button>
-        </Tooltip>
-      </div>
-
+      {/* no header: the rail says this is the chat, and สไตล์โปรเจกต์ lives in the toolbar row */}
       {energyTank ? (
         <div className="flex-none px-3 pt-3">
           <EnergyBar used={energy} tank={energyTank} />
         </div>
       ) : null}
 
-      <div ref={bodyRef} className="min-h-0 flex-1 space-y-3 overflow-auto px-3 py-3">
+      <div ref={bodyRef} className="min-h-0 flex-1 space-y-3 overflow-auto px-3 pb-3 pt-4">
         {engineCallout}
         {imported && <AuditCard projectId={projectId} />}
 
@@ -686,7 +682,7 @@ export function ChatPanel({
                 "คุณ"
               ) : (
                 <>
-                  <SparklesIcon className="h-3.5 w-3.5" />
+                  <AiMark active={busy && i === messages.length - 1} />
                   AI
                 </>
               )}
@@ -707,7 +703,11 @@ export function ChatPanel({
               {m.role === "assistant" && m.text.trim() ? (
                 <ChatText text={m.text.trim()} />
               ) : (
-                <span className="whitespace-pre-wrap break-words">{m.text.trimStart() || (busy && i === messages.length - 1 ? "…" : "")}</span>
+                m.text.trimStart() ? (
+                  <span className="whitespace-pre-wrap break-words">{m.text.trimStart()}</span>
+                ) : busy && i === messages.length - 1 ? (
+                  <TypingDots />
+                ) : null
               )}
             </div>
           </div>

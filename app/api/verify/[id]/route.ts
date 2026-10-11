@@ -73,7 +73,7 @@ async function prepareRepair(project: EgsProject, userId: string): Promise<Repai
 
   const runOwn = (base: Omit<RunAgentArgs, "apiKey">) =>
     projectProvider === "claude"
-      ? runAgentLoop({ ...base, apiKey: ownKey })
+      ? runAgentLoop({ ...base, apiKey: ownKey, ...(ownCfg.replacedModel ? { model: ownCfg.model } : {}) })
       : runOpenAiAgentLoop(base, { ...ownCfg, apiKey: ownKey });
 
   // Optional escalation (settings.app.repair_provider) for OpenAI-family projects; falls back to the

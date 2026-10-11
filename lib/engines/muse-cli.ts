@@ -19,6 +19,7 @@ import {
 } from "@/lib/engines/json-answer-turn";
 import { MUSE_LOCKDOWN, locateMuse, missingMuseFlags, museVersionLine, readMuseEvent } from "@/lib/engines/muse-protocol";
 import { markSessionCaughtUp, readEngineSession, recapFor, saveEngineSession } from "@/lib/engines/session-context";
+import { sessionWorn } from "@/lib/engines/engine-session";
 import { planSession, settingsNotice, toldAfterFailure } from "@/lib/engines/session-prompt";
 import { engineDir } from "@/lib/local/paths";
 import { appendMessages } from "@/lib/messages";
@@ -57,6 +58,19 @@ const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 // Wording not confirmed against a signed-out install (the test machine was signed in).
 /** Muse Code will not continue a session under different terms (seen for the provider; assumed for a model). */
 const WONT_RESUME = /refus\w* to resume|start a new session/i;
+/**
+ * The session outgrew Muse Code's own limit and its compaction could not bring it back under, e.g.
+ * "context compaction replacement still exceeds the hard threshold (628702 >= 460800 tokens)" (seen
+ * 2026-10-11). Every turn sends the project's files again, so a long-lived session gets there; resuming
+ * it can only fail again, so the turn starts a new session that gets the conversation as a recap.
+ */
+const SESSION_FULL = /compaction|hard threshold|context (?:window|length)|too many tokens|prompt is too long/i;
+/**
+ * A session is retired after this many turns, before it can grow that big: every turn carries the whole
+ * project again. 6 turns = 12 chat messages = what the recap of a new session carries (lib/messages-text.ts
+ * RECAP_TURNS), so the conversation it remembers stays unbroken.
+ */
+const SESSION_TURNS = 6;
 const NOT_LOGGED_IN = /not (logged|signed) in|muse login|log ?in (to|with)|no (stored )?credential|unauthori[sz]ed|\b401\b/i;
 
 const MUSE_ADAPTER =
@@ -331,6 +345,10 @@ export async function runMuseCliTurn(args: MuseCliArgs): Promise<AgentRunResult>
   const session = readEngineSession(args.project, ENGINE_ID);
   const told = session.told;
   let plan = planSession(session.id && SESSION_ID.test(session.id) ? session.id : null, told, current.told);
+  if (plan.resumeId && sessionWorn(session, SESSION_TURNS)) {
+    console.warn("[muse-cli] session answered %d turns — starting a new one with a recap", session.turns);
+    plan = { resumeId: null, sendNotice: false };
+  }
   if (plan.resumeId && !(await sessionExists(exe, files, plan.resumeId))) {
     console.warn("[muse-cli] stored session is gone — starting a new one");
     plan = { resumeId: null, sendNotice: false };
@@ -354,9 +372,11 @@ export async function runMuseCliTurn(args: MuseCliArgs): Promise<AgentRunResult>
     try {
       answerText = await runMuse({ exe, files, prompt: await messageFor(!!plan.resumeId, images), sessionId, model: args.model, images, emit: args.emit });
     } catch (e) {
-      // e.g. the user switched model and Muse Code will not continue the old session under it
-      if (!plan.resumeId || !(e instanceof MuseTurnError) || !WONT_RESUME.test(e.message)) throw e;
-      console.warn("[muse-cli] the session cannot be resumed as asked — starting a new one");
+      // e.g. the user switched model and Muse Code will not continue the old session under it, or the
+      // session has grown past what Muse Code can hold
+      if (!plan.resumeId || !(e instanceof MuseTurnError) || !(WONT_RESUME.test(e.message) || SESSION_FULL.test(e.message))) throw e;
+      console.warn("[muse-cli] the session cannot be resumed (%s) — starting a new one", e.message.slice(0, 120));
+      if (SESSION_FULL.test(e.message)) args.emit({ type: "status", text: "บทสนทนายาวเกินที่ Muse Code รับได้ เริ่มบทสนทนาใหม่พร้อมสรุปของเดิม…" });
       plan = { resumeId: null, sendNotice: false };
       sessionId = randomUUID();
       answerText = await runMuse({ exe, files, prompt: await messageFor(false, images), sessionId, model: args.model, images, emit: args.emit });
@@ -372,7 +392,8 @@ export async function runMuseCliTurn(args: MuseCliArgs): Promise<AgentRunResult>
   } finally {
     if (images.length > 0) await rm(turnImagesDir(args.projectId, ENGINE), { recursive: true, force: true });
   }
-  await saveEngineSession(args.projectId, ENGINE_ID, { id: sessionId, told: current.told });
+  // counted from here: a resumed session adds one, a new one has answered its first
+  await saveEngineSession(args.projectId, ENGINE_ID, { id: sessionId, told: current.told, turns: plan.resumeId ? (session.turns ?? 0) + 1 : 1 });
 
   let applied: { reply: string; problems: string[] };
   try {
