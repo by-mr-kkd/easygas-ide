@@ -39,6 +39,11 @@ import { ProjectSwitcher, type SwitcherProject } from "./ProjectSwitcher";
 import { FileTree } from "./FileTree";
 import { PreviewPane } from "./PreviewPane";
 import { AppNudge } from "@/components/remote/AppNudge";
+import { PhoneButton } from "@/components/remote/PhoneButton";
+import { PhoneDialog } from "@/components/remote/PhoneDialog";
+import { PhoneInvite, usePhoneInvite } from "@/components/remote/PhoneInvite";
+import { usePhoneRemote } from "@/components/remote/usePhoneRemote";
+import type { RemoteView } from "@/app/settings/remote-actions";
 
 type Pane = "chat" | "code" | "preview";
 /** What sits beside the chat on a wide window. "split" needs room for three columns (xl and up). */
@@ -62,7 +67,7 @@ export function IdeShell({
   initialImages,
   initialMessages,
   initialRunning = false,
-  remoteDevices = null,
+  phone = null,
   pushNudge = false,
   webHint,
   googleConnected = true,
@@ -97,8 +102,8 @@ export function IdeShell({
   /** The conversation so far (lib/messages-text chatHistoryOf), and whether an AI turn is running right now. */
   initialMessages?: { role: "user" | "assistant"; text: string }[];
   initialRunning?: boolean;
-  /** Remote access is on (lib/remote): how many phones are paired; null when it is off. */
-  remoteDevices?: number | null;
+  /** "ใช้จากมือถือ" as it is now (lib/remote/view); null when this page was opened from a phone */
+  phone?: RemoteView | null;
   /** Pro, opened from a paired phone that has no notifications yet: point it to the Pro app to turn them on. */
   pushNudge?: boolean;
   webHint?: string[];
@@ -142,6 +147,9 @@ export function IdeShell({
   const [sheetUrl, setSheetUrl] = useState<string | null>(bound?.sheetUrl ?? null);
   const [google, setGoogle] = useState({ connected: googleConnected, email: googleEmail });
   const [connectOpen, setConnectOpen] = useState(false);
+  const phoneRemote = usePhoneRemote(phone);
+  const [phoneOpen, setPhoneOpen] = useState(false);
+  const invite = usePhoneInvite(phoneRemote.v);
   // narrow window (below lg): one pane at a time, switched by the bottom tabs
   const [pane, setPane] = useState<Pane>("chat");
   // wide window: what sits beside the chat
@@ -177,6 +185,12 @@ export function IdeShell({
     if (actionRequest !== "connectGoogle") return;
     clearActionRequest();
     setConnectOpen(true);
+  }, [actionRequest, clearActionRequest]);
+  // command palette → "ใช้จากมือถือ"
+  useEffect(() => {
+    if (actionRequest !== "phone") return;
+    clearActionRequest();
+    setPhoneOpen(true);
   }, [actionRequest, clearActionRequest]);
 
   function chooseView(next: View) {
@@ -266,6 +280,12 @@ export function IdeShell({
               </div>
             )}
             <ThemeToggle className="btn-sm max-sm:hidden" />
+            {/* narrow window: the status bar (where the phone item lives) is hidden */}
+            {phoneRemote.v && (
+              <span className="lg:hidden">
+                <PhoneButton v={phoneRemote.v} variant="icon" wave={invite.show} onClick={() => setPhoneOpen(true)} />
+              </span>
+            )}
             {pro && support && <HelpButton project={{ id: projectId, name: projectName }} machineInfo={support.machineInfo} unread={support.unread} />}
             <Link href={settingsHref("ai")} title="ตั้งค่า" aria-label="ตั้งค่า" className="btn btn-ghost btn-sm btn-icon">
               <Cog6ToothIcon className="h-[18px] w-[18px]" />
@@ -412,16 +432,10 @@ export function IdeShell({
           <QuotaStatus engine={quotaEngine} claudeAllowed={claudeQuotaAllowed} settingsHref={settingsHref("ai")} />
         )}
         <span className="flex-1" />
-        {remoteDevices !== null && (
-          <Tooltip label="เปิดให้มือถือสั่งงานอยู่ กดเพื่อดูหรือปิด" placement="top" className="max-lg:hidden">
-            <Link href={settingsHref("remote")} className="flex h-6 items-center gap-1.5 rounded px-1.5 transition hover:bg-sunken hover:text-fg">
-              <span className="h-1.5 w-1.5 rounded-full bg-info" />
-              รีโมท · {remoteDevices} เครื่อง
-            </Link>
-          </Tooltip>
-        )}
         {fileCount > 0 && <span className="px-1.5 max-lg:hidden">{fileCount} ไฟล์</span>}
         {activePath && effView !== "preview" && <span className="truncate px-1.5 font-mono max-lg:hidden">{activePath}</span>}
+        {/* last, at the corner: the invite card points at it */}
+        {phoneRemote.v && <PhoneButton v={phoneRemote.v} variant="bar" wave={invite.show} onClick={() => setPhoneOpen(true)} />}
       </footer>
 
       {/* PANE TABS (narrow window) — a wide window shows the panes side by side instead */}
@@ -444,7 +458,28 @@ export function IdeShell({
         </nav>
       )}
 
-      <CommandPalette projectId={projectId} googleConnected={google.connected} deployed={!!deployUrl || !!sheetUrl} canVerify={!sheetOnly} onJumpPane={jumpPane} />
+      <CommandPalette
+        projectId={projectId}
+        googleConnected={google.connected}
+        deployed={!!deployUrl || !!sheetUrl}
+        canVerify={!sheetOnly}
+        phone={!!phoneRemote.v}
+        onJumpPane={jumpPane}
+      />
+      {phoneRemote.v && (
+        <PhoneDialog open={phoneOpen} v={phoneRemote.v} onView={phoneRemote.setV} onClose={() => setPhoneOpen(false)} settingsHref={settingsHref("remote")} />
+      )}
+      {invite.show && !phoneOpen && (
+        <PhoneInvite
+          placement={wide ? "bottom" : "top"}
+          onAccept={() => {
+            invite.accept();
+            setPhoneOpen(true);
+          }}
+          onLater={invite.later}
+          onNever={invite.never}
+        />
+      )}
       <ConnectGoogleDialog
         open={connectOpen}
         projectId={projectId}

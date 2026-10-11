@@ -7,6 +7,8 @@ import { isProjectBusy } from "@/lib/agent-lock";
 import { getStoredRows } from "@/lib/messages";
 import { chatHistoryOf } from "@/lib/messages-text";
 import { remoteSnapshot } from "@/lib/remote/runtime";
+import { isRemoteRequest } from "@/lib/remote/request";
+import { remoteView } from "@/lib/remote/view";
 import { remoteDeviceOf } from "@/lib/remote/turn-notify";
 import { headers } from "next/headers";
 import { resolvePrefs, sanitizePrefs } from "@/lib/preferences";
@@ -81,7 +83,7 @@ export default async function ProjectBuilderPage({ params }: { params: Promise<{
       initialImages={chatImages.map((img) => ({ url: img.url }))}
       initialMessages={chatHistoryOf(chatRows)}
       initialRunning={isProjectBusy(id)}
-      remoteDevices={remote?.enabled ? remote.devices.length : null}
+      phone={remote && !(await isRemoteRequest()) ? remoteView(remote, premium.active) : null}
       pushNudge={pushNudge}
       webHint={webHint}
       googleConnected={setup.google.loggedIn}

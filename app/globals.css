@@ -564,6 +564,80 @@ body {
     }
   }
 
+  /* the IDE's phone button (components/remote/PhoneButton): online sends out a slow faint ring, starting blinks */
+  .phone-dot-live::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    background: var(--accent);
+    animation: egs-phone-ring 2.8s ease-out infinite;
+  }
+  .phone-dot-busy {
+    animation: egs-phone-blink 1.2s ease-in-out infinite;
+  }
+  /* off: a small "hello" tilt, once per launch and while the invite shows */
+  .phone-hello {
+    animation: egs-phone-hello 0.6s ease-in-out 3;
+    transform-origin: 50% 85%;
+  }
+  .phone-invite-up {
+    animation: egs-phone-invite-up 0.35s cubic-bezier(0.2, 0.8, 0.3, 1);
+  }
+  .phone-invite-down {
+    animation: egs-phone-invite-down 0.35s cubic-bezier(0.2, 0.8, 0.3, 1);
+  }
+  .phone-invite-icon svg {
+    animation: egs-phone-hello 0.6s ease-in-out 0.4s 3;
+    transform-origin: 50% 85%;
+  }
+  @keyframes egs-phone-ring {
+    0% {
+      transform: scale(1);
+      opacity: 0.45;
+    }
+    70%,
+    100% {
+      transform: scale(2.8);
+      opacity: 0;
+    }
+  }
+  @keyframes egs-phone-blink {
+    50% {
+      opacity: 0.3;
+    }
+  }
+  @keyframes egs-phone-hello {
+    25% {
+      transform: rotate(-12deg);
+    }
+    75% {
+      transform: rotate(10deg);
+    }
+  }
+  @keyframes egs-phone-invite-up {
+    from {
+      opacity: 0;
+      transform: translateY(8px) scale(0.98);
+    }
+  }
+  @keyframes egs-phone-invite-down {
+    from {
+      opacity: 0;
+      transform: translateY(-8px) scale(0.98);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .phone-dot-live::after,
+    .phone-dot-busy,
+    .phone-hello,
+    .phone-invite-up,
+    .phone-invite-down,
+    .phone-invite-icon svg {
+      animation: none;
+    }
+  }
+
   /* a row that scrolls sideways without showing a scrollbar (tab rows on a narrow window) */
   .no-scrollbar {
     scrollbar-width: none;

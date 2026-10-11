@@ -18,7 +18,7 @@ const POLL_MS = 1500;
 
 const fmt = (iso: string | null) => (iso ? new Date(iso).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }) : "—");
 
-function phaseText(v: RemoteView): string {
+export function phaseText(v: RemoteView): string {
   switch (v.phase) {
     case "off":
       return "ปิดอยู่";
@@ -35,7 +35,7 @@ function phaseText(v: RemoteView): string {
   }
 }
 
-function CopyButton({ text }: { text: string }) {
+export function CopyButton({ text }: { text: string }) {
   const [done, setDone] = useState(false);
   return (
     <button
@@ -54,7 +54,7 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-function Pairing({ v, onCancel }: { v: RemoteView; onCancel: () => void }) {
+export function Pairing({ v, onCancel }: { v: RemoteView; onCancel: () => void }) {
   const p = v.pairing!;
   const [qr, setQr] = useState<string | null>(null);
   const [left, setLeft] = useState(Math.max(0, p.expiresAt - Date.now()));

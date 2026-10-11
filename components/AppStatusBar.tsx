@@ -7,7 +7,7 @@ import { readUpdateState } from "@/lib/app-update";
 import { CLAUDE_QUOTA_SETTING } from "@/lib/engines/claude-quota";
 import { LINKS, whatsNewUrl } from "@/lib/links";
 import { APP_VERSION } from "@/lib/rulebook/store";
-import { proActive, remoteSnapshot } from "@/lib/remote/runtime";
+import { remoteSnapshot } from "@/lib/remote/runtime";
 import { getBoolSetting } from "@/lib/settings";
 import type { SetupStatus } from "@/lib/setup-status";
 
@@ -36,9 +36,16 @@ export async function AppStatusBar({ setup }: { setup: SetupStatus }) {
     readUpdateState().catch(() => null),
     getBoolSetting(CLAUDE_QUOTA_SETTING, false).catch(() => false),
   ]);
-  const pro = proActive();
   const online = remote?.enabled && remote.phase === "on";
   const devices = remote?.devices.length ?? 0;
+  // the real state, for free and Pro alike (both can use it from a phone)
+  const phoneLabel = !remote?.enabled
+    ? "ปิดอยู่"
+    : remote.phase === "on"
+      ? `ออนไลน์${devices ? ` · ${devices} เครื่อง` : " · ยังไม่จับคู่"}`
+      : remote.phase === "error"
+        ? "เชื่อมไม่สำเร็จ"
+        : "กำลังเชื่อม…";
   // the two monthly-plan AIs have a quota to show
   const quotaEngine = setup.engineReady && (setup.engine === "codex-cli" || setup.engine === "claude-cli") ? setup.engine : null;
 
@@ -71,7 +78,7 @@ export async function AppStatusBar({ setup }: { setup: SetupStatus }) {
       <span className="flex-1" />
       <Item href="/settings?s=remote">
         <DevicePhoneMobileIcon className={`h-3.5 w-3.5 ${online ? "text-accent-text" : "text-faint"}`} aria-hidden />
-        {online ? `ใช้จากมือถือ: ออนไลน์${devices ? ` · ${devices} เครื่อง` : ""}` : pro ? "ใช้จากมือถือ: ปิดอยู่" : "ใช้จากมือถือ (Pro)"}
+        ใช้จากมือถือ: {phoneLabel}
       </Item>
       {updateLabel && (
         <Item href="/settings?s=data" tone={update?.status === "ready" ? "warn" : "muted"}>

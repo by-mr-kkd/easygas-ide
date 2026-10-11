@@ -7,6 +7,7 @@ import {
   BeakerIcon,
   BoltIcon,
   Cog6ToothIcon,
+  DevicePhoneMobileIcon,
   DocumentTextIcon,
   FolderIcon,
   MagnifyingGlassIcon,
@@ -53,12 +54,15 @@ export function CommandPalette({
   deployed,
   onJumpPane,
   canVerify = true,
+  phone = false,
 }: {
   projectId: string;
   googleConnected: boolean;
   deployed: boolean;
   /** false for a Sheet-bound project (no web page to run) */
   canVerify?: boolean;
+  /** the phone button is there (not opened from a phone) */
+  phone?: boolean;
   onJumpPane?: (pane: Pane) => void;
 }) {
   const router = useRouter();
@@ -175,6 +179,14 @@ export function CommandPalette({
       icon: SwatchIcon,
       run: toggleTheme,
     });
+    if (phone)
+      list.push({
+        id: "phone",
+        label: "ใช้จากมือถือ: เชื่อม / สแกน QR จับคู่",
+        group: "ไปที่",
+        icon: DevicePhoneMobileIcon,
+        run: () => requestAction("phone"),
+      });
     list.push({
       id: "settings",
       label: "ตั้งค่า",
@@ -197,7 +209,7 @@ export function CommandPalette({
       run: () => router.push("/styleshopping"),
     });
     return list;
-  }, [order, hasFiles, deployed, googleConnected, projectId, setActive, runAgent, requestAction, router, onJumpPane, canVerify]);
+  }, [order, hasFiles, deployed, googleConnected, projectId, setActive, runAgent, requestAction, router, onJumpPane, canVerify, phone]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
