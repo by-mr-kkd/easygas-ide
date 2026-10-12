@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowTopRightOnSquareIcon, CheckCircleIcon, CheckIcon, ClipboardIcon, ShieldCheckIcon } from "@heroicons/react/24/outline";
+import { ArrowTopRightOnSquareIcon, CheckCircleIcon, CheckIcon, ClipboardIcon } from "@heroicons/react/24/outline";
+import { AuthOpenButton } from "@/components/ide/AuthOpenButton";
 import { backendAuthAction, publishPagesAction, type PagesState } from "@/app/pages/actions";
 import { GitHubConnect } from "@/components/pages/GitHubConnect";
 import { UpgradeDialog } from "@/components/premium/UpgradeDialog";
@@ -162,10 +163,7 @@ export function PagesResult({ result, projectId, googleEmail, onClose }: { resul
               )}
               {auth !== "ok" && (
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <a href={result.execUrl} target="_blank" rel="noreferrer" className="btn btn-primary btn-sm">
-                    <ShieldCheckIcon className="h-4 w-4" />
-                    เปิดหน้าอนุญาต <ArrowTopRightOnSquareIcon className="h-4 w-4" />
-                  </a>
+                  <AuthOpenButton projectId={projectId} execUrl={result.execUrl} googleEmail={googleEmail} />
                   <button type="button" onClick={recheck} disabled={auth === "checking"} className="btn btn-secondary btn-sm">
                     {auth === "checking" ? "กำลังตรวจ…" : "อนุญาตแล้ว ตรวจอีกครั้ง"}
                   </button>

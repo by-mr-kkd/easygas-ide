@@ -270,6 +270,8 @@ async function start(): Promise<void> {
       setPush,
       testPush: (id) => notifyDevice(id, { title: "EasyGAS IDE", body: "แจ้งเตือนใช้ได้แล้ว AI ทำเสร็จหรือถามกลับเมื่อไหร่ จะเด้งแบบนี้", tag: "test" }),
       notify: (title, body) => pushState({ title, body }),
+      // loaded on demand: lib/hub/sync.ts reaches the share author and the premium store (Next aliases)
+      hubSync: async () => (await import("../hub/sync")).hubSyncData(),
     });
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);

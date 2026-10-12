@@ -67,6 +67,8 @@ export interface GatewayContext {
   setPush(deviceId: string, sub: PushSubscription | null): Promise<void>;
   testPush(deviceId: string): Promise<PushResult | "none">;
   notify(title: string, body: string): void;
+  /** "ฮับของฉัน" in the Pro phone app: the author key, Pro token and published projects (EasyGAS-IDE lib/hub/sync.ts) */
+  hubSync?(): Promise<unknown>;
   now?: () => number;
   /** tests only: a shorter keep-alive than KEEPALIVE_MS */
   keepAliveMs?: number;
@@ -285,6 +287,13 @@ export function createGateway(ctx: GatewayContext): http.Server {
       if (!sub) return json(res, 400, { error: "bad_subscription" }, origin);
       await ctx.setPush(device.id, sub);
       return json(res, 200, { ok: true, push: true }, origin);
+    }
+    if (path === "hub-sync" && req.method === "POST" && ctx.hubSync) {
+      try {
+        return json(res, 200, await ctx.hubSync(), origin);
+      } catch (e) {
+        return json(res, 409, { error: "hub_sync", message: e instanceof Error ? e.message : "ซิงก์ไม่สำเร็จ" }, origin);
+      }
     }
     if (path === "push-test" && req.method === "POST") {
       return json(res, 200, { result: await ctx.testPush(device.id) }, origin);

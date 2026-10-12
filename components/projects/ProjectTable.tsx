@@ -6,8 +6,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowDownTrayIcon,
+  ArrowTopRightOnSquareIcon,
+  CheckIcon,
+  ClipboardIcon,
   EllipsisHorizontalIcon,
+  ListBulletIcon,
+  Squares2X2Icon,
   FolderIcon,
+  GlobeAltIcon,
   FolderOpenIcon,
   CodeBracketIcon,
   LinkIcon,
@@ -31,12 +37,16 @@ import { USE_LIST, useOf } from "@/lib/project-use";
 const BUSY_POLL_MS = 5000;
 
 type Filter = "all" | "draft" | "live" | "google" | "cloned";
+type Layout = "table" | "cards";
+/** the list's look, remembered per browser (a convenience: the phone and the computer may differ) */
+const LAYOUT_KEY = "egs:home-layout";
 
 const VIEWS = [
   { mode: "new", href: "/projects", label: "โปรเจกต์ของฉัน", Icon: FolderIcon, tone: "text-accent-text" },
   { mode: "existing", href: "/projects?mode=existing", label: "สคริปต์ใน Google", Icon: ArrowDownTrayIcon, tone: "text-info" },
   { mode: "clone", href: "/projects?mode=clone", label: "จากลิงก์แชร์", Icon: LinkIcon, tone: "text-ai" },
   { mode: "shares", href: "/projects?mode=shares", label: "ที่คนแชร์", Icon: ShareIcon, tone: "text-accent-text" },
+  { mode: "hub", href: "/projects?mode=hub", label: "ฮับ", Icon: GlobeAltIcon, tone: "text-info" },
 ] as const;
 
 const kindLabel = (p: EgsProject) => USE_LIST.find((u) => u.id === useOf(p.kind, p.hosting))?.short ?? "";
@@ -59,6 +69,7 @@ function when(iso: string): string {
 export function ProjectTable({
   projects,
   deployed,
+  execs = {},
   busy: initialBusy = [],
   openCreate = false,
   mode = "new",
@@ -67,12 +78,15 @@ export function ProjectTable({
   githubConnected = false,
 }: {
   projects: EgsProject[];
+  /** the link each project opens with (GitHub Pages · run.easygaside.tech · /exec · its Sheet) */
   deployed: Record<string, string | undefined>;
+  /** Google's own /exec link, shown beside the sharing link */
+  execs?: Record<string, string | undefined>;
   busy?: string[];
   /** `/projects?new=1`: open the create dialog on arrival */
   openCreate?: boolean;
   /** which panel the switch shows: the project list, the scripts in Google, or a share link */
-  mode?: "new" | "existing" | "clone" | "shares";
+  mode?: "new" | "existing" | "clone" | "shares" | "hub";
   /** the panel for the other views (rendered by the page: they need server data) */
   children?: ReactNode;
   /** for the create dialog's GitHub Pages choice */
@@ -87,6 +101,22 @@ export function ProjectTable({
   const [renaming, setRenaming] = useState<EgsProject | null>(null);
   const [deleting, setDeleting] = useState<EgsProject | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [layout, setLayout] = useState<Layout>("table");
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(LAYOUT_KEY) === "cards") setLayout("cards");
+    } catch {
+      /* storage blocked: the table */
+    }
+  }, []);
+  const pickLayout = (l: Layout) => {
+    setLayout(l);
+    try {
+      localStorage.setItem(LAYOUT_KEY, l);
+    } catch {
+      /* not remembered */
+    }
+  };
   const searchRef = useRef<HTMLInputElement>(null);
 
   const liveCount = projects.filter((p) => deployed[p.id]).length;
@@ -218,7 +248,30 @@ export function ProjectTable({
           ))}
         </div>
         <span className="flex-1" />
-        <label className="relative block w-full sm:w-64">
+        <div className="flex w-full items-center gap-2 sm:w-auto">
+        <div className="seg shrink-0" role="radiogroup" aria-label="รูปแบบรายการ">
+          {(
+            [
+              ["table", "ตาราง", ListBulletIcon],
+              ["cards", "การ์ด", Squares2X2Icon],
+            ] as const
+          ).map(([id, label, Icon]) => (
+            <button
+              key={id}
+              type="button"
+              role="radio"
+              aria-checked={layout === id}
+              aria-selected={layout === id}
+              onClick={() => pickLayout(id)}
+              title={`แสดงแบบ${label}`}
+              className="seg-item h-8 px-2"
+            >
+              <Icon className="h-4 w-4" aria-hidden />
+              <span className="sr-only">{label}</span>
+            </button>
+          ))}
+        </div>
+        <label className="relative block min-w-0 flex-1 sm:w-64 sm:flex-none">
           <MagnifyingGlassIcon className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-faint" aria-hidden />
           <input
             ref={searchRef}
@@ -231,6 +284,7 @@ export function ProjectTable({
           />
           <span className="kbd pointer-events-none absolute right-2 top-1/2 hidden -translate-y-1/2 sm:inline-flex">Ctrl+K</span>
         </label>
+        </div>
       </div>
 
       {note && (
@@ -239,11 +293,26 @@ export function ProjectTable({
         </p>
       )}
 
-      <section data-tour="projects" aria-label="รายการโปรเจกต์" className="card">
+      <section data-tour="projects" aria-label="รายการโปรเจกต์" className={layout === "cards" && shown.length > 0 ? "" : "card"}>
         {projects.length === 0 ? (
           <p className="hint px-4 py-6">ยังไม่มีโปรเจกต์ กด “สร้างโปรเจกต์ใหม่” ตั้งชื่อแล้วเข้าไปเล่าให้ AI ฟังได้เลย</p>
         ) : shown.length === 0 ? (
           <p className="hint px-4 py-6">{query.trim() ? `ไม่มีโปรเจกต์ที่ตรงกับ “${query.trim()}”` : "ไม่มีโปรเจกต์ในกลุ่มนี้"}</p>
+        ) : layout === "cards" ? (
+          <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {shown.map((p) => (
+              <Card
+                key={p.id}
+                project={p}
+                url={deployed[p.id]}
+                exec={execs[p.id]}
+                busy={busy.includes(p.id)}
+                onRename={() => setRenaming(p)}
+                onFolder={() => void openFolder(p)}
+                onDelete={() => setDeleting(p)}
+              />
+            ))}
+          </ul>
         ) : (
           <>
             <div className="hidden grid-cols-[minmax(0,1fr)_120px_130px_120px_96px] items-center gap-3 border-b border-line px-4 py-2 text-xs font-semibold text-muted md:grid">
@@ -334,6 +403,100 @@ function Row({
         <RowMenu name={p.name} onRename={onRename} onFolder={onFolder} onDelete={onDelete} />
       </span>
     </li>
+  );
+}
+
+/** One project as a card: what it is, whether it is live, and the two ways in (the code screen, the live app). */
+function Card({
+  project: p,
+  url,
+  exec,
+  busy,
+  onRename,
+  onFolder,
+  onDelete,
+}: {
+  project: EgsProject;
+  url?: string;
+  exec?: string;
+  busy: boolean;
+  onRename: () => void;
+  onFolder: () => void;
+  onDelete: () => void;
+}) {
+  const live = !!url;
+  // published as a web app but the owner's first Allow is not seen yet: the app only shows Google's error
+  const needsAllow = !!p.deployment?.exec_url && !p.backend_authorized_at && p.hosting !== "github";
+  const runLink = url?.startsWith("https://run.easygaside.tech/") ? url : null;
+  const KindIcon = busy ? SparklesIcon : p.kind === "bound" ? TableCellsIcon : CodeBracketIcon;
+  const origin = originLabel(p);
+  const sheet = p.kind === "bound" && !p.deployment?.exec_url;
+  return (
+    <li className="card flex min-w-0 flex-col gap-3 p-4 transition hover:border-line-strong">
+      <div className="flex items-start gap-3">
+        <span className={`icon-chip h-10 w-10 shrink-0 rounded-[10px] ${busy ? "tone-ai animate-pulse" : live ? "tone-accent" : "tone-info"}`}>
+          <KindIcon className="h-5 w-5" aria-hidden />
+        </span>
+        <Link href={`/projects/${p.id}`} className="min-w-0 flex-1">
+          <span className="block truncate text-[15px] font-semibold text-fg">{p.name}</span>
+          <span className="block truncate text-xs text-muted">
+            {busy ? <span className="font-medium text-ai">AI กำลังทำงานอยู่ · กดเพื่อดู</span> : `แก้ล่าสุด ${when(p.updated_at)}`}
+          </span>
+        </Link>
+        <RowMenu name={p.name} onRename={onRename} onFolder={onFolder} onDelete={onDelete} />
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className={`badge ${live ? "badge-ok" : ""}`}>
+          <span className={`h-1.5 w-1.5 rounded-full ${live ? "bg-accent" : "bg-line-strong"}`} aria-hidden />
+          {live ? "เผยแพร่แล้ว" : "ยังไม่เผยแพร่"}
+        </span>
+        <span className="badge">{kindLabel(p)}</span>
+        {origin && <span className="badge">{origin}</span>}
+      </div>
+      {live && (
+        <div className="flex flex-col gap-1.5">
+          {runLink && <CopyLink label="แชร์" hint="ลิงก์สำหรับแชร์: เปิดได้ทุกเครื่อง แม้ล็อกอิน Google หลายบัญชี" url={runLink} />}
+          {exec && <CopyLink label="Google" hint="ลิงก์ Google ตัวจริง: ใช้ตอนกดอนุญาตครั้งแรก หรือฝังในเว็บอื่น" url={exec} />}
+          {!runLink && !exec && <CopyLink label="ลิงก์" hint="ลิงก์ของแอป" url={url!} />}
+        </div>
+      )}
+      {needsAllow && <p className="callout callout-warn !py-1.5 text-xs">ยังไม่ได้กดอนุญาตครั้งแรก เข้าโปรเจกต์แล้วกด “เปิดหน้าอนุญาต” (แนะนำที่คอม)</p>}
+      <div className="mt-auto flex flex-wrap items-center gap-2">
+        <Link href={`/projects/${p.id}`} className="btn btn-secondary btn-sm">
+          <CodeBracketIcon className="h-4 w-4" />
+          เปิดโปรเจกต์
+        </Link>
+        {live && !needsAllow && (
+          <a href={url} target="_blank" rel="noreferrer" className="btn btn-primary btn-sm">
+            {sheet ? "เปิดชีต" : "เปิดเว็บแอป"}
+            <ArrowTopRightOnSquareIcon className="h-4 w-4" />
+          </a>
+        )}
+      </div>
+    </li>
+  );
+}
+
+/** One address with a short tag, its use in the tooltip, and a copy button. */
+function CopyLink({ label, hint, url }: { label: string; hint: string; url: string }) {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard blocked */
+    }
+  }
+  return (
+    <div className="flex min-w-0 items-center gap-1.5 rounded-lg bg-sunken py-1 pl-2 pr-1" title={hint}>
+      <span className="shrink-0 rounded bg-surface px-1.5 py-px text-[10.5px] font-semibold text-muted">{label}</span>
+      <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted">{url.replace(/^https:\/\//, "")}</span>
+      <button type="button" onClick={copy} aria-label={`คัดลอกลิงก์ ${label}`} title="คัดลอก" className="btn btn-ghost btn-sm btn-icon shrink-0">
+        {copied ? <CheckIcon className="h-4 w-4" /> : <ClipboardIcon className="h-4 w-4" />}
+      </button>
+    </div>
   );
 }
 

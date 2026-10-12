@@ -16,6 +16,9 @@ import { pagesStateAction, setHostingAction, type PagesState } from "@/app/pages
 import { HostingChoiceDialog, type Hosting } from "@/components/pages/HostingChoiceDialog";
 import { pullRemoteAction } from "@/app/projects/import-actions";
 import { useRouter } from "next/navigation";
+import { AuthOpenButton } from "./AuthOpenButton";
+import { AppLinks } from "./AppLinks";
+import { PUBLISHED_EVENT } from "./publish-event";
 
 type Result =
   | { kind: "idle" }
@@ -23,6 +26,8 @@ type Result =
   | {
       kind: "ok";
       execUrl?: string;
+      /** run.easygaside.tech link of a public app (opens with several Google accounts signed in) */
+      runUrl?: string | null;
       /** a Sheet-bound project: the Sheet its script lives in */
       sheetUrl?: string;
       needsTriggerSetup: boolean;
@@ -159,6 +164,7 @@ export function DeployButton({
         setRes({
           kind: "ok",
           execUrl: data.execUrl,
+          runUrl: data.runUrl ?? null,
           sheetUrl: data.sheetUrl,
           needsTriggerSetup: !!data.needsTriggerSetup,
           scriptEditorUrl: data.scriptEditorUrl,
@@ -166,6 +172,7 @@ export function DeployButton({
           probe: data.probe,
         });
         if (data.execUrl) onDeployed?.(data.execUrl); // surface the URL in the persistent bar
+        window.dispatchEvent(new Event(PUBLISHED_EVENT)); // the chat's next steps re-read the publish state
         if (data.sheetUrl) onBoundPublished?.(data.sheetUrl);
       } else if (data.error === "USER_SETTINGS_DISABLED") {
         setRes({ kind: "enable_api", enableUrl: data.enableUrl, message: data.message });
@@ -321,12 +328,22 @@ export function DeployButton({
                     </p>
                   </>
                 )}
+                {res.execUrl && res.probe?.authRequired && (
+                  <div className="callout callout-warn flex-col items-start gap-2">
+                    <span>
+                      ขั้นสุดท้าย: อนุญาตระบบหลังบ้านครั้งเดียว ด้วยบัญชี Google ที่ใช้เผยแพร่ (Review permissions → Advanced → Allow)
+                    </span>
+                    <AuthOpenButton projectId={projectId} execUrl={res.execUrl} />
+                  </div>
+                )}
                 {res.execUrl && (
                   <>
-                    <a href={res.execUrl} target="_blank" rel="noreferrer" className="btn btn-primary">
-                      เปิดแอปของคุณ <ArrowTopRightOnSquareIcon className="h-4 w-4" />
-                    </a>
-                    <p className="break-all rounded-md bg-sunken px-2.5 py-1.5 font-mono text-xs text-muted">{res.execUrl}</p>
+                    {!res.probe?.authRequired && (
+                      <a href={res.runUrl ?? res.execUrl} target="_blank" rel="noreferrer" className="btn btn-primary">
+                        เปิดแอปของคุณ <ArrowTopRightOnSquareIcon className="h-4 w-4" />
+                      </a>
+                    )}
+                    <AppLinks runUrl={res.runUrl ?? null} execUrl={res.execUrl} authorized={!res.probe?.authRequired} />
                     {res.sheetUrl && (
                       <a href={res.sheetUrl} target="_blank" rel="noreferrer" className="btn btn-secondary">
                         เปิดชีตที่เก็บข้อมูล <ArrowTopRightOnSquareIcon className="h-4 w-4" />

@@ -52,6 +52,7 @@ const CLI_MODELS: Record<"claude-cli" | "codex-cli" | "muse-cli", AiModelOption[
   "muse-cli": [
     { id: "", label: "ค่าเริ่มต้นของ Muse Code" },
     { id: "muse-spark-1.3", label: "Muse Spark 1.3" },
+    { id: "muse-wonder-1.0", label: "Muse Wonder 1.0 · เก่งสุด (preview)" },
     { id: "muse-spark-1.2", label: "Muse Spark 1.2" },
   ],
 };

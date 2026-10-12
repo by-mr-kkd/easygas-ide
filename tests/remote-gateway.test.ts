@@ -73,6 +73,7 @@ before(async () => {
     },
     testPush: async (id) => (pushes.get(id) ? "sent" : "none"),
     notify: (title) => notices.push(title),
+    hubSync: async () => ({ key: "author-key", projects: [] }),
     keepAliveMs: 60,
   });
   await new Promise<void>((r) => gw.listen(0, "127.0.0.1", () => r()));
@@ -278,6 +279,11 @@ test("Pro API: pair with the code, then hello / push with the Bearer token", asy
   assert.equal((await api("push", { method: "POST", headers: bearer, body: JSON.stringify({ subscription: sub }) })).status, 200);
   assert.deepEqual(pushes.get(p.deviceId), sub);
   assert.deepEqual(await (await api("push-test", { method: "POST", headers: bearer })).json(), { result: "sent" });
+  // ฮับของฉัน: only a paired phone gets the author key
+  assert.equal((await api("hub-sync", { method: "POST" })).status, 401);
+  const hub = await api("hub-sync", { method: "POST", headers: bearer });
+  assert.equal(hub.status, 200);
+  assert.equal((await hub.json()).key, "author-key");
   assert.equal((await api("push", { method: "POST", headers: bearer, body: JSON.stringify({ subscription: null }) })).status, 200);
   assert.equal(pushes.get(p.deviceId), null);
 });

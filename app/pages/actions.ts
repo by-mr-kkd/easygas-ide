@@ -14,7 +14,9 @@ import {
 import { PagesError, type PagesErrorCode } from "@/lib/pages/github-api";
 import { pagesStateFor, publishToPages, type PublishPagesResult } from "@/lib/pages/publish";
 import { premiumStatus } from "@/lib/premium/status";
-import { getFiles } from "@/lib/files";
+import { getFile, getFiles } from "@/lib/files";
+import { openPrivateWindow } from "@/lib/private-window";
+import { runUrlFor } from "@/lib/run-link";
 import { probeExec } from "@/lib/gas-verify";
 import { getCurrentUserId, getProject, updateProject } from "@/lib/projects";
 
@@ -133,7 +135,10 @@ export async function pagesStateAction(projectId: string): Promise<PagesState | 
   return { hosting: state.hosting, chosen: state.chosen, pages: state.pages ?? null, premium: premium.active, github };
 }
 
-export type BackendAuth = { execUrl: string | null; status: "ok" | "auth_required" | "unknown"; message?: string };
+/**
+ * `runUrl`: run.easygaside.tech link for opening a public app (lib/run-link.ts), null = open /exec.
+ */
+export type BackendAuth = { execUrl: string | null; runUrl: string | null; status: "ok" | "auth_required" | "unknown"; message?: string };
 
 /**
  * Has the owner approved the backend yet? A GAS web app that touches Sheets/Drive answers everyone (the
@@ -143,15 +148,27 @@ export type BackendAuth = { execUrl: string | null; status: "ok" | "auth_require
 export async function backendAuthAction(projectId: string): Promise<BackendAuth> {
   const project = await getProject(projectId);
   const execUrl = project?.deployment?.exec_url ?? null;
-  if (!project || !execUrl) return { execUrl: null, status: "unknown" };
-  if (project.backend_authorized_at) return { execUrl, status: "ok" };
+  if (!project || !execUrl) return { execUrl: null, runUrl: null, status: "unknown" };
+  const runUrl = runUrlFor(execUrl, (await getFile(projectId, "appsscript.json").catch(() => null))?.content);
+  const base = { execUrl, runUrl };
+  if (project.backend_authorized_at) return { ...base, status: "ok" };
   const probe = await probeExec(execUrl);
-  if (probe.authRequired) return { execUrl, status: "auth_required", message: probe.error };
+  if (probe.authRequired) return { ...base, status: "auth_required", message: probe.error };
   // timeout / network / deleted deployment: nothing learned
-  if (probe.infraError) return { execUrl, status: "unknown", message: probe.error };
+  if (probe.infraError) return { ...base, status: "unknown", message: probe.error };
   // the app answered — fine, or with a runtime error of its own: either way the permission wall is gone
   await updateProject(projectId, { backend_authorized_at: new Date().toISOString() });
-  return { execUrl, status: "ok" };
+  return { ...base, status: "ok" };
+}
+
+/**
+ * "เปิดหน้าอนุญาต": the owner's Allow needs a browser signed in to ONE Google account, so the computer opens the
+ * project's /exec in a private window (lib/private-window.ts). Also allowed from a phone: it only opens a window on
+ * the computer, for when the user gets there. false = no Chrome/Edge found (the client opens the link instead).
+ */
+export async function openAuthWindowAction(projectId: string): Promise<boolean> {
+  const execUrl = (await getProject(projectId))?.deployment?.exec_url;
+  return execUrl ? openPrivateWindow(execUrl) : false;
 }
 
 export type PublishPagesAction = ({ ok: true } & Omit<PublishPagesResult, "deploy"> & { execUrl: string }) | ActionError;

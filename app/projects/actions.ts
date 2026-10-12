@@ -17,6 +17,8 @@ import { premiumStatus } from "@/lib/premium/status";
 import { sanitizeProFeatures } from "@/lib/pro-features";
 import { LOOK_FONTS } from "@/lib/style-mockup";
 import { getFiles } from "@/lib/files";
+import { publishState } from "@/lib/deploy";
+import { runUrlFor } from "@/lib/run-link";
 import { allowedUses, hostingOfUse, isProjectUse, kindLockReason, kindOfUse, useOf, type ProjectUse } from "@/lib/project-use";
 
 function buildSpec(name: string): Record<string, unknown> {
@@ -223,4 +225,15 @@ export async function saveProFeaturesAction(id: string, input: unknown): Promise
   const features = sanitizeProFeatures(input);
   await mutateProject(id, () => ({ pro_features: features }));
   return { ok: true };
+}
+
+/** Chat next steps: published already, and is that copy up to date? (lib/deploy.ts publishState) */
+export async function publishStateAction(id: string): Promise<{ state: "none" | "current" | "changed"; url: string | null }> {
+  const project = await getProject(id);
+  if (!project) return { state: "none", url: null };
+  const exec = project.deployment?.exec_url ?? null;
+  const manifest = (await getFiles(id).catch(() => [])).find((f) => f.path === "appsscript.json")?.content;
+  // before the owner's first Allow the sharing link only shows Google's error: open Google's own link (the consent screen)
+  const authorized = !!project.backend_authorized_at || project.hosting === "github";
+  return { state: await publishState(project), url: authorized ? runUrlFor(exec, manifest) ?? exec : exec };
 }

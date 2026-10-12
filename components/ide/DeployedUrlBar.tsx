@@ -9,12 +9,16 @@ import {
   BoltIcon,
   CheckIcon,
   ClipboardIcon,
+  LinkIcon,
+  XMarkIcon,
 } from "@heroicons/react/24/outline";
 import { useProjectStore } from "@/store/useProjectStore";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { backendAuthAction, pagesStateAction, publishPagesAction, type BackendAuth, type PagesState } from "@/app/pages/actions";
 import { pullRemoteAction } from "@/app/projects/import-actions";
+import { AuthOpenButton } from "./AuthOpenButton";
+import { AppLinks } from "./AppLinks";
 
 /** LINE's in-app browser blocks the camera; this parameter makes LINE open the link in the device browser. */
 const LINE_SHARE_PARAM = "openExternalBrowser=1";
@@ -51,7 +55,9 @@ export function DeployedUrlBar({ url: execUrl, projectId, googleEmail = null, sh
     pagesStateAction(projectId).then(setPagesState).catch(() => {});
   }, [projectId, execUrl]);
   const githubHosting = pagesState?.hosting === "github";
-  const url = (githubHosting && pagesState?.pages?.url) || execUrl;
+  // a public app opens through run.easygaside.tech (lib/run-link.ts): Chrome with several Google accounts cannot open /exec
+  const url = (githubHosting && pagesState?.pages?.url) || auth?.runUrl || execUrl;
+  const [linksOpen, setLinksOpen] = useState(false);
   const [devBusy, setDevBusy] = useState(false);
   const [deployBusy, setDeployBusy] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -227,10 +233,18 @@ export function DeployedUrlBar({ url: execUrl, projectId, googleEmail = null, sh
           <span className="max-sm:hidden">{deployBusy ? "กำลังเผยแพร่…" : "เผยแพร่ใหม่"}</span>
         </button>
       </Tooltip>
-      <button onClick={copy} aria-label="คัดลอกลิงก์" className="btn btn-ghost btn-sm shrink-0 max-sm:w-[1.875rem] max-sm:px-0">
-        {copied ? <CheckIcon className="h-4 w-4" /> : <ClipboardIcon className="h-4 w-4" />}
-        <span className="max-sm:hidden">{copied ? "คัดลอกแล้ว" : "คัดลอกลิงก์"}</span>
-      </button>
+      {githubHosting ? (
+        <button onClick={copy} aria-label="คัดลอกลิงก์" className="btn btn-ghost btn-sm shrink-0 max-sm:w-[1.875rem] max-sm:px-0">
+          {copied ? <CheckIcon className="h-4 w-4" /> : <ClipboardIcon className="h-4 w-4" />}
+          <span className="max-sm:hidden">{copied ? "คัดลอกแล้ว" : "คัดลอกลิงก์"}</span>
+        </button>
+      ) : (
+        // the two addresses (run.easygaside.tech for sharing, Google's own for the first Allow), each explained
+        <button onClick={() => setLinksOpen(true)} aria-label="ลิงก์ของแอป" className="btn btn-ghost btn-sm shrink-0 max-sm:w-[1.875rem] max-sm:px-0">
+          <LinkIcon className="h-4 w-4" />
+          <span className="max-sm:hidden">ลิงก์</span>
+        </button>
+      )}
       {githubHosting && pagesState?.pages && (
         <Tooltip label="ลิงก์เดียวกัน แต่ LINE จะเปิดในเบราว์เซอร์ของเครื่อง เพราะหน้าต่างใน LINE ใช้กล้องไม่ได้" placement="bottom" className="shrink-0">
           <button onClick={copyShare} className="btn btn-ghost btn-sm max-sm:hidden">
@@ -245,14 +259,34 @@ export function DeployedUrlBar({ url: execUrl, projectId, googleEmail = null, sh
           <span className="hidden sm:inline">เปิดชีต</span>
         </a>
       )}
-      <a
-        href={url}
-        target="_blank"
-        rel="noreferrer"
-        className="btn btn-secondary btn-sm shrink-0"
-      >
-        เปิดแอป <ArrowTopRightOnSquareIcon className="h-4 w-4" />
-      </a>
+      {authNeeded && !githubHosting ? (
+        // before the owner's first Allow the app only shows Google's error: send them to the yellow bar instead
+        <Tooltip label="กดอนุญาตครั้งแรกก่อน (แถบสีเหลืองด้านล่าง) แล้วจึงเปิดแอปได้" placement="bottom" className="shrink-0">
+          <span className="btn btn-secondary btn-sm cursor-not-allowed opacity-50" aria-disabled="true">
+            เปิดแอป <ArrowTopRightOnSquareIcon className="h-4 w-4" />
+          </span>
+        </Tooltip>
+      ) : (
+        <a href={url} target="_blank" rel="noreferrer" className="btn btn-secondary btn-sm shrink-0">
+          เปิดแอป <ArrowTopRightOnSquareIcon className="h-4 w-4" />
+        </a>
+      )}
+      {linksOpen && (
+        <div className="dialog-backdrop" onClick={() => setLinksOpen(false)}>
+          <div role="dialog" aria-modal="true" aria-label="ลิงก์ของแอป" className="dialog max-w-lg p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-[15px] font-semibold">ลิงก์ของแอป</h3>
+              <button type="button" onClick={() => setLinksOpen(false)} className="btn btn-ghost btn-sm btn-icon" aria-label="ปิด">
+                <XMarkIcon className="h-5 w-5" />
+              </button>
+            </div>
+            {authNeeded && <p className="callout callout-warn mt-3">ยังไม่ได้กดอนุญาตครั้งแรก คนที่เปิดลิงก์จะยังใช้แอปไม่ได้ กด “เปิดหน้าอนุญาต” ในแถบสีเหลืองก่อน</p>}
+            <div className="mt-3">
+              <AppLinks runUrl={auth?.runUrl ?? null} execUrl={execUrl} authorized={!authNeeded} />
+            </div>
+          </div>
+        </div>
+      )}
 
       <ConfirmDialog
         open={confirmOpen}
@@ -301,9 +335,7 @@ export function DeployedUrlBar({ url: execUrl, projectId, googleEmail = null, sh
           <b>ขั้นสุดท้าย:</b> อนุญาตระบบหลังบ้านครั้งเดียว ด้วยบัญชี Google {googleEmail ? <b>{googleEmail}</b> : "ที่ใช้เผยแพร่"} ไม่งั้นแอปจะขึ้นว่าเชื่อมต่อไม่ได้
           <span className="text-muted"> (Review permissions → Advanced → Allow)</span>
         </span>
-        <a href={auth.execUrl ?? "#"} target="_blank" rel="noreferrer" className="btn btn-primary btn-sm shrink-0">
-          เปิดหน้าอนุญาต <ArrowTopRightOnSquareIcon className="h-4 w-4" />
-        </a>
+        <AuthOpenButton projectId={projectId} execUrl={auth.execUrl!} googleEmail={googleEmail} />
         <button type="button" onClick={checkAuth} disabled={authBusy} className="btn btn-secondary btn-sm shrink-0">
           {authBusy ? "กำลังตรวจ…" : "อนุญาตแล้ว ตรวจอีกครั้ง"}
         </button>

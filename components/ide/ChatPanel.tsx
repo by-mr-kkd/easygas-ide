@@ -19,8 +19,10 @@ import {
   SparklesIcon,
   Squares2X2Icon,
   XMarkIcon,
+  ArrowTopRightOnSquareIcon,
 } from "@heroicons/react/24/outline";
-import { getProjectPrefsAction, projectRunningAction, saveProjectLookAction, setProjectDemoAction } from "@/app/projects/actions";
+import { PUBLISHED_EVENT } from "./publish-event";
+import { getProjectPrefsAction, projectRunningAction, publishStateAction, saveProjectLookAction, setProjectDemoAction } from "@/app/projects/actions";
 import { STYLE_CATALOG, type StyleItem } from "@/lib/style-catalog";
 import { BUILD_FROM_DEMO, BUILD_NOW, DEFAULT_LOOK, LOOK_COLORS, LOOK_FONTS, demoMessage, mergeAppBlocks, stripAppBlocks, type MockLook } from "@/lib/style-mockup";
 import { useProjectStore } from "@/store/useProjectStore";
@@ -738,6 +740,25 @@ export function ChatPanel({
     </div>
   );
 
+  // published already? then the last button opens the app (up to date) or updates it (changed since)
+  const [published, setPublished] = useState<{ state: "none" | "current" | "changed"; url: string | null } | null>(null);
+  const showSteps = hasFiles && !busy && !demo && !pendingSpec;
+  useEffect(() => {
+    if (!showSteps) return;
+    let live = true;
+    const load = () =>
+      publishStateAction(projectId)
+        .then((r) => live && setPublished(r))
+        .catch(() => {});
+    load();
+    // DeployButton announces a finished publish (the link and its state change without a new answer)
+    window.addEventListener(PUBLISHED_EVENT, load);
+    return () => {
+      live = false;
+      window.removeEventListener(PUBLISHED_EVENT, load);
+    };
+  }, [showSteps, projectId]);
+
   // after an answer on a project with code: what to do next, as the APP's buttons (never read from the AI's text)
   const nextSteps = hasFiles && !busy && !demo && !pendingSpec && (
     <div className="space-y-1.5 pt-1">
@@ -767,10 +788,22 @@ export function ChatPanel({
           <BugAntIcon className="h-4 w-4" />
           ตรวจหาบั๊ก
         </button>
-        <button type="button" onClick={() => requestAction("publish")} title="เผยแพร่ให้คนอื่นเปิดใช้ได้" className="btn btn-primary btn-sm">
-          <RocketLaunchIcon className="h-4 w-4" />
-          เผยแพร่
-        </button>
+        {published?.state === "current" && published.url ? (
+          <a href={published.url} target="_blank" rel="noreferrer" title="แอปที่เผยแพร่อยู่ใช้โค้ดล่าสุดแล้ว" className="btn btn-primary btn-sm">
+            <ArrowTopRightOnSquareIcon className="h-4 w-4" />
+            เปิดแอป
+          </a>
+        ) : (
+          <button
+            type="button"
+            onClick={() => requestAction("publish")}
+            title={published?.state === "changed" ? "อัปเดตแอปที่เผยแพร่อยู่ด้วยโค้ดล่าสุด ลิงก์เดิมใช้ได้ต่อ" : "เผยแพร่ให้คนอื่นเปิดใช้ได้"}
+            className="btn btn-primary btn-sm"
+          >
+            <RocketLaunchIcon className="h-4 w-4" />
+            {published?.state === "changed" ? "เผยแพร่อัปเดต" : "เผยแพร่"}
+          </button>
+        )}
       </div>
     </div>
   );

@@ -6,6 +6,8 @@ import { deployProject } from "@/lib/deploy";
 import { probeExec } from "@/lib/gas-verify";
 import { getCurrentUser, getProject } from "@/lib/projects";
 import { snapshotProject } from "@/lib/versions";
+import { getFile } from "@/lib/files";
+import { runUrlFor } from "@/lib/run-link";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -38,7 +40,9 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
         /* probe is a bonus — never fail the deploy over it */
       }
     }
-    return NextResponse.json({ ok: true, ...result, probe });
+    // a public app opens through run.easygaside.tech (lib/run-link.ts); the /exec link stays for the owner's Allow
+    const runUrl = runUrlFor(result.execUrl, (await getFile(id, "appsscript.json").catch(() => null))?.content);
+    return NextResponse.json({ ok: true, ...result, runUrl, probe });
   } catch (e) {
     return mapGoogleError(e, (await getClaspAccount().catch(() => null))?.email);
   } finally {

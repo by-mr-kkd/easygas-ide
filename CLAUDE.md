@@ -247,6 +247,22 @@ npm run desktop:build   # Windows installer → dist/desktop/out
   on the first online publish and a missing runtime is `RUNTIME_MISSING`. Never paste either text back into the
   repo (tests: `EASYGAS_PAGES_RUNTIME_FIXTURE=<json>` runs the behaviour tests, otherwise they skip). Changing the
   text = a new row version on the server (`update premium_content … where id = 'pages_runtime'`), no app release.
+- **Several Google accounts in one browser** break web apps (Chrome rewrites /exec to /macros/u/<n>/ → "ไม่สามารถเปิดไฟล์ได้";
+  Google: multi-login unsupported). A PUBLIC app (ANYONE_ANONYMOUS + USER_DEPLOYING) opens through
+  `run.easygaside.tech/<deploymentId>` (`lib/run-link.ts`, site `app/run/[id]` = `<iframe credentialless>`, its own host
+  because the Pro phone app's scope is all of easygaside.tech); others keep /exec. The owner's Allow cannot happen there:
+  `AuthOpenButton` opens /exec in a private window on the computer (`lib/private-window.ts`, Chrome --incognito / Edge
+  --inprivate, the project's own URL only) and, on a phone, copies the link with the incognito-tab steps.
+- **Hubs ("ฮับ" · หน้ารวมลิงก์, home `?mode=hub`, `components/hub/*`, `lib/hub/*`, site `lib/hubs.ts`):** link pages at
+  easygaside.tech/hub/<name>, edited here, stored on the site as ONE JSON document. `lib/hub/doc.ts` is vendored from the
+  site's `lib/hub-doc.ts` — change both (the site's `cleanHubDoc` is the final gate). Who = the share author key; Pro = this
+  machine's activation token in `x-egs-pro` (never the licence key). Free: 1 hub + the EasyGAS line; Pro: more hubs, PIN,
+  schedule, stats, editors, hide the line (the site enforces each). Apps Script links open through run.easygaside.tech
+  unless the item's `deployment` is "" (an app that needs a Google sign-in). The hub actions may run from a phone.
+  Link icons are line icons from `HUB_ICONS` ("i:<id>", `components/hub/hub-icon-map.tsx`, same map on the site).
+  The Pro phone app edits hubs at easygaside.tech/app/hubs with the SAME editor components (copied into the site's
+  `components/hub-app/` — change both); it syncs the author key, Pro token and published projects from a paired
+  computer through the gateway's `/__egs/api/hub-sync` (Bearer device token; `lib/hub/sync.ts`), quietly on each visit.
 - **No work at render time that touches the network or writes settings** — `next build` renders pages
   (the rulebook check once ran during a build). Trigger such work from a client effect → server action.
 

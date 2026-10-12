@@ -19,6 +19,10 @@ export interface PendingOrder {
   promptpayId: string | null;
   /** ISO timestamp from the server */
   expiresAt: string;
+  /** "manual" = the admin checks slips by hand (missing in orders saved before 1.1.3) */
+  slipCheck?: "easyslip" | "manual" | null;
+  /** the slip was sent and waits for the admin's check */
+  review?: boolean;
 }
 
 export interface PremiumFile {
@@ -68,6 +72,8 @@ function parseOrder(x: unknown): PendingOrder | null {
     payUrl: str(o.payUrl) ? o.payUrl : null,
     promptpayId: str(o.promptpayId) ? o.promptpayId : null,
     expiresAt: o.expiresAt,
+    slipCheck: o.slipCheck === "manual" || o.slipCheck === "easyslip" ? o.slipCheck : null,
+    review: o.review === true,
   };
 }
 

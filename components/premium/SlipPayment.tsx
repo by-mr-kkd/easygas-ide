@@ -1,17 +1,19 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { PhotoIcon } from "@heroicons/react/24/outline";
+import { HeartIcon, PhotoIcon } from "@heroicons/react/24/outline";
 import { submitPremiumSlipAction } from "@/app/premium/actions";
 import { donationPayload, formatBaht, maskPromptPayId } from "@/lib/donate";
-import { SLIP_REJECT_TEXT, type OrderView, type PremiumStatus } from "@/lib/premium/types";
+import { SLIP_REJECT_TEXT, SLIP_REVIEW_TEXT, type OrderView, type PremiumStatus } from "@/lib/premium/types";
 import { SLIP_ACCEPT, shrinkSlipImage } from "./shrink-image";
 
 /**
  * Mode "slip": a PromptPay QR for the exact amount (same generator as the donate page), then the slip
- * image goes to the server, which checks it and hands back the licence key.
+ * image goes to the server, which checks it and hands back the licence key. When the admin checks slips by
+ * hand (`order.slipCheck === "manual"`) the answer is `review`: a thank-you, and the dialog polls for the key.
  */
-export function SlipPayment({ order, onPaid }: { order: OrderView; onPaid: (status: PremiumStatus) => void }) {
+export function SlipPayment({ order, onPaid, onReview }: { order: OrderView; onPaid: (status: PremiumStatus) => void; onReview: () => void }) {
+  const [again, setAgain] = useState(false);
   const [qr, setQr] = useState<string | null>(null);
   const [qrError, setQrError] = useState<string | null>(null);
   const [slipError, setSlipError] = useState<string | null>(null);
@@ -68,9 +70,33 @@ export function SlipPayment({ order, onPaid }: { order: OrderView; onPaid: (stat
         onPaid(r.data.premium);
         return;
       }
+      if (r.data.status === "review") {
+        setAgain(false);
+        setFileName(null);
+        if (fileRef.current) fileRef.current.value = "";
+        onReview();
+        return;
+      }
       setSlipError(r.data.status === "rejected" ? SLIP_REJECT_TEXT[r.data.reason] : "ระบบตรวจสลิปไม่พร้อมใช้งานชั่วคราว ลองใหม่ในอีกสักครู่ สลิปของคุณยังใช้ได้");
       if (fileRef.current) fileRef.current.value = "";
     });
+  }
+
+  if (order.review && !again) {
+    return (
+      <div className="space-y-3" aria-live="polite">
+        <div className="callout flex items-start gap-3">
+          <HeartIcon className="mt-0.5 h-5 w-5 shrink-0 text-accent-text" aria-hidden="true" />
+          <div>
+            <p className="text-sm font-medium text-fg">{SLIP_REVIEW_TEXT}</p>
+            <p className="hint mt-1">ได้รับสลิปแล้ว เมื่อแอดมินยืนยัน รหัสจะเข้ามาในโปรแกรมเอง ปิดหน้าต่างนี้ได้ แล้วเปิด ตั้งค่า → Pro อีกครั้งภายหลัง</p>
+          </div>
+        </div>
+        <button type="button" onClick={() => setAgain(true)} className="btn btn-ghost btn-sm">
+          แนบสลิปผิดใบ? ส่งใบใหม่
+        </button>
+      </div>
+    );
   }
 
   return (
@@ -89,7 +115,10 @@ export function SlipPayment({ order, onPaid }: { order: OrderView; onPaid: (stat
           <p className="hint">กำลังสร้าง QR…</p>
         )}
       </div>
-      <p className="hint">สแกน QR ด้วยแอปธนาคารแล้วโอนให้ตรงจำนวน จากนั้นแนบรูปสลิปที่นี่ รหัสจะออกให้ทันทีเมื่อตรวจผ่าน</p>
+      <p className="hint">
+        สแกน QR ด้วยแอปธนาคารแล้วโอนให้ตรงจำนวน จากนั้นแนบรูปสลิปที่นี่{" "}
+        {order.slipCheck === "manual" ? "แอดมินจะตรวจสลิปแล้วส่งรหัสให้" : "รหัสจะออกให้ทันทีเมื่อตรวจผ่าน"}
+      </p>
 
       <div>
         <input

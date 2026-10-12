@@ -25,6 +25,10 @@ export interface OrderView {
   payUrl: string | null;
   promptpayId: string | null;
   expiresAt: string;
+  /** "manual" = the admin checks the slip by hand, the key comes later */
+  slipCheck: "easyslip" | "manual" | null;
+  /** the slip was sent and waits for the admin */
+  review: boolean;
 }
 
 export type SlipRejectReason = "amount" | "receiver" | "duplicate" | "too_old" | "unreadable" | "attempts";
@@ -32,10 +36,11 @@ export type SlipRejectReason = "amount" | "receiver" | "duplicate" | "too_old" |
 export type SlipOutcome =
   | { status: "paid"; premium: PremiumStatus }
   | { status: "rejected"; reason: SlipRejectReason }
-  | { status: "unavailable" };
+  | { status: "unavailable" }
+  | { status: "review" };
 
 export type PollOutcome =
-  | { status: "pending" }
+  | { status: "pending"; review: boolean }
   | { status: "paid"; premium: PremiumStatus }
   | { status: "rejected" | "expired" };
 
@@ -51,6 +56,9 @@ export function normalizeEmailCode(input: string): string | null {
   const code = String(input ?? "").replace(/[\s-]/g, "");
   return CODE_INPUT.test(code) ? code : null;
 }
+
+/** After a slip is sent for the admin's check (premium_config.slip_check = manual). */
+export const SLIP_REVIEW_TEXT = "ขอบคุณที่สนับสนุน แอดมินจะตรวจสอบและส่งรหัสยืนยันให้โดยเร็วที่สุดครับ";
 
 export const SLIP_REJECT_TEXT: Record<SlipRejectReason, string> = {
   amount: "ยอดเงินในสลิปไม่ตรงกับยอดที่ต้องชำระ โปรดโอนให้ตรงจำนวนแล้วส่งสลิปใหม่",

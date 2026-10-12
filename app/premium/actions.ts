@@ -57,7 +57,7 @@ function cleanEmail(input: string): string | null {
 
 function orderView(o: PendingOrder): OrderView {
   const { secret: _secret, ...view } = o;
-  return view;
+  return { ...view, slipCheck: o.slipCheck ?? null, review: o.review === true };
 }
 
 const shortDate = (iso: string) => {
@@ -119,7 +119,7 @@ export async function getPremiumStatusAction(): Promise<PremiumStatus> {
 export async function getPremiumOfferAction(
   force = false,
 ): Promise<ActionResult<{ offer: OfferView | null; pendingOrder: OrderView | null; activated?: PremiumStatus }>> {
-  const { pendingOrder } = await readPremium();
+  let { pendingOrder } = await readPremium();
   if (pendingOrder) {
     // the order may have been fulfilled while the dialog was closed (a slip checked later, or a key
     // issued by hand): one status check before showing the QR again
@@ -127,6 +127,7 @@ export async function getPremiumOfferAction(
     if (polled.ok && polled.data.status === "paid") {
       return { ok: true, data: { offer: null, pendingOrder: null, activated: polled.data.premium } };
     }
+    ({ pendingOrder } = await readPremium()); // the check may have marked it as waiting for the admin
   }
   const pending = pendingOrder ? orderView(pendingOrder) : null;
   try {
@@ -220,6 +221,7 @@ export async function submitPremiumSlipAction(imageBase64: string): Promise<Acti
       if (!activated.ok) return fail(`ชำระสำเร็จแต่รหัสที่ได้รับตรวจไม่ผ่าน (${activated.error}) ติดต่อเราพร้อมอีเมล ${pendingOrder.email}`);
       return { ok: true, data: { status: "paid", premium: activated.data } };
     }
+    if (result.status === "review") await updatePremium({ pendingOrder: { ...pendingOrder, review: true } });
     return { ok: true, data: result };
   } catch (e) {
     return failFrom(e);
@@ -238,7 +240,11 @@ export async function pollPremiumOrderAction(): Promise<ActionResult<PollOutcome
       if (!activated.ok) return fail(`ชำระสำเร็จแต่รหัสที่ได้รับตรวจไม่ผ่าน (${activated.error}) ติดต่อเราพร้อมอีเมล ${pendingOrder.email}`);
       return { ok: true, data: { status: "paid", premium: activated.data } };
     }
-    if (r.status === "pending") return { ok: true, data: { status: "pending" } };
+    if (r.status === "pending") {
+      const review = r.review === true || pendingOrder.review === true;
+      if (review && !pendingOrder.review) await updatePremium({ pendingOrder: { ...pendingOrder, review: true } });
+      return { ok: true, data: { status: "pending", review } };
+    }
     // the order is finished without a payment: nothing left to resume
     await updatePremium({ pendingOrder: null });
     return { ok: true, data: { status: r.status } };

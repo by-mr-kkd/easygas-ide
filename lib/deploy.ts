@@ -349,3 +349,16 @@ export async function deployProject(_userId: string, project: EgsProject, opts: 
     scopesAdded,
   };
 }
+
+/**
+ * For the chat's next-step buttons: is the published app running the code in the project now? "none" = never
+ * published; "current" = the deployment holds these files; "changed" = edited since (or cannot tell cheaply:
+ * imported scripts and GitHub-hosted projects push extra files, so they always read "changed").
+ */
+export async function publishState(project: EgsProject): Promise<"none" | "current" | "changed"> {
+  const d = project.deployment;
+  if (!d?.exec_url) return "none";
+  if (project.origin === "imported" || project.hosting === "github" || project.kind === "bound") return "changed";
+  const own = (await getFiles(project.id)).filter((f) => isPushed(f.path));
+  return d.content_hash === hashFiles(own) ? "current" : "changed";
+}

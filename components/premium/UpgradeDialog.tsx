@@ -36,6 +36,8 @@ type View =
   | { kind: "done"; status: PremiumStatus; showKey: boolean };
 
 const POLL_MS = 4000;
+/** a slip the admin checks by hand: no hurry */
+const REVIEW_POLL_MS = 15000;
 
 /** What the offer said about email, for the restore link (undefined = unknown, ask the server). */
 function dialogEmailVerify(view: View): boolean | undefined {
@@ -108,8 +110,9 @@ export function UpgradeDialog({ open, onClose, reason, onActivated }: UpgradeDia
     [onActivated],
   );
 
-  // mode "link": poll the order while the dialog is open
-  const polling = open && view.kind === "paying" && view.order.mode === "link";
+  // mode "link", or a slip waiting for the admin: poll the order while the dialog is open
+  const polling = open && view.kind === "paying" && (view.order.mode === "link" || view.order.review);
+  const pollMs = view.kind === "paying" && view.order.review ? REVIEW_POLL_MS : POLL_MS;
   useEffect(() => {
     if (!polling) return;
     let stopped = false;
@@ -129,14 +132,14 @@ export function UpgradeDialog({ open, onClose, reason, onActivated }: UpgradeDia
         setView((v) => (v.kind === "paying" ? v.offer ? { kind: "offer", offer: v.offer } : { kind: "loading" } : v));
         return;
       }
-      timer = setTimeout(tick, POLL_MS);
+      timer = setTimeout(tick, pollMs);
     };
-    timer = setTimeout(tick, POLL_MS);
+    timer = setTimeout(tick, pollMs);
     return () => {
       stopped = true;
       if (timer) clearTimeout(timer);
     };
-  }, [polling, finish]);
+  }, [polling, pollMs, finish]);
 
   function sendOrderCode(address: string) {
     setFormError(null);
@@ -296,12 +299,18 @@ export function UpgradeDialog({ open, onClose, reason, onActivated }: UpgradeDia
               <p className="text-sm text-fg">
                 คำสั่งซื้อสำหรับ <span className="font-medium">{view.order.email}</span>
               </p>
-              <button type="button" onClick={cancelOrder} disabled={pending} className="btn btn-ghost btn-sm">
-                ยกเลิกคำสั่งซื้อนี้
-              </button>
+              {!view.order.review && (
+                <button type="button" onClick={cancelOrder} disabled={pending} className="btn btn-ghost btn-sm">
+                  ยกเลิกคำสั่งซื้อนี้
+                </button>
+              )}
             </div>
             {view.order.mode === "slip" ? (
-              <SlipPayment order={view.order} onPaid={finish} />
+              <SlipPayment
+                order={view.order}
+                onPaid={finish}
+                onReview={() => setView((v) => (v.kind === "paying" ? { ...v, order: { ...v.order, review: true } } : v))}
+              />
             ) : (
               <div className="space-y-3">
                 <p className="text-lg font-semibold text-fg">{formatBaht(view.order.amount)} บาท</p>

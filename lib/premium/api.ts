@@ -32,17 +32,24 @@ export interface OrderCreated {
   mode: "slip" | "link";
   payUrl: string | null;
   promptpayId: string | null;
+  /** mode slip: "manual" = the admin checks the slip by hand and the key comes later */
+  slipCheck: SlipCheck | null;
   expiresAt: string;
 }
+
+export type SlipCheck = "easyslip" | "manual";
 
 export type SlipRejectReason = "amount" | "receiver" | "duplicate" | "too_old" | "unreadable" | "attempts";
 
 export type SlipResult =
   | { status: "paid"; key: string }
   | { status: "rejected"; reason: SlipRejectReason }
-  | { status: "unavailable" };
+  | { status: "unavailable" }
+  /** manual check: the slip reached the admin, the key comes when they confirm it */
+  | { status: "review" };
 
-export type OrderStatus = { status: "pending" | "paid" | "rejected" | "expired"; key?: string };
+/** review: a pending order whose slip waits for the admin */
+export type OrderStatus = { status: "pending" | "paid" | "rejected" | "expired"; key?: string; review?: boolean };
 
 /** Error codes the server sends that the user can act on; anything else reads as `server`. */
 export const SERVER_ERROR_CODES = [
@@ -221,17 +228,18 @@ export async function createOrder(email: string, code?: string): Promise<OrderCr
     mode: r.mode,
     payUrl: strOrNull(r.payUrl),
     promptpayId: strOrNull(r.promptpayId),
+    slipCheck: r.slipCheck === "manual" || r.slipCheck === "easyslip" ? r.slipCheck : null,
     expiresAt: typeof r.expiresAt === "string" ? r.expiresAt : "",
   };
 }
 
 const REJECT_REASONS: readonly SlipRejectReason[] = ["amount", "receiver", "duplicate", "too_old", "unreadable", "attempts"];
 
-/** `image` = base64 JPEG/PNG without a `data:` prefix. */
+/** `image` = base64 JPEG/PNG without a `data:` prefix. `review: true` tells the server this app understands `review`. */
 export async function submitSlip(orderId: string, secret: string, image: string): Promise<SlipResult> {
   const r = await call<Record<string, unknown>>("premium-slip", {
     method: "POST",
-    body: { orderId, secret, image },
+    body: { orderId, secret, image, review: true },
     timeoutMs: SLIP_TIMEOUT_MS,
   });
   if (r.status === "paid" && typeof r.key === "string") return { status: "paid", key: r.key };
@@ -240,13 +248,14 @@ export async function submitSlip(orderId: string, secret: string, image: string)
     return { status: "rejected", reason };
   }
   if (r.status === "unavailable") return { status: "unavailable" };
+  if (r.status === "review") return { status: "review" };
   throw new PremiumApiError("bad_response", API_TEXT.bad_response);
 }
 
 export async function fetchOrderStatus(orderId: string, secret: string): Promise<OrderStatus> {
   const r = await call<Record<string, unknown>>("premium-status", { method: "POST", body: { orderId, secret } });
   if (r.status === "pending" || r.status === "paid" || r.status === "rejected" || r.status === "expired") {
-    return { status: r.status, key: typeof r.key === "string" ? r.key : undefined };
+    return { status: r.status, key: typeof r.key === "string" ? r.key : undefined, review: r.review === true };
   }
   throw new PremiumApiError("bad_response", API_TEXT.bad_response);
 }

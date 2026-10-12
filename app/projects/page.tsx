@@ -22,6 +22,9 @@ import { getAppSetting } from "@/lib/settings";
 import { shouldNudgeApp } from "@/lib/remote/nudge";
 import { getSetupStatus } from "@/lib/setup-status";
 import { tourSeenKey } from "@/lib/tour";
+import { getFile } from "@/lib/files";
+import { runUrlFor } from "@/lib/run-link";
+import { HubHome } from "@/components/hub/HubHome";
 
 export const metadata = { title: "โปรเจกต์ — EasyGAS IDE" };
 
@@ -42,6 +45,15 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
     premiumStatus().catch(() => ({ active: false })),
     githubStatus().catch(() => ({ available: false, connected: false })),
   ]);
+  // the link each card opens: GitHub Pages, else run.easygaside.tech for a public app (lib/run-link.ts), else /exec / the Sheet
+  const execs: Record<string, string> = {};
+  for (const p of projects) {
+    const url = deployed[p.id];
+    if (p.deployment?.exec_url) execs[p.id] = p.deployment.exec_url;
+    if (!url) continue;
+    if (p.hosting === "github" && p.pages?.url) deployed[p.id] = p.pages.url;
+    else deployed[p.id] = runUrlFor(url, (await getFile(p.id, "appsscript.json").catch(() => null))?.content) ?? url;
+  }
   const mode = startModeFrom(params.mode);
   // projects the AI is working on right now (the list puts them first and keeps following)
   const busy = busyProjectIds();
@@ -69,7 +81,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
             {appNudge && <AppNudge />}
             {(!setup.engineReady || !setup.google.loggedIn) && <SetupChecklist setup={setup} />}
 
-            <ProjectTable projects={projects} deployed={deployed} busy={busy} openCreate={params.new === "1"} mode={mode} pro={premium.active} githubConnected={github.connected}>
+            <ProjectTable projects={projects} deployed={deployed} execs={execs} busy={busy} openCreate={params.new === "1"} mode={mode} pro={premium.active} githubConnected={github.connected}>
               {mode === "clone" ? (
                 <div className="card p-4 sm:p-5">
                   <p className="hint">วางลิงก์ easygaside.tech/s/… ที่คนอื่นแชร์ไว้ ดูไฟล์และสิทธิ์ที่ขอก่อน แล้วโคลนเป็นโปรเจกต์ในเครื่องนี้</p>
@@ -91,6 +103,8 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
                 </>
               ) : mode === "shares" ? (
                 <SharesView order={params.order === "clones" ? "clones" : "new"} />
+              ) : mode === "hub" ? (
+                <HubHome googleConnected={setup.google.loggedIn} initialHub={typeof params.hub === "string" ? params.hub.slice(0, 40) : null} />
               ) : null}
             </ProjectTable>
 

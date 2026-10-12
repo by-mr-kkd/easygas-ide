@@ -9,10 +9,12 @@ import {
   createOrder,
   errorFromResponse,
   fetchOffer,
+  fetchOrderStatus,
   PremiumApiError,
   requestEmailCode,
   restoreLicense,
   SERVER_ERROR_CODES,
+  submitSlip,
 } from "../lib/premium/api.ts";
 import { PREMIUM_SERVER } from "../lib/premium/config.ts";
 import { maskLicenseKey } from "../lib/premium/license.ts";
@@ -132,4 +134,14 @@ test("createOrder sends the code only when there is one", async () => {
   assert.deepEqual(seen?.body, { email: "a@b.co", code: "123456" });
   answer(400, { error: "code_required" });
   await assert.rejects(createOrder("a@b.co"), (e: unknown) => e instanceof PremiumApiError && e.code === "code_required");
+});
+
+test("submitSlip says it understands review; review and the order's slipCheck are read", async () => {
+  answer(200, { status: "review" });
+  assert.deepEqual(await submitSlip("o", "s".repeat(32), "/9j/AAAA"), { status: "review" });
+  assert.equal((seen?.body as { review?: unknown }).review, true);
+  answer(200, { status: "pending", review: true });
+  assert.equal((await fetchOrderStatus("o", "s".repeat(32))).review, true);
+  answer(200, { orderId: "o", secret: "s".repeat(32), amount: 99, mode: "slip", payUrl: null, promptpayId: "0800000000", slipCheck: "manual", expiresAt: "x" });
+  assert.equal((await createOrder("a@b.co")).slipCheck, "manual");
 });

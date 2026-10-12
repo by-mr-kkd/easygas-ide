@@ -30,7 +30,8 @@ const FAMILIES: Record<PickProvider, RegExp[]> = {
   deepseek: [/^deepseek-v(\d+(?:\.\d+)?)-flash$/, /^deepseek-(chat)$/],
   "deepseek-pro": [/^deepseek-v(\d+(?:\.\d+)?)-pro$/, /^deepseek-(reasoner)$/],
   zai: [/^glm-(\d+(?:\.\d+)?)$/],
-  muse: [/^muse-spark-(\d+(?:\.\d+)?)$/],
+  // Spark stays the pick (Wonder is a preview); Wonder ranks right after it in the list
+  muse: [/^muse-spark-(\d+(?:\.\d+)?)$/, /^muse-wonder-(\d+(?:\.\d+)?)$/],
 };
 
 function versionOf(raw: string): number[] {

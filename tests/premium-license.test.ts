@@ -113,11 +113,17 @@ test("store: a pending order round-trips and a malformed one is dropped", async 
     payUrl: null,
     promptpayId: "0812345678",
     expiresAt: "2026-10-08T00:00:00.000Z",
+    slipCheck: "manual" as const,
+    review: true,
   };
   await writePremium({ v: 1, key: null, pendingOrder: order, activation: null, deviceSeed: null, cameraRules: null, cameraRulesVersion: null, pagesRuntime: null, pagesRuntimeVersion: null });
   assert.deepEqual((await readPremium()).pendingOrder, order);
   // the file holds the secret; it is this module's job alone to keep it off the wire
   assert.match(readFileSync(premiumPath(), "utf8"), /s3cret/);
+  // an order saved before the manual slip check existed reads as not waiting for the admin
+  const { slipCheck: _c, review: _r, ...older } = order;
+  await writePremium({ v: 1, key: null, pendingOrder: older, activation: null, deviceSeed: null, cameraRules: null, cameraRulesVersion: null, pagesRuntime: null, pagesRuntimeVersion: null });
+  assert.deepEqual((await readPremium()).pendingOrder, { ...older, slipCheck: null, review: false });
   await import("node:fs/promises").then((fs) =>
     fs.writeFile(premiumPath(), JSON.stringify({ v: 1, key: null, pendingOrder: { orderId: "ord_2", mode: "cash" } }), "utf8"),
   );

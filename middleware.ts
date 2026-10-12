@@ -25,7 +25,7 @@ function buildCsp(nonce: string): string {
     `img-src 'self' data: blob: https:`,
     `font-src 'self' data:`,
     `connect-src 'self'`,
-    `frame-src 'self' blob: data: https://script.google.com`,
+    `frame-src 'self' blob: data: https://script.google.com https://easygaside.tech`,
   ].join("; ");
 }
 
