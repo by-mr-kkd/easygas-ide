@@ -12,7 +12,12 @@ import { briefToMessage, isEmptyBrief, sanitizeBrief } from "@/lib/brief";
 import { sanitizePrefs, type StylePrefs } from "@/lib/preferences";
 import { busyProjectIds, isProjectBusy } from "@/lib/agent-lock";
 import { latestAnnouncement, type Announcement } from "@/lib/announcement";
-import { createProject, getProject, mutateProject, softDeleteProject } from "@/lib/projects";
+import { createProject, getProject, listProjects, mutateProject, softDeleteProject } from "@/lib/projects";
+import { premiumStatus } from "@/lib/premium/status";
+import { sanitizeProFeatures } from "@/lib/pro-features";
+import { LOOK_FONTS } from "@/lib/style-mockup";
+import { getFiles } from "@/lib/files";
+import { allowedUses, hostingOfUse, isProjectUse, kindLockReason, kindOfUse, useOf, type ProjectUse } from "@/lib/project-use";
 
 function buildSpec(name: string): Record<string, unknown> {
   // Capability router: record what the project seems to need + whether it wants a target we don't
@@ -31,9 +36,43 @@ function buildSpec(name: string): Record<string, unknown> {
  * Create a project and RETURN its id (no redirect) — the projects home and the style picker stash
  * their kickoff prompt in sessionStorage before navigating into the IDE.
  */
-export async function newProjectReturnId(name: string, kind: unknown = "webapp"): Promise<{ id: string } | { error: string }> {
-  // "bound" = a script inside a new Google Sheet (lib/bound.ts); anything else is a web app
-  return { id: await createProject(name, kind === "bound" ? "bound" : "webapp", buildSpec(name)) };
+export async function newProjectReturnId(name: string, use: unknown = "google"): Promise<{ id: string } | { error: string }> {
+  // "ใช้งานผ่านอะไร" (lib/project-use.ts); an old caller may still pass a kind
+  const u: ProjectUse = isProjectUse(use) ? use : use === "bound" ? "sheet" : "google";
+  if (u === "github" && !(await premiumStatus()).active) return { error: "ลิงก์ GitHub Pages ใช้ได้ใน Pro" };
+  const id = await createProject(name, kindOfUse(u), buildSpec(name));
+  // recorded either way: the publish button asks a Pro user "Google or GitHub?" only when nothing was chosen
+  await mutateProject(id, () => ({ hosting: hostingOfUse(u) }));
+  return { id };
+}
+
+/**
+ * Change "ใช้งานผ่านอะไร" on an existing project (the style tab). The kind may change only until Google holds
+ * the script (kindLockReason); GitHub Pages is Pro and needs a standalone script. Returns whether the kind
+ * changed, so the caller can ask the AI to rewrite the sheet access in code that already exists.
+ */
+export async function setProjectUseAction(id: string, input: unknown): Promise<{ ok: true; kindChanged: boolean } | { ok: false; error: string }> {
+  if (!isProjectUse(input)) return { ok: false, error: "ค่าไม่ถูกต้อง" };
+  const project = await getProject(id);
+  if (!project) return { ok: false, error: "ไม่พบโปรเจกต์" };
+  const current = useOf(project.kind, project.hosting);
+  const lock = kindLockReason(project);
+  if (!allowedUses(current, lock).includes(input)) return { ok: false, error: lock ?? "เปลี่ยนเป็นแบบนี้ไม่ได้" };
+  if (input === "github" && !(await premiumStatus()).active) return { ok: false, error: "ลิงก์ GitHub Pages ใช้ได้ใน Pro" };
+  if (await isProjectBusy(id)) return { ok: false, error: "AI กำลังทำงานกับโปรเจกต์นี้อยู่ รอให้เสร็จก่อนแล้วลองอีกครั้ง" };
+  const kind = kindOfUse(input);
+  const hosting = hostingOfUse(input);
+  // leaving GitHub with camera code: Google's page cannot run it (same check as setHostingAction)
+  if (hosting === "gas" && project.hosting === "github") {
+    const files = await getFiles(id);
+    if (files.some((f) => /getUserMedia|capture=["']?(camera|environment)/.test(f.content))) {
+      return { ok: false, error: "โปรเจกต์นี้ใช้กล้อง ซึ่งหน้าเว็บของ Google เปิดกล้องไม่ได้ ต้องอยู่บน GitHub Pages ต่อไป" };
+    }
+  }
+  await mutateProject(id, () => ({ kind, hosting }));
+  revalidatePath(`/projects/${id}`);
+  revalidatePath("/projects");
+  return { ok: true, kindChanged: kind !== project.kind };
 }
 
 /**
@@ -129,4 +168,59 @@ export async function listModelsAction(
   } catch {
     return { error: "ดึงรายชื่อโมเดลไม่สำเร็จ ตรวจ API key หรืออินเทอร์เน็ต แล้วลองใหม่ หรือพิมพ์ชื่อโมเดลเอง" };
   }
+}
+
+const NAME_MAX = 80;
+
+/**
+ * Rename a project in this app. The name on Google (the script's title) is not touched: clasp's sign-in
+ * cannot rename a script, and an imported script keeps the name its owner gave it there.
+ */
+export async function renameProjectAction(id: string, input: unknown): Promise<{ ok: true; name: string } | { ok: false; error: string }> {
+  const name = typeof input === "string" ? input.replace(/\s+/g, " ").trim() : "";
+  if (!name) return { ok: false, error: "ตั้งชื่อก่อน" };
+  if (name.length > NAME_MAX) return { ok: false, error: `ชื่อยาวได้ไม่เกิน ${NAME_MAX} ตัวอักษร` };
+  if (!(await getProject(id))) return { ok: false, error: "ไม่พบโปรเจกต์" };
+  const taken = (await listProjects()).some((p) => p.id !== id && p.name === name);
+  if (taken) return { ok: false, error: "มีโปรเจกต์ชื่อนี้อยู่แล้ว" };
+  await mutateProject(id, () => ({ name }));
+  revalidatePath("/projects");
+  revalidatePath(`/projects/${id}`);
+  return { ok: true, name };
+}
+
+/** The last thing asked for was a screen-only demo (on) or the real build (off): the chat offers the next step. */
+export async function setProjectDemoAction(id: string, on: boolean): Promise<{ ok: boolean }> {
+  if (!(await getProject(id))) return { ok: false };
+  await mutateProject(id, () => ({ demo: on === true }));
+  return { ok: true };
+}
+
+/**
+ * The look picked for a demo (colour · font · tone). The font is also saved as the project's font choice
+ * (lib/preferences), so the "Look & feel" block the AI reads agrees with what the message asks for.
+ */
+export async function saveProjectLookAction(id: string, input: unknown): Promise<{ ok: boolean }> {
+  if (!(await getProject(id))) return { ok: false };
+  const o = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+  const color = typeof o.color === "string" && /^#[0-9a-f]{6}$/i.test(o.color) ? o.color : undefined;
+  const font = LOOK_FONTS.find((f) => f.family === o.font);
+  const tone: "light" | "dark" = o.tone === "dark" ? "dark" : "light";
+  await mutateProject(id, (current) => ({
+    look: { color, font: font?.family, tone },
+    prefs: font ? { ...sanitizePrefs(current.prefs), font: font.prefId } : current.prefs,
+  }));
+  return { ok: true };
+}
+
+/**
+ * The style tab's "ติดตั้งแบบไหน" card. Pro only, like the hosting switch it goes with (setHostingAction):
+ * a free install can tick the boxes to see the mock-up change, but nothing is stored.
+ */
+export async function saveProFeaturesAction(id: string, input: unknown): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!(await getProject(id))) return { ok: false, error: "ไม่พบโปรเจกต์" };
+  if (!(await premiumStatus()).active) return { ok: false, error: "ความสามารถนี้เป็นของ Pro" };
+  const features = sanitizeProFeatures(input);
+  await mutateProject(id, () => ({ pro_features: features }));
+  return { ok: true };
 }

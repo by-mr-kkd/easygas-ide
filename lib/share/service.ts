@@ -10,6 +10,7 @@
 import { randomUUID } from "node:crypto";
 import { getFiles, writeFile } from "@/lib/files";
 import { createProject, getProject, listProjects, updateProject } from "@/lib/projects";
+import { premiumStatus } from "@/lib/premium/status";
 import { snapshotProject } from "@/lib/versions";
 import type { EgsProject } from "@/types/db";
 import { parseShareLink } from "./link";
@@ -98,7 +99,10 @@ export async function cloneShare(link: string): Promise<{ projectId: string; tit
   const files = fromShareFiles(share.files);
   const projectId = await createProject(share.title, kindOf(files), { description: share.description.slice(0, 500) || null, cloned: true });
   for (const f of files) await writeFile(projectId, f.path, f.content);
+  // a share made for GitHub Pages (camera, installable app) keeps that front page; a Sheet script cannot have it
+  const github = share.hosting === "github" && kindOf(files) === "webapp" && (await premiumStatus()).active;
   await updateProject(projectId, {
+    ...(github ? { hosting: "github" as const } : {}),
     origin: "cloned",
     cloned_from: { slug: share.slug, url: share.url || `${siteOrigin()}/s/${share.slug}`, title: share.title, author: share.author.name, version: share.version, cloned_at: new Date().toISOString() },
   });

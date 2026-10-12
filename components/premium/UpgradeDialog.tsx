@@ -22,7 +22,7 @@ export interface UpgradeDialogProps {
   open: boolean;
   onClose: () => void;
   /** what the user was doing when the offer came up */
-  reason?: "camera" | "settings";
+  reason?: "camera" | "settings" | "pages";
   /** called after a licence is activated on this install */
   onActivated?: () => void;
 }
@@ -350,6 +350,7 @@ export function UpgradeDialog({ open, onClose, reason, onActivated }: UpgradeDia
               EasyGAS Pro
             </h3>
             {reason === "camera" && view.kind !== "done" && <p className="hint mt-0.5">คุณเพิ่งขอให้ AI ใส่ส่วนที่ใช้กล้อง ส่วนนี้ต้องใช้ Pro</p>}
+            {reason === "pages" && view.kind !== "done" && <p className="hint mt-0.5">วางแอปบน GitHub Pages ติดตั้งเป็นแอปบนหน้าจอ และแจ้งเตือนในแอป ใช้ได้ใน Pro</p>}
           </div>
           <button type="button" onClick={onClose} aria-label="ปิด" className="btn btn-ghost btn-sm -mr-2 -mt-1 px-2">
             <XMarkIcon className="h-4 w-4" aria-hidden="true" />

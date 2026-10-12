@@ -20,10 +20,10 @@ test("tours: every step has a target, Thai title and body; no target repeats wit
 });
 
 test("presentSteps: keeps order and drops steps whose element is not on the screen", () => {
-  const on = new Set(["composer", "projects", "settings"]);
+  const on = new Set(["new-project", "projects", "settings"]);
   assert.deepEqual(
     presentSteps(TOURS.home, (t) => on.has(t)).map((s) => s.target),
-    ["composer", "projects", "settings"],
+    ["new-project", "projects", "settings"],
   );
   assert.deepEqual(presentSteps(TOURS.ide, () => false), []);
 });

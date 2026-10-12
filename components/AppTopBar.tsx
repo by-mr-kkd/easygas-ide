@@ -22,7 +22,7 @@ export function AppTopBar({ center, right, toolbar, pro = false }: { center?: Re
             Easy<span className="text-accent-text">GAS</span>
           </b>
           {pro && (
-            <span title="EasyGAS Pro" className="rounded bg-[#F5B301] px-1.5 py-px text-[10px] font-bold leading-4 text-[#3D2A00]">
+            <span title="EasyGAS Pro" className="pro-badge">
               PRO
             </span>
           )}

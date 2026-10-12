@@ -1,5 +1,7 @@
 import { notFound } from "next/navigation";
 import { IdeShell } from "@/components/ide/IdeShell";
+import { IdeQuotaSlot } from "@/components/ide/IdeQuotaSlot";
+import { AppStatusBar } from "@/components/AppStatusBar";
 import { getAiOptions, resolveChoice } from "@/lib/ai-options";
 import { listProjectChatImages } from "@/lib/chat-images";
 import { getFiles } from "@/lib/files";
@@ -25,6 +27,9 @@ import { sheetUrl, usesContainer } from "@/lib/bound";
 import { unreadAnswers } from "@/lib/support/fast-track";
 import { machineInfo } from "@/lib/support/machine-info";
 import { githubStatus } from "@/lib/pages/github-auth";
+import { sanitizeProFeatures } from "@/lib/pro-features";
+import { kindLockReason, useOf } from "@/lib/project-use";
+import { sanitizeLook } from "@/lib/style-mockup";
 
 export default async function ProjectBuilderPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -47,7 +52,7 @@ export default async function ProjectBuilderPage({ params }: { params: Promise<{
   // imported or cloned before the app knew: code that reads the active spreadsheet lives in a Sheet, so the
   // AI must not be told "standalone: getActiveSpreadsheet() is null" (it would move the data elsewhere). A clone
   // already published as a standalone script keeps its kind: its script cannot move into a Sheet.
-  if (project.kind === "webapp" && (project.origin === "imported" || (project.origin === "cloned" && !project.script_id)) && usesContainer(files)) {
+  if (project.kind === "webapp" && !project.kind_from_google && (project.origin === "imported" || (project.origin === "cloned" && !project.script_id)) && usesContainer(files)) {
     project = await updateProject(id, { kind: "bound" });
   }
   const remote = await remoteSnapshot().catch(() => null);
@@ -96,6 +101,20 @@ export default async function ProjectBuilderPage({ params }: { params: Promise<{
       projects={switcherProjects}
       stylePrefs={sanitizePrefs(project.prefs)}
       styleDefaults={resolvePrefs(settings.prefs, null)}
+      demo={project.demo === true}
+      use={useOf(project.kind, project.hosting)}
+      kindLock={kindLockReason(project)}
+      proFeatures={sanitizeProFeatures(project.pro_features)}
+      look={sanitizeLook(project.look)}
+      statusBar={
+        <AppStatusBar
+          setup={setup}
+          setupItems={false}
+          phone={false}
+          from={id}
+          quota={<IdeQuotaSlot claudeAllowed={isOn(settings.app[CLAUDE_QUOTA_SETTING])} settingsHref={`/settings?s=ai&from=${id}`} />}
+        />
+      }
     />
   );
 }

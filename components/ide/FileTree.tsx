@@ -26,7 +26,7 @@ export function FileTree({ variant = "pane" }: { variant?: "pane" | "toolbar" })
     <div
       className={
         variant === "toolbar"
-          ? "flex min-w-0 max-w-[560px] items-center gap-1 overflow-x-auto"
+          ? "flex min-w-[8rem] items-center gap-1 overflow-x-auto [scrollbar-width:thin]"
           : "flex h-11 flex-none items-center gap-1 overflow-x-auto border-b border-line px-2"
       }
     >
@@ -38,7 +38,7 @@ export function FileTree({ variant = "pane" }: { variant?: "pane" | "toolbar" })
             key={p}
             onClick={() => setActive(p)}
             aria-pressed={active === p}
-            className={`flex h-7 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 font-mono text-[13px] transition ${
+            className={`flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md font-mono transition ${variant === "toolbar" ? "px-2 text-[12.5px]" : "px-2.5 text-[13px]"} ${
               active === p ? "bg-sunken font-medium text-fg" : "text-muted hover:bg-sunken hover:text-fg"
             }`}
           >

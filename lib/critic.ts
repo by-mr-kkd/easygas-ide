@@ -250,8 +250,13 @@ function buildReviewPrompt(files: { path: string; content: string }[], project: 
   const hosting = cameraAllowedFor(project)
     ? "\nHosting: the front page (HTML) is published to the user's GitHub Pages and calls the GAS web app as backend. Camera use (getUserMedia, <input capture>, QR/barcode scanning) WORKS there and is intended: do not report it as a defect. Still expect feature detection with a fallback, and no secrets in the client."
     : "";
+  // "สร้างเดโม่ให้ดูก่อน" (project.demo): screen only on purpose — a missing server or login is not a defect,
+  // or a re-check turns a cheap demo into a full secure-login build (lib/style-mockup DEMO_RULES)
+  const stage = project.demo
+    ? "\nStage: SCREEN-ONLY DEMO the user asked for. Sample data in the page, no google.script.run, no server code, no Sheet and a login form that lets anyone in are INTENDED (the real system is built later). Do not report missing server logic, storage, authentication, validation or security hardening. Still report any real credential, password or secret written in the code, and broken screens."
+    : "";
   // `look` = the user's look & feel choices: deliberate, so the judge must not report them as defects
-  return `Project kind: ${kind}${hosting}\n${look}\n\n${buildSpecBlock(project.spec)}${body}`;
+  return `Project kind: ${kind}${hosting}${stage}\n${look}\n\n${buildSpecBlock(project.spec)}${body}`;
 }
 
 /** A reply from any backend (API or CLI) → a verdict. Unparseable text is DEGRADED, never a pass. */

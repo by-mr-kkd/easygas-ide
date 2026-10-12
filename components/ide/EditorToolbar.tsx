@@ -154,17 +154,18 @@ export function EditorToolbar({
           className="btn btn-ghost btn-sm shrink-0"
         >
           <BeakerIcon className="h-4 w-4 text-info" />
-          ทดสอบรันจริง
+          <span className="tool-label">ทดสอบรันจริง</span>
         </button>
       </Tooltip>
       )}
       <button
         onClick={recheck}
         disabled={checking}
+        title="ให้ AI ตรวจโค้ดซ้ำ"
         className="btn btn-soft tone-ai btn-sm shrink-0"
       >
         <ShieldCheckIcon className={`h-4 w-4 ${checking ? "animate-pulse" : ""}`} />
-        {checking ? "กำลังตรวจ…" : "ให้ AI ตรวจซ้ำ"}
+        <span className="tool-label">{checking ? "กำลังตรวจ…" : "ให้ AI ตรวจซ้ำ"}</span>
       </button>
     </div>
   );

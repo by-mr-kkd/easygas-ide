@@ -3,7 +3,7 @@
 import { assertLocalRequest } from "@/lib/remote/request";
 import { revalidatePath } from "next/cache";
 import { acquireProjectRun, releaseProjectRun } from "@/lib/agent-lock";
-import { ImportError, NotConnectedError, UserSettingsDisabledError } from "@/lib/errors";
+import { ImportError, NeedsReauthError, NotConnectedError, UserSettingsDisabledError } from "@/lib/errors";
 import { scriptsPublishInfo, type PublishInfo } from "@/lib/drive-scripts";
 import {
   checkWithGoogle,
@@ -25,6 +25,7 @@ type Result<T> = { ok: true; data: T } | { ok: false; error: string; code?: stri
 function failFrom(e: unknown): { ok: false; error: string; code?: string } {
   if (e instanceof ImportError) return { ok: false, error: e.message, code: e.code };
   if (e instanceof NotConnectedError) return { ok: false, error: "ยังไม่ได้เชื่อมบัญชี Google เชื่อมที่ ตั้งค่า → บัญชี Google ก่อน", code: "NOT_CONNECTED" };
+  if (e instanceof NeedsReauthError) return { ok: false, error: "การเชื่อมต่อบัญชี Google หมดอายุ เชื่อมใหม่อีกครั้งแล้วกดโหลดใหม่", code: "NEEDS_REAUTH" };
   if (e instanceof UserSettingsDisabledError)
     return { ok: false, error: "ยังไม่ได้เปิด Apps Script API ที่ script.google.com/home/usersettings เปิดแล้วลองใหม่", code: "USER_SETTINGS_DISABLED" };
   console.error("[import]", e);

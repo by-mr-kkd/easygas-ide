@@ -1,19 +1,16 @@
 import Link from "next/link";
-import { ArrowDownTrayIcon, Cog6ToothIcon, HomeIcon, ShareIcon, SwatchIcon } from "@heroicons/react/24/outline";
+import { Cog6ToothIcon, HomeIcon } from "@heroicons/react/24/outline";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 
-export type RailItem = "home" | "shares" | "google" | "styles" | "settings";
+export type RailItem = "home" | "settings";
 
 const ITEMS: { key: RailItem; href: string; label: string; Icon: typeof HomeIcon; tour?: string }[] = [
   { key: "home", href: "/projects", label: "หน้าหลัก", Icon: HomeIcon },
-  { key: "shares", href: "/shares", label: "ที่คนแชร์", Icon: ShareIcon },
-  { key: "google", href: "/projects?mode=existing", label: "Google", Icon: ArrowDownTrayIcon },
-  { key: "styles", href: "/styleshopping", label: "สไตล์", Icon: SwatchIcon },
 ];
 
 /**
- * The app's left rail on a wide window (the launcher screens: home, ระบบที่คนแชร์). One icon per place,
- * the current one marked; settings and the theme switch at the bottom. A phone gets the bottom tab bar
+ * The app's left rail on a wide window (the home screen). Google scripts, share links and ระบบที่คนแชร์ are
+ * views of the home screen itself (ProjectTable's switch), so the rail holds home only; settings and the theme switch at the bottom. A phone gets the bottom tab bar
  * instead (components/MobileNav), so the rail hides below md.
  */
 export function AppRail({ active }: { active: RailItem }) {

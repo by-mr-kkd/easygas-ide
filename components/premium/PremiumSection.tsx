@@ -72,7 +72,7 @@ export function PremiumSection({ status: initial }: { status: PremiumStatus }) {
             <div className="flex w-full items-start gap-3 border-t border-line pt-4">
               <ComputerDesktopIcon className="mt-0.5 h-5 w-5 shrink-0 text-muted" aria-hidden="true" />
               <p className="hint">
-                ยืนยันเครื่องนี้แล้ว รหัสหนึ่งใช้ได้ 2 เครื่อง จะย้ายไปเครื่องอื่นให้กด “เพิกถอนจากเครื่องนี้” ก่อน
+                ยืนยันเครื่องนี้แล้ว จะย้ายไปเครื่องอื่นให้กด “เพิกถอนจากเครื่องนี้” ก่อน
                 {status.activeUntil ? ` · ต่ออายุเองเมื่อต่อเน็ต (ตอนนี้ถึง ${longDate(status.activeUntil)})` : ""}
               </p>
             </div>
@@ -87,7 +87,7 @@ export function PremiumSection({ status: initial }: { status: PremiumStatus }) {
               <div>
                 <p className="text-sm font-medium text-fg">มีรหัส Pro แต่ยังไม่ได้ยืนยันเครื่องนี้{status.email ? ` (${status.email})` : ""}</p>
                 <p className="hint mt-0.5">
-                  {status.deviceError ?? "รหัสหนึ่งใช้ได้ 2 เครื่อง ต่ออินเทอร์เน็ตแล้วกด “ยืนยันเครื่องนี้” Pro จะเปิดทันที"}
+                  {status.deviceError ?? "ต่ออินเทอร์เน็ตแล้วกด “ยืนยันเครื่องนี้” Pro จะเปิดทันที"}
                 </p>
               </div>
             </div>
@@ -110,7 +110,7 @@ export function PremiumSection({ status: initial }: { status: PremiumStatus }) {
                 <SparklesIcon className="icon-chip mt-0.5 h-5 w-5 shrink-0 text-accent-text" aria-hidden="true" />
                 <div>
                   <p className="text-sm font-medium text-fg">ยังไม่ได้เปิดใช้ Pro</p>
-                  <p className="hint mt-0.5">Pro ปลดล็อกเว็บแอปที่ใช้กล้อง จ่ายครั้งเดียว ใช้ได้ตลอด 2 เครื่อง</p>
+                  <p className="hint mt-0.5">Pro ปลดล็อกเว็บแอปที่ใช้กล้อง จ่ายครั้งเดียว ใช้ได้ตลอด</p>
                 </div>
               </div>
               <button type="button" onClick={() => setUpgradeOpen(true)} className="btn btn-primary btn-sm">

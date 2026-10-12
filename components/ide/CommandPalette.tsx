@@ -203,10 +203,10 @@ export function CommandPalette({
     });
     list.push({
       id: "ideas",
-      label: "ตัวอย่างสไตล์",
+      label: "แท็บสไตล์ (ตัวอย่างและหน้าตา)",
       group: "ไปที่",
       icon: Squares2X2Icon,
-      run: () => router.push("/styleshopping"),
+      run: () => requestAction("view:style"),
     });
     return list;
   }, [order, hasFiles, deployed, googleConnected, projectId, setActive, runAgent, requestAction, router, onJumpPane, canVerify, phone]);

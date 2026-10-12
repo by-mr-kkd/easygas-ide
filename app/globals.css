@@ -340,6 +340,19 @@ body {
   .field:disabled {
     opacity: 0.6;
   }
+  /* the chat box — the one place the user gives the AI work, so it is the most visible thing on the code screen:
+     an AI-violet frame and a soft lift at rest, a stronger ring while typing */
+  .composer {
+    border: 1.5px solid color-mix(in srgb, var(--ai) 45%, var(--line-strong));
+    border-radius: 0.75rem;
+    background: var(--surface);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 4px 14px color-mix(in srgb, var(--ai) 10%, transparent);
+    transition: border-color 0.12s, box-shadow 0.12s;
+  }
+  .composer:focus-within {
+    border-color: var(--ai);
+    box-shadow: 0 0 0 3px var(--ai-soft);
+  }
 
   .label {
     display: block;
@@ -404,6 +417,28 @@ body {
     border-color: var(--warn-line);
     background: var(--warn-soft);
     color: var(--warn-text);
+  }
+  /* the editor buttons in a crowded toolbar (the split view): icon only below 1536px, the name stays in `title` */
+  @media (max-width: 1535px) {
+    .tools-compact .tool-label {
+      display: none;
+    }
+  }
+  /* "PRO" — the one Pro mark, the same solid yellow everywhere (top bar, choices, shares); never green, never tinted */
+  .pro-badge {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    height: 1rem;
+    padding: 0 0.375rem;
+    border-radius: 0.25rem;
+    background: #f5b301;
+    color: #3d2a00;
+    font-size: 0.625rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    white-space: nowrap;
   }
 
   .callout {
@@ -778,18 +813,117 @@ body {
     color: var(--accent-text);
     font-weight: 600;
   }
-  .rail-toggle[aria-pressed="true"] {
-    background: transparent;
-    color: var(--fg);
+}
+
+/* First open of an empty project: the chat box lights up (ChatPanel `spot`). A colour ring runs around the
+   box, it breathes a violet glow, and a bubble pops in above it. It waits for the guided tour (tour-phase.ts)
+   and never dims the page, so it cannot be mistaken for — or drawn over — a tour step. */
+@property --spot-a {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+.composer.is-spot {
+  border: 2px solid transparent;
+  background:
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    conic-gradient(from var(--spot-a), var(--ai), var(--accent), #f5b301, var(--ai)) border-box;
+  animation:
+    spot-spin 2.6s linear infinite,
+    spot-glow 1.4s ease-in-out infinite alternate;
+}
+@keyframes spot-spin {
+  to {
+    --spot-a: 360deg;
   }
-  .rail-toggle[aria-pressed="true"]::before {
-    content: "";
-    position: absolute;
-    left: -4px;
-    top: 9px;
-    bottom: 9px;
-    width: 3px;
-    border-radius: 2px;
-    background: var(--accent);
+}
+@keyframes spot-glow {
+  from {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--ai) 0%, transparent);
+  }
+  to {
+    box-shadow:
+      0 0 0 5px color-mix(in srgb, var(--ai) 16%, transparent),
+      0 10px 34px color-mix(in srgb, var(--ai) 32%, transparent);
+  }
+}
+.spot-bubble {
+  position: absolute;
+  z-index: 20;
+  left: 1rem;
+  bottom: calc(100% - 0.25rem);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.875rem;
+  border-radius: 999px;
+  background: linear-gradient(120deg, var(--ai), color-mix(in srgb, var(--ai) 55%, var(--accent)));
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--ai) 38%, transparent);
+  cursor: pointer;
+  animation:
+    spot-pop 0.55s cubic-bezier(0.2, 1.5, 0.4, 1) both,
+    spot-float 2.2s ease-in-out 0.55s infinite;
+}
+/* the little tail pointing down at the box */
+.spot-bubble::after {
+  content: "";
+  position: absolute;
+  left: 1.5rem;
+  top: 100%;
+  border: 7px solid transparent;
+  border-top-color: color-mix(in srgb, var(--ai) 80%, var(--accent));
+}
+/* a light sweep across the bubble */
+.spot-bubble::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(100deg, transparent 30%, rgb(255 255 255 / 0.45) 50%, transparent 70%) -200% 0 / 200% 100% no-repeat;
+  animation: spot-sheen 2.4s ease-in-out 0.6s infinite;
+  pointer-events: none;
+}
+.spot-twinkle {
+  animation: spot-twinkle 1.2s ease-in-out infinite;
+}
+@keyframes spot-pop {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes spot-float {
+  50% {
+    transform: translateY(-4px);
+  }
+}
+@keyframes spot-sheen {
+  to {
+    background-position: 200% 0;
+  }
+}
+@keyframes spot-twinkle {
+  50% {
+    transform: rotate(18deg) scale(1.25);
+    opacity: 0.75;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .composer.is-spot,
+  .spot-bubble,
+  .spot-bubble::before,
+  .spot-twinkle {
+    animation: none;
+  }
+  .composer.is-spot {
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--ai) 16%, transparent);
   }
 }

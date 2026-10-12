@@ -1,6 +1,6 @@
 /**
  * Style Lab catalog — curated, shoppable UI building blocks for GAS web apps (docs/STYLE-LAB.md).
- * Each item has a self-contained `previewHtml` (rendered in a sandboxed iframe on /styleshopping) and
+ * Each item has a self-contained `previewHtml` (rendered in a sandboxed iframe in the code screen's style tab, components/ide/StylePane.tsx) and
  * a Thai `promptSnippet` that gets bundled into the new-project prompt. Snippets map to patterns the
  * rulebook already knows (nav, SweetAlert2, loading state, leading-zero, …) so the output stays
  * consistent + safe. This is a SEED set — grow it; nothing here is load-bearing beyond the page.
@@ -38,7 +38,7 @@ export const STYLE_CATEGORIES: StyleCategory[] = [
   { id: "workflow", title: "เวิร์กโฟลว์ & สถานะ", hint: "อนุมัติ · ขั้นตอน · มอบหมายงาน" },
   { id: "admin", title: "ตั้งค่า & แอดมิน", hint: "หน้าตั้งค่า/จัดการผู้ใช้" },
   { id: "auth", title: "เข้าสู่ระบบ & สิทธิ์", hint: "ล็อกอินปลอดภัย · จำการเข้าสู่ระบบ · หน้าตามสิทธิ์" },
-  { id: "robust", title: "ความทนทาน", hint: "สิ่งที่ AI ทั่วไปข้าม — กันแอปค้าง/พัง/ช้า" },
+  { id: "robust", title: "ความเสถียร", hint: "สิ่งที่ AI ทั่วไปข้าม — กันแอปค้าง/พัง/ช้า" },
 ];
 
 const FONT = "font-family:system-ui,'Noto Sans Thai',sans-serif";

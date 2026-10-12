@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { AiChoice } from "@/lib/ai-choice";
+import type { MockLook } from "@/lib/style-mockup";
 
 export interface FileEntry {
   content: string;
@@ -47,8 +48,7 @@ interface ProjectState {
   /** The AI (and model) picked in the chat box for the next message; the re-check follows it too. */
   aiChoice: AiChoice | null;
   setAiChoice: (choice: AiChoice | null) => void;
-  /** true once the chat has a message or the AI is running — until then (and while the project has no
-   *  files) the IDE shows its single start screen instead of the panes. Owned by ChatPanel. */
+  /** true once the chat has a message or the AI is running. Owned by ChatPanel. */
   chatActive: boolean;
   setChatActive: (active: boolean) => void;
   /** Ctrl+K command palette open state — set by the top-bar search box or the global hotkey */
@@ -76,6 +76,16 @@ interface ProjectState {
   setPreviewErrors: (count: number) => void;
   previewReady: boolean;
   setPreviewReady: (ready: boolean) => void;
+  /** Text for the chat box from another pane (the style tab): "replace" fills it, "append" adds a block
+   *  under what the user typed. Consumed by ChatPanel. */
+  draft: { text: string; mode: "replace" | "append" } | null;
+  setDraft: (draft: { text: string; mode: "replace" | "append" } | null) => void;
+  /** Catalog items picked in the style tab (lib/style-catalog ids), in the order picked. */
+  stylePicks: string[];
+  setStylePicks: (ids: string[]) => void;
+  /** The look picked for a demo (colour · font · tone) — the style tab's mock-up follows it. */
+  look: MockLook | null;
+  setLook: (look: MockLook | null) => void;
 }
 
 /**
@@ -99,6 +109,9 @@ export const useProjectStore = create<ProjectState>((set) => ({
   previewConsole: false,
   previewErrors: 0,
   previewReady: false,
+  draft: null,
+  stylePicks: [],
+  look: null,
 
   setInitial: (list) =>
     set(() => {
@@ -178,4 +191,7 @@ export const useProjectStore = create<ProjectState>((set) => ({
   setPreviewConsole: (open) => set((s) => (s.previewConsole === open ? {} : { previewConsole: open })),
   setPreviewErrors: (count) => set((s) => (s.previewErrors === count ? {} : { previewErrors: count })),
   setPreviewReady: (ready) => set((s) => (s.previewReady === ready ? {} : { previewReady: ready })),
+  setDraft: (draft) => set({ draft }),
+  setStylePicks: (ids) => set({ stylePicks: ids }),
+  setLook: (look) => set({ look }),
 }));

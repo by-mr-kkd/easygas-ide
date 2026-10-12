@@ -1,8 +1,8 @@
 /**
  * Guided tours: a spotlight walks a first-time user through a screen one element at a time.
  * The screens mark their elements with `data-tour="<target>"`; a step whose element is not on
- * the screen right now (the setup card once both steps are done, the code pane on the start
- * screen) is skipped. Pure, so the step lists and the bubble maths are testable in Node.
+ * the screen right now (the setup card once both steps are done, the code pane while the style tab
+ * shows) is skipped. Pure, so the step lists and the bubble maths are testable in Node.
  */
 
 export type TourId = "home" | "ide";
@@ -24,32 +24,22 @@ export const TOURS: Record<TourId, readonly TourStep[]> = {
       body: "ใส่ API key ของ AI ก่อน ถึงจะเริ่มสร้างได้ ส่วนบัญชี Google ใช้ตอนเผยแพร่เท่านั้น ยังไม่เชื่อมก็สร้างและแก้ได้",
     },
     {
-      target: "start-modes",
-      title: "สามทางเริ่ม",
-      body: "สร้างระบบใหม่ = เล่าสิ่งที่อยากได้แล้ว AI เขียนให้ · แก้สคริปต์จาก Google = ดึงของเดิมในบัญชีมาแก้ต่อ · โคลนจากลิงก์ = โค้ดที่คนอื่นแชร์ไว้ กดสลับได้ ส่วนอื่นของหน้าอยู่ที่เดิม",
+      target: "new-project",
+      title: "สร้างโปรเจกต์ใหม่",
+      body: "ตั้งชื่อ เลือกว่าโค้ดเป็นสคริปต์แยก หรือผูกอยู่ในไฟล์ Google Sheet แล้วเข้าไปเล่าให้ AI ฟังในหน้าเขียนโค้ด เปลี่ยนชื่อทีหลังได้",
+      side: "bottom",
     },
     {
-      target: "composer",
-      title: "เล่าสิ่งที่อยากได้",
-      body: "พิมพ์เป็นภาษาพูดได้เลย เช่น ระบบจองคิว ระบบสต็อก ไม่ต้องรู้ศัพท์เทคนิค ยิ่งเล่าว่าใครใช้ ใช้ตอนไหน ยิ่งได้ตรงใจ",
-    },
-    {
-      target: "start-button",
-      title: "แล้วกดเริ่มสร้าง",
-      body: "AI จะเขียนโค้ดและทำหน้าจอตัวอย่างให้ดูก่อน ยังไม่แตะบัญชี Google จนกว่าคุณจะกดเผยแพร่เอง",
-      side: "top",
-    },
-    {
-      target: "alt-starts",
-      title: "ยังนึกไม่ออก?",
-      body: "“ถามทีละข้อ” ให้แอปถามคำถามสั้น ๆ แล้วเรียบเรียงโจทย์ให้ · “ดูตัวอย่างหน้าตา” เลือกแบบที่ชอบแล้วเริ่มจากแบบนั้น · ตัวอย่างโจทย์ กดอันไหนก็ใส่ลงช่องพิมพ์ให้ แก้ต่อได้",
-      side: "top",
+      target: "other-starts",
+      title: "สลับดูได้ในหน้าเดียว",
+      body: "โปรเจกต์ของฉัน = ทุกอย่างในเครื่องนี้ · สคริปต์ใน Google = ดึงของเดิมในบัญชีมาแก้ต่อ · จากลิงก์แชร์ = โคลนโค้ดที่คนอื่นแชร์ไว้",
+      side: "bottom",
     },
     {
       target: "projects",
       title: "โปรเจกต์ของฉัน",
-      body: "ทุกอย่างที่เคยสร้างอยู่ในแผงนี้ กดชื่อเพื่อเปิดแก้ต่อได้ตลอด จุดสีเขียวคือเผยแพร่แล้ว เอาเมาส์ชี้จะเห็นปุ่มลบ",
-      side: "right",
+      body: "ทุกอย่างที่เคยสร้างอยู่ที่นี่ กดชื่อเพื่อเปิดแก้ต่อ กรองตามสถานะหรือค้นหาได้ (Ctrl+K) ปุ่ม ⋯ ท้ายแถวมีเปลี่ยนชื่อ เปิดโฟลเดอร์ และลบ",
+      side: "top",
     },
     {
       target: "settings",
@@ -59,6 +49,18 @@ export const TOURS: Record<TourId, readonly TourStep[]> = {
     },
   ],
   ide: [
+    {
+      target: "start-chips",
+      title: "จะเริ่มแบบไหน",
+      body: "เริ่มสร้างเลย = AI ทำระบบจริงทันที · สร้างเดโม่ให้ดูก่อน = ทำหน้าจออย่างเดียวให้ดูหน้าตาก่อน เลือกสี ฟอนต์ หรือส่งรูปได้ · ถามทีละข้อ = แอปถามแล้วเรียบเรียงโจทย์ให้",
+      side: "right",
+    },
+    {
+      target: "style-pane",
+      title: "ตัวอย่างและสไตล์",
+      body: "เลือกเมนู ปุ่ม ตาราง แล้วดูตัวอย่างที่ประกอบให้ทันทีโดยไม่ใช้ AI กดใส่ในช่องแชท หรือให้ AI ทำเดโม่ตามนี้ได้เลย",
+      side: "left",
+    },
     {
       target: "chat",
       title: "คุยกับ AI ตรงนี้",
@@ -80,7 +82,7 @@ export const TOURS: Record<TourId, readonly TourStep[]> = {
     {
       target: "views",
       title: "เลือกสิ่งที่แสดงข้างแชต",
-      body: "แถบซ้ายสลับว่าจะดูพรีวิว โค้ด หรือคู่กันทั้งสองอย่าง ปุ่ม แชต ด้านบนพับแผงแชตเพื่อให้พรีวิวเต็มจอ",
+      body: "แถบซ้ายสลับว่าจะดูพรีวิว โค้ด คู่กัน หรือสไตล์ ปุ่ม ซ่อนแชต ด้านบนพับแผงแชตเพื่อให้พรีวิวเต็มจอ",
       side: "right",
     },
     {

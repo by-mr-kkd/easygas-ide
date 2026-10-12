@@ -136,7 +136,7 @@ export function CloneFromLink({ initialLink = "" }: { initialLink?: string }) {
               <h2 className="text-lg font-semibold leading-snug [overflow-wrap:anywhere]">{s.title}</h2>
               <p className="hint mt-0.5">
                 โดย {s.author.name}
-                {s.author.kind === "pro" && <span className="ml-1 rounded bg-warn-soft px-1.5 py-px text-[10px] font-bold text-warn-text">PRO</span>}
+                {s.author.kind === "pro" && <span className="pro-badge ml-1">PRO</span>}
                 {s.author.kind === "admin" && <span className="ml-1 rounded bg-sunken px-1.5 py-px text-[10px] font-bold">แอดมิน</span>} · {s.fileCount} ไฟล์ · {kb(s.bytes)} · เวอร์ชัน {s.version} · โคลนแล้ว {s.cloneCount} ครั้ง
               </p>
             </div>

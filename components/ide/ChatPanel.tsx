@@ -9,17 +9,22 @@ import {
   CheckCircleIcon,
   ChevronRightIcon,
   ExclamationTriangleIcon,
+  EyeIcon,
   LightBulbIcon,
   PaperAirplaneIcon,
   PlusIcon,
   PhotoIcon,
   QueueListIcon,
+  RocketLaunchIcon,
   SparklesIcon,
   Squares2X2Icon,
   XMarkIcon,
 } from "@heroicons/react/24/outline";
-import { getProjectPrefsAction, projectRunningAction } from "@/app/projects/actions";
+import { getProjectPrefsAction, projectRunningAction, saveProjectLookAction, setProjectDemoAction } from "@/app/projects/actions";
+import { STYLE_CATALOG, type StyleItem } from "@/lib/style-catalog";
+import { BUILD_FROM_DEMO, BUILD_NOW, DEFAULT_LOOK, LOOK_COLORS, LOOK_FONTS, demoMessage, mergeAppBlocks, stripAppBlocks, type MockLook } from "@/lib/style-mockup";
 import { useProjectStore } from "@/store/useProjectStore";
+import { onTourPhase, tourPhase } from "@/components/tour/tour-phase";
 import { compressImage, type CompressedImage } from "@/lib/client/image-compress";
 import { saveDirtyFiles } from "@/lib/client/save-files";
 import { Tooltip } from "@/components/ui/Tooltip";
@@ -80,14 +85,6 @@ const TOOL_LABEL: Record<string, string> = {
   propose_lesson: "กำลังเสนอบทเรียน",
 };
 
-// Full sentences, never truncated: an example the user cannot read to the end teaches nothing.
-const SUGGESTIONS = [
-  "ระบบจองคิวร้านตัดผม ลูกค้ากรอกฟอร์มแล้วได้อีเมลยืนยัน",
-  "ระบบรับเข้าและตัดสต๊อกสินค้า แจ้งเตือนเมื่อของใกล้หมด",
-  "ส่งอีเมลอัตโนมัติถึงรายชื่อใน Google Sheet",
-  "แดชบอร์ดสรุปยอดขายรายวันจาก Google Sheet",
-];
-
 // shown when the project already has code (reopened/deployed) — guide toward editing, not building anew
 const EDIT_SUGGESTIONS = [
   "เพิ่มช่องค้นหา",
@@ -124,7 +121,7 @@ function EnergyBar({ used, tank }: { used: number; tank: number }) {
 
 export function ChatPanel({
   projectId,
-  start = false,
+  demo: initialDemo = false,
   initialImages,
   initialMessages = [],
   initialRunning = false,
@@ -142,8 +139,8 @@ export function ChatPanel({
   imported?: boolean;
   /** replaces the "Enter ส่ง" hint under the box (a phone: the AI quota — a phone has no Enter / Shift+Enter) */
   footnote?: ReactNode;
-  /** Empty project, nothing said yet: render the centred start screen instead of the side panel. */
-  start?: boolean;
+  /** The last build was a screen-only demo: offer to build it for real. */
+  demo?: boolean;
   /** This project's own look & feel choices, and the user's defaults they fall back to. */
   stylePrefs?: Partial<StylePrefs>;
   styleDefaults?: StylePrefs;
@@ -186,6 +183,63 @@ export function ChatPanel({
   const [cameraGate, setCameraGate] = useState<{ gate: CameraGateState; first: boolean; activated?: boolean } | null>(null);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
+  // the start chips: "สร้างเดโม่ให้ดูก่อน" opens the second layer, "เลือกสี / ฟอนต์" the look picker in it
+  const [demoOpen, setDemoOpen] = useState(false);
+  // first open of an empty project: light up the chat box ("เริ่มไอเดียของคุณที่นี่"), once per project. It waits
+  // for the guided tour (pending or on screen) so the two never draw over each other, and leaves when the
+  // user starts, after a while, or when the tour is opened again.
+  const [spot, setSpot] = useState(false);
+  const spotEligible = !hasFiles && messages.length === 0 && !busy;
+  useEffect(() => {
+    if (!spotEligible) return;
+    const key = `egs:spot:${projectId}`;
+    try {
+      if (localStorage.getItem(key) === "1") return;
+    } catch {
+      // storage blocked: the empty-project condition alone limits it
+    }
+    let showTimer: ReturnType<typeof setTimeout> | undefined;
+    const arm = () => {
+      clearTimeout(showTimer);
+      if (tourPhase() !== "idle") return;
+      showTimer = setTimeout(() => {
+        if (tourPhase() !== "idle") return;
+        setSpot(true);
+        try {
+          localStorage.setItem(key, "1");
+        } catch {
+          /* shown again next time — harmless */
+        }
+      }, 500);
+    };
+    // the tour decides whether to open on its own as the page mounts: give it that moment first
+    const first = setTimeout(arm, 900);
+    const off = onTourPhase((phase) => {
+      if (phase === "idle") return arm();
+      clearTimeout(showTimer);
+      setSpot(false);
+    });
+    return () => {
+      clearTimeout(first);
+      clearTimeout(showTimer);
+      off();
+    };
+  }, [spotEligible, projectId]);
+  useEffect(() => {
+    if (!spot) return;
+    if (!spotEligible) return setSpot(false);
+    const t = setTimeout(() => setSpot(false), 9000);
+    return () => clearTimeout(t);
+  }, [spot, spotEligible]);
+  const [lookOpen, setLookOpen] = useState(false);
+  const [demo, setDemo] = useState(initialDemo);
+  const [needIdea, setNeedIdea] = useState(false);
+  const draft = useProjectStore((s) => s.draft);
+  const setDraft = useProjectStore((s) => s.setDraft);
+  const look = useProjectStore((s) => s.look);
+  const setLook = useProjectStore((s) => s.setLook);
+  const stylePicks = useProjectStore((s) => s.stylePicks);
+  const requestAction = useProjectStore((s) => s.requestAction);
   const [styleOpen, setStyleOpen] = useState(false);
   // lessons offered at the end of the last turn — pending until the user keeps or declines each one
   const [lessonOffers, setLessonOffers] = useState<LessonOffer[]>([]);
@@ -224,7 +278,7 @@ export function ChatPanel({
     initEnergy(energyUsed);
   }, [energyUsed, initEnergy]);
 
-  // the shell swaps the start screen for the panes as soon as the conversation begins
+  // whether the conversation has begun (the shell and the style tab read it)
   useEffect(() => {
     setChatActive(messages.length > 0 || busy);
   }, [messages.length, busy, setChatActive]);
@@ -232,9 +286,10 @@ export function ChatPanel({
 
   // Hand-offs from the screen the user came from, stashed in sessionStorage right before navigating
   // here (one-shot, so a refresh never replays them):
-  //   egs:kickoff        a prompt — from the style picker (prefilled, the user reviews it first) or
-  //   egs:kickoff-auto   from the projects home, where the user already pressed "เริ่มสร้าง" (sent now)
-  //   egs:wizard         the user chose "ถามทีละข้อ" on the projects home
+  //   egs:kickoff        a prompt to prefill (the user reviews it first)
+  //   egs:kickoff-auto   send it at once (no screen sets this since the home screen asks for a name only;
+  //                      kept so an older hand-off still works)
+  //   egs:wizard         open "ถามทีละข้อ" on arrival
   useEffect(() => {
     const take = (k: string) => {
       const v = sessionStorage.getItem(k);
@@ -264,13 +319,23 @@ export function ChatPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [command, busy]);
 
-  // toolbar row / command palette → "สไตล์โปรเจกต์" (the dialog lives here, next to the chat it shapes)
+  // toolbar row / command palette → "ไลบรารีและฟอนต์" (the dialog lives here, next to the chat it shapes)
   useEffect(() => {
     if (actionRequest !== "style") return;
     clearActionRequest();
     void openStyle();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [actionRequest]);
+
+  // the style tab hands text to the chat box: fill it, or add a block under what the user typed
+  useEffect(() => {
+    if (!draft) return;
+    const d = draft;
+    setDraft(null);
+    setInput((cur) => (d.mode === "append" ? mergeAppBlocks(cur, d.text) : d.text));
+    setNeedIdea(false);
+    inputRef.current?.focus();
+  }, [draft, setDraft]);
 
   // The AI can save a choice mid-chat (save_preference), so load the current ones before editing.
   async function openStyle() {
@@ -366,15 +431,13 @@ export function ChatPanel({
     }
   }
 
-  async function send(text?: string) {
+  async function send(text?: string, opts?: { withImages?: boolean }) {
     const msg = (text ?? input).trim();
-    // staged images attach only to a composer send (no explicit text arg from chips/spec/wizard)
-    const attached = text === undefined ? images : [];
+    // staged images attach to a composer send, or to a chip that replaces the box's text (the demo chips)
+    const attached = text === undefined || opts?.withImages ? images : [];
     if ((!msg && attached.length === 0) || busy) return;
-    if (text === undefined) {
-      setInput("");
-      setImages([]);
-    }
+    if (text === undefined) setInput("");
+    if (attached.length > 0) setImages([]);
     setBusy(true);
     setStatus("");
     setPendingSpec(null);
@@ -459,7 +522,250 @@ export function ChatPanel({
 
   const canSend = !busy && (input.trim().length > 0 || images.length > 0);
 
-  // The one place the user types. Same block on the start screen and in the side panel.
+  function markDemo(on: boolean) {
+    setDemo(on);
+    void setProjectDemoAction(projectId, on).catch(() => {});
+  }
+
+  /** what the user has said so far: the text in the box, or the conversation. Nothing yet → ask for one line. */
+  function needsIdea(): boolean {
+    if (input.trim() || messages.length > 0) return false;
+    setNeedIdea(true);
+    inputRef.current?.focus();
+    return true;
+  }
+
+  // "เริ่มสร้างเลย"
+  function buildNow() {
+    if (needsIdea()) return;
+    markDemo(false);
+    if (input.trim() || images.length > 0) send();
+    else send(BUILD_NOW);
+  }
+
+  // "สร้างเดโม่ให้ดูก่อน" → one of the second-layer choices
+  function sendDemo(opts: { look?: MockLook | null; aiDesigns?: boolean }) {
+    if (needsIdea()) return;
+    const styles = stylePicks.map((id) => STYLE_CATALOG.find((c) => c.id === id)).filter((x): x is StyleItem => !!x);
+    // the box may already hold the style block ("ใส่ในช่องแชท"): it goes in once, from the picks
+    const msg = demoMessage({ description: stripAppBlocks(input), look: opts.look ?? null, styles, aiDesigns: opts.aiDesigns });
+    if (opts.look) void saveProjectLookAction(projectId, opts.look).catch(() => {});
+    markDemo(true);
+    setDemoOpen(false);
+    setLookOpen(false);
+    setInput("");
+    send(msg, { withImages: true });
+  }
+
+  // "ส่งรูปให้ดู": the box gets the demo request, the picker opens; the user sends with the pictures
+  function demoFromImage() {
+    if (needsIdea()) return;
+    const styles = stylePicks.map((id) => STYLE_CATALOG.find((c) => c.id === id)).filter((x): x is StyleItem => !!x);
+    setInput(demoMessage({ description: stripAppBlocks(input), look, styles, fromImage: true }));
+    markDemo(true);
+    setDemoOpen(false);
+    fileRef.current?.click();
+  }
+
+  const pickLook = (patch: Partial<MockLook>) => setLook({ ...(look ?? DEFAULT_LOOK), ...patch });
+
+  // the start chips: an empty project (or a demo waiting to become the real thing), nothing running
+  const startChips = !busy && !hasFiles && (
+    <div className="space-y-2" data-tour="start-chips">
+      <p className="text-xs font-semibold text-muted">จะเริ่มแบบไหน</p>
+      <div className="flex flex-wrap gap-1.5">
+        <button type="button" onClick={buildNow} disabled={!engineReady} className="btn btn-primary btn-sm rounded-full">
+          <SparklesIcon className="h-4 w-4" />
+          เริ่มสร้างเลย
+        </button>
+        <button
+          type="button"
+          onClick={() => setDemoOpen((o) => !o)}
+          aria-expanded={demoOpen}
+          disabled={!engineReady}
+          className="btn btn-soft tone-info btn-sm rounded-full"
+        >
+          <Squares2X2Icon className="h-4 w-4" />
+          สร้างเดโม่ให้ดูก่อน
+        </button>
+        <button type="button" onClick={() => setWizardOpen(true)} className="btn btn-soft tone-ai btn-sm rounded-full">
+          <QueueListIcon className="h-4 w-4" />
+          ถามทีละข้อ
+        </button>
+      </div>
+      {needIdea && <p className="callout callout-warn text-[13px]">เล่าสั้น ๆ ในช่องด้านล่างก่อนว่าอยากได้ระบบอะไร แล้วกดอีกครั้ง หรือหยิบตัวอย่างจากแท็บสไตล์</p>}
+
+      {demoOpen && (
+        <div className="card space-y-2 p-3">
+          <div className="flex flex-wrap items-baseline gap-x-2">
+            <span className="text-[13.5px] font-semibold">{stylePicks.length > 0 ? "ทำเดโม่จากสไตล์ที่เลือก" : "มีสไตล์ที่ชอบไหม"}</span>
+            <span className="hint text-xs">เดโม่ = หน้าจออย่างเดียว ยังไม่ต่อข้อมูลจริง</span>
+          </div>
+          {stylePicks.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-accent bg-accent-soft/40 p-2.5">
+              <span className="min-w-0 flex-1 text-[13px]">
+                เลือกสไตล์ไว้แล้ว <b>{stylePicks.length} ชิ้น</b>{" "}
+                <button type="button" onClick={() => requestAction("view:style")} className="link text-xs">
+                  แก้ในแท็บสไตล์
+                </button>
+              </span>
+              <button type="button" onClick={() => sendDemo({ look })} disabled={!engineReady} className="btn btn-primary btn-sm">
+                <SparklesIcon className="h-4 w-4" />
+                ทำเดโม่ตามนี้
+              </button>
+            </div>
+          )}
+          <div className={`rounded-lg border p-2.5 ${lookOpen ? "border-accent" : "border-line"}`}>
+            <button type="button" onClick={() => setLookOpen((o) => !o)} aria-expanded={lookOpen} className="flex w-full items-center gap-2 text-left text-[13px] font-semibold">
+              เลือกสี / ฟอนต์
+              <span className="hint ml-auto text-xs font-normal">ตัวอย่างในแท็บสไตล์เปลี่ยนตาม</span>
+            </button>
+            {lookOpen && (
+              <div className="mt-2 space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="hint w-12 text-xs">สีหลัก</span>
+                  {LOOK_COLORS.map((c) => {
+                    const on = (look ?? DEFAULT_LOOK).color === c.hex;
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        aria-label={c.label}
+                        aria-pressed={on}
+                        title={c.label}
+                        onClick={() => pickLook({ color: c.hex })}
+                        className={`h-6 w-6 rounded-full border-2 border-surface ${on ? "ring-2 ring-accent" : "ring-1 ring-line-strong"}`}
+                        style={{ background: c.hex }}
+                      />
+                    );
+                  })}
+                  <label className="flex items-center gap-1 text-xs text-muted">
+                    <input type="color" value={(look ?? DEFAULT_LOOK).color} onChange={(e) => pickLook({ color: e.target.value })} className="h-6 w-7 cursor-pointer rounded border-0 bg-transparent p-0" aria-label="เลือกสีเอง" />
+                    เลือกเอง
+                  </label>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="hint w-12 text-xs">ฟอนต์</span>
+                  {LOOK_FONTS.map((f) => (
+                    <button
+                      key={f.family}
+                      type="button"
+                      aria-pressed={(look ?? DEFAULT_LOOK).font === f.family}
+                      onClick={() => pickLook({ font: f.family })}
+                      className="seg-item h-7 rounded-md border border-line-strong text-xs"
+                    >
+                      {f.family}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="hint w-12 text-xs">โทน</span>
+                  <div className="seg">
+                    <button type="button" aria-pressed={(look ?? DEFAULT_LOOK).tone === "light"} onClick={() => pickLook({ tone: "light" })} className="seg-item h-7 text-xs">
+                      สว่าง
+                    </button>
+                    <button type="button" aria-pressed={(look ?? DEFAULT_LOOK).tone === "dark"} onClick={() => pickLook({ tone: "dark" })} className="seg-item h-7 text-xs">
+                      มืด
+                    </button>
+                  </div>
+                  <button type="button" onClick={() => sendDemo({ look: look ?? DEFAULT_LOOK })} className="btn btn-primary btn-sm ml-auto">
+                    ทำเดโม่ด้วยสไตล์นี้
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+          {/* the chat column is narrow (340px): one choice per line */}
+          <div className="grid gap-1.5">
+            <button type="button" onClick={demoFromImage} className="row-btn flex-col items-start gap-0.5 text-left">
+              <span className="flex items-center gap-1.5 text-[13px] font-semibold">
+                <PhotoIcon className="h-4 w-4" />
+                ส่งรูปให้ดู
+              </span>
+              <span className="hint text-xs">ภาพแอปที่ชอบ หรือวาดคร่าว ๆ</span>
+            </button>
+            {stylePicks.length === 0 && (
+              <button type="button" onClick={() => requestAction("view:style")} className="row-btn flex-col items-start gap-0.5 text-left">
+                <span className="flex items-center gap-1.5 text-[13px] font-semibold">
+                  <Squares2X2Icon className="h-4 w-4" />
+                  เลือกจากสไตล์
+                </span>
+                <span className="hint text-xs">เปิดแท็บสไตล์ด้านขวา</span>
+              </button>
+            )}
+            <button type="button" onClick={() => sendDemo({ look, aiDesigns: !look })} className="row-btn flex-col items-start gap-0.5 text-left">
+              <span className="flex items-center gap-1.5 text-[13px] font-semibold">
+                <SparklesIcon className="h-4 w-4 text-ai" />
+                ให้ AI ออกแบบเลย
+              </span>
+              <span className="hint text-xs">เลือกให้เหมาะกับงานนี้</span>
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  // a demo is on screen: make it the real thing, or keep shaping it
+  const demoChips = !busy && hasFiles && demo && (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="hint mr-1 text-xs">นี่คือเดโม่ (ยังไม่ต่อข้อมูลจริง)</span>
+      <button
+        type="button"
+        onClick={() => {
+          markDemo(false);
+          send(BUILD_FROM_DEMO);
+        }}
+        disabled={!engineReady}
+        className="btn btn-primary btn-sm rounded-full"
+      >
+        <SparklesIcon className="h-4 w-4" />
+        ใช้แบบนี้ สร้างระบบจริง
+      </button>
+      <button type="button" onClick={() => inputRef.current?.focus()} className="btn btn-secondary btn-sm rounded-full">
+        ปรับเดโม่
+      </button>
+    </div>
+  );
+
+  // after an answer on a project with code: what to do next, as the APP's buttons (never read from the AI's text)
+  const nextSteps = hasFiles && !busy && !demo && !pendingSpec && (
+    <div className="space-y-1.5 pt-1">
+      <p className="text-xs font-semibold text-muted">ทำอะไรต่อดี</p>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <button type="button" onClick={() => requestAction("view:preview")} className="btn btn-secondary btn-sm">
+          <EyeIcon className="h-4 w-4" />
+          ดูพรีวิว
+        </button>
+        <button
+          type="button"
+          onClick={() => send("อธิบายว่าโค้ดในโปรเจกต์นี้ทำงานยังไง แบบสรุปสั้น ๆ เป็นข้อ ๆ")}
+          disabled={!engineReady}
+          title="ให้ AI สรุปเป็นข้อ ๆ ว่าโค้ดในโปรเจกต์นี้ทำงานอย่างไร อ่านอย่างเดียว ไม่แก้ไฟล์"
+          className="btn btn-soft tone-info btn-sm"
+        >
+          <LightBulbIcon className="h-4 w-4" />
+          อธิบายโค้ด
+        </button>
+        <button
+          type="button"
+          onClick={() => send("ตรวจโค้ดทั้งหมดหาบั๊กและจุดที่ไม่ตรง best practice ของ Google Apps Script แล้วแก้ให้เรียบร้อย")}
+          disabled={!engineReady}
+          title="ให้ AI ตรวจโค้ดทั้งหมดหาบั๊กและจุดที่ผิดหลัก Apps Script แล้วแก้ให้เลย ของเดิมย้อนได้จากประวัติ"
+          className="btn btn-soft tone-warn btn-sm"
+        >
+          <BugAntIcon className="h-4 w-4" />
+          ตรวจหาบั๊ก
+        </button>
+        <button type="button" onClick={() => requestAction("publish")} title="เผยแพร่ให้คนอื่นเปิดใช้ได้" className="btn btn-primary btn-sm">
+          <RocketLaunchIcon className="h-4 w-4" />
+          เผยแพร่
+        </button>
+      </div>
+    </div>
+  );
+
+  // The one place the user types.
   const composer = (rows: number) => (
     <>
       {/* staged image attachments (≤4) */}
@@ -486,7 +792,15 @@ export function ChatPanel({
         </div>
       )}
 
-      <div className="field flex flex-col gap-1.5 p-2">
+      <div
+        className={`composer flex flex-col gap-1.5 p-2 ${spot ? "is-spot" : ""}`}
+        onFocusCapture={() => setSpot(false)}
+        onPointerDownCapture={() => setSpot(false)}
+      >
+        <span className="flex items-center gap-1 px-1.5 pt-0.5 text-xs font-semibold text-ai">
+          <SparklesIcon className="h-3.5 w-3.5" />
+          สั่งงาน AI ตรงนี้
+        </span>
         <input
           ref={fileRef}
           type="file"
@@ -505,11 +819,15 @@ export function ChatPanel({
               send();
             }
           }}
-          placeholder={hasFiles ? "อยากเพิ่มหรือแก้อะไร พิมพ์มาได้เลย" : "อยากได้ระบบแบบไหน พิมพ์มาได้เลย"}
+          placeholder={
+            hasFiles
+              ? "อยากเพิ่มหรือแก้อะไร เช่น “เพิ่มหน้ารายงานสรุปรายเดือน” หรือวาง error ที่เจอมาได้เลย"
+              : "เล่าระบบที่อยากได้ เช่น “ระบบจองห้องประชุม ให้พนักงานจองผ่านมือถือ หัวหน้าอนุมัติ”"
+          }
           aria-label="ข้อความถึง AI"
           disabled={busy}
           rows={rows}
-          className="w-full resize-none bg-transparent px-1.5 pt-1 text-sm leading-relaxed outline-none placeholder:text-faint disabled:opacity-60"
+          className="w-full resize-none bg-transparent px-1.5 pt-0.5 text-sm leading-relaxed outline-none placeholder:text-muted disabled:opacity-60"
         />
         <div className="flex items-center gap-2">
           <Tooltip label={images.length >= MAX_IMAGES ? `แนบได้สูงสุด ${MAX_IMAGES} รูป` : "แนบรูปอ้างอิง"} placement="top" className="shrink-0">
@@ -522,7 +840,7 @@ export function ChatPanel({
               <PhotoIcon className="h-[18px] w-[18px]" />
             </button>
           </Tooltip>
-          <AiPicker projectId={projectId} options={aiOptions} settingsHref={settingsHref} placement={start ? "bottom" : "top"} disabled={busy} />
+          <AiPicker projectId={projectId} options={aiOptions} settingsHref={settingsHref} placement="top" disabled={busy} />
           <span className="flex-1" />
           <button onClick={() => send()} disabled={!canSend} className="btn btn-primary btn-sm shrink-0">
             ส่ง
@@ -588,55 +906,9 @@ export function ChatPanel({
     </>
   );
 
-  // START SCREEN — an empty project: one question, one place to type, and the other ways to begin
-  if (start) {
-    return (
-      <div className="h-full w-full overflow-auto">
-        <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col justify-center gap-6 px-4 py-8 sm:px-6">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">อยากได้ระบบอะไร?</h1>
-            <p className="hint mt-1">เล่าเป็นภาษาพูดได้ AI จะเขียนโค้ดและทำหน้าจอตัวอย่างให้ดูก่อน</p>
-          </div>
-
-          {engineCallout}
-          <div>{composer(4)}</div>
-
-          <div>
-            <p className="mb-1.5 text-xs font-semibold text-muted">หรือเริ่มแบบอื่น</p>
-            <div className="grid gap-1.5 sm:grid-cols-2">
-              <button onClick={() => setWizardOpen(true)} className="row-btn">
-                <span className="icon-chip tone-ai h-9 w-9">
-                  <QueueListIcon className="h-5 w-5" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block font-medium">ถามทีละข้อ</span>
-                  <span className="block text-[13px] text-muted">ตอบคำถามสั้น ๆ 5 ข้อ แล้ว AI สรุปโจทย์ให้</span>
-                </span>
-                <ChevronRightIcon className="h-4 w-4 shrink-0 text-faint" />
-              </button>
-              <Link href={`/styleshopping?project=${projectId}`} className="row-btn">
-                <span className="icon-chip tone-info h-9 w-9">
-                  <Squares2X2Icon className="h-5 w-5" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block font-medium">เลือกจากตัวอย่างสไตล์</span>
-                  <span className="block text-[13px] text-muted">ดูตัวอย่างหน้าจอ แล้วเลือกแบบที่ชอบ</span>
-                </span>
-                <ChevronRightIcon className="h-4 w-4 shrink-0 text-faint" />
-              </Link>
-            </div>
-          </div>
-
-          {examples(SUGGESTIONS, "sm:grid-cols-2")}
-        </div>
-        {dialogs}
-      </div>
-    );
-  }
-
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col">
-      {/* no header: the rail says this is the chat, and สไตล์โปรเจกต์ lives in the toolbar row */}
+      {/* no header: the rail says this is the chat, and ไลบรารีและฟอนต์ lives in the toolbar row */}
       {energyTank ? (
         <div className="flex-none px-3 pt-3">
           <EnergyBar used={energy} tank={energyTank} />
@@ -669,9 +941,9 @@ export function ChatPanel({
             <p className="hint">
               {hasFiles
                 ? "โปรเจกต์นี้มีโค้ดอยู่แล้ว อยากเพิ่มหรือแก้ตรงไหนพิมพ์ในช่องด้านล่าง เจอ error ก็วางมาได้"
-                : "พิมพ์สิ่งที่อยากได้ในช่องด้านล่าง"}
+                : "โปรเจกต์นี้ยังว่าง เล่าสิ่งที่อยากได้ในช่องด้านล่าง หรือหยิบตัวอย่าง / สไตล์จากแท็บสไตล์มาใส่ก่อนก็ได้"}
             </p>
-            {examples(hasFiles ? EDIT_SUGGESTIONS : SUGGESTIONS, "grid-cols-1")}
+            {hasFiles ? examples(EDIT_SUGGESTIONS, "grid-cols-1") : startChips}
           </div>
         )}
 
@@ -760,36 +1032,24 @@ export function ChatPanel({
             <p className="hint mt-1.5 text-center">ยังไม่ตรงใจ พิมพ์บอกสิ่งที่อยากแก้ได้เลย</p>
           </div>
         )}
+
+        {messages.length > 0 && !pendingSpec && startChips}
+        {demoChips}
+        {nextSteps}
       </div>
 
-      <div className="flex-none border-t border-line p-3">
+      <div className="relative flex-none border-t border-line p-3">
+        {spot && (
+          <button type="button" onClick={() => { setSpot(false); inputRef.current?.focus(); }} className="spot-bubble" aria-live="polite">
+            <SparklesIcon className="spot-twinkle h-4 w-4 shrink-0" />
+            เริ่มไอเดียของคุณที่นี่
+          </button>
+        )}
         {/* live status — what the AI is doing right now */}
         {busy && (
           <div className="mb-2 flex items-center gap-2.5 rounded-lg bg-accent-soft px-3 py-2 text-[13px] font-medium text-accent-text" role="status">
             <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent" />
             <span className="min-w-0 flex-1 truncate">{status || "AI กำลังทำงาน…"}</span>
-          </div>
-        )}
-
-        {/* shortcuts for a project that already has code */}
-        {hasFiles && !busy && (
-          <div className="mb-2 flex flex-wrap items-center gap-1.5 [@media(max-height:520px)]:hidden">
-            <button
-              onClick={() => send("อธิบายว่าโค้ดในโปรเจกต์นี้ทำงานยังไง แบบสรุปสั้น ๆ เป็นข้อ ๆ")}
-              title="ให้ AI สรุปเป็นข้อ ๆ ว่าโค้ดในโปรเจกต์นี้ทำงานอย่างไร อ่านอย่างเดียว ไม่แก้ไฟล์"
-              className="btn btn-soft tone-info btn-sm"
-            >
-              <LightBulbIcon className="h-4 w-4" />
-              อธิบายโค้ด
-            </button>
-            <button
-              onClick={() => send("ตรวจโค้ดทั้งหมดหาบั๊กและจุดที่ไม่ตรง best practice ของ Google Apps Script แล้วแก้ให้เรียบร้อย")}
-              title="ให้ AI ตรวจโค้ดทั้งหมดหาบั๊กและจุดที่ผิดหลัก Apps Script แล้วแก้ให้เลย ของเดิมย้อนได้จากประวัติ"
-              className="btn btn-soft tone-warn btn-sm"
-            >
-              <BugAntIcon className="h-4 w-4" />
-              ตรวจหาบั๊ก
-            </button>
           </div>
         )}
 

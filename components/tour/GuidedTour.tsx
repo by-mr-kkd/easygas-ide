@@ -4,6 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { createPortal } from "react-dom";
 import { QuestionMarkCircleIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import { markTourSeenAction } from "@/app/tour-actions";
+import { setTourPhase } from "./tour-phase";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { TOURS, type Rect, type TourId, type TourStep, bubblePosition, presentSteps, spotlightRect, tourSeenKey } from "@/lib/tour";
 
@@ -34,13 +35,18 @@ export function GuidedTour({ tour, seen, className = "" }: { tour: TourId; seen:
       const el = findTarget(t);
       return !!el && isShown(el);
     });
-    if (present.length === 0) return;
+    if (present.length === 0) {
+      setTourPhase("idle");
+      return;
+    }
     setIndex(0);
     setSteps(present);
+    setTourPhase("open");
   }, [tour]);
 
   const close = useCallback(() => {
     setSteps(null);
+    setTourPhase("idle");
     try {
       localStorage.setItem(tourSeenKey(tour), "1");
     } catch {
@@ -52,15 +58,24 @@ export function GuidedTour({ tour, seen, className = "" }: { tour: TourId; seen:
   }, [tour]);
 
   // first visit: open on its own, after the page has settled
+  // (the phase tells the chat's first-run spotlight to wait for the tour; see tour-phase.ts)
   useEffect(() => {
-    if (seen) return;
+    let already = seen;
     try {
-      if (localStorage.getItem(tourSeenKey(tour)) === "1") return;
+      if (localStorage.getItem(tourSeenKey(tour)) === "1") already = true;
     } catch {
       // unreadable storage: trust `seen`
     }
+    if (already) {
+      setTourPhase("idle");
+      return;
+    }
+    setTourPhase("pending");
     const t = setTimeout(start, FIRST_RUN_DELAY_MS);
-    return () => clearTimeout(t);
+    return () => {
+      clearTimeout(t);
+      setTourPhase("idle");
+    };
   }, [tour, seen, start]);
 
   return (

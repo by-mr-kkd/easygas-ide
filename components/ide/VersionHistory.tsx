@@ -113,9 +113,9 @@ export function VersionHistory({ projectId }: { projectId: string }) {
 
   return (
     <>
-      <button onClick={openPanel} className="btn btn-ghost btn-sm shrink-0">
+      <button onClick={openPanel} title="ประวัติโค้ด" className="btn btn-ghost btn-sm shrink-0">
         <ClockIcon className="h-4 w-4" />
-        ประวัติ
+        <span className="tool-label">ประวัติ</span>
       </button>
 
       {open && (

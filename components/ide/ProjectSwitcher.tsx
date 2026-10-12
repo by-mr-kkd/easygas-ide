@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ChevronUpDownIcon, FolderIcon, PlusIcon, Squares2X2Icon } from "@heroicons/react/24/outline";
+import { ChevronUpDownIcon, FolderIcon, PencilSquareIcon, PlusIcon } from "@heroicons/react/24/outline";
+import { RenameDialog } from "@/components/projects/RenameDialog";
 import { Tooltip } from "@/components/ui/Tooltip";
 
 export interface SwitcherProject {
@@ -11,7 +12,7 @@ export interface SwitcherProject {
   deployed: boolean;
 }
 
-/** Top-bar project switcher — jump between projects, create, or find ideas without leaving the IDE. */
+/** Top-bar project switcher — rename this project, jump between projects, or go create one, without leaving the IDE. */
 export function ProjectSwitcher({
   currentId,
   currentName,
@@ -24,6 +25,10 @@ export function ProjectSwitcher({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  // shown at once after a rename; the server render catches up on refresh
+  const [name, setName] = useState(currentName);
+  useEffect(() => setName(currentName), [currentName]);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -42,16 +47,30 @@ export function ProjectSwitcher({
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="menu"
         aria-expanded={open}
-        title="สลับโปรเจกต์"
+        title="เปลี่ยนชื่อ หรือสลับโปรเจกต์"
         className="btn btn-ghost btn-sm w-full min-w-0 justify-start px-2 font-semibold text-fg"
       >
         <FolderIcon className="h-4 w-4 shrink-0 text-faint" />
-        <span className="truncate">{currentName}</span>
+        <span className="truncate">{name}</span>
         <ChevronUpDownIcon className="h-4 w-4 shrink-0 text-faint" />
       </button>
 
       {open && (
         <div role="menu" className="absolute left-0 top-full z-50 mt-1 w-64 max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-lg border border-line bg-surface shadow-pop">
+          <div className="border-b border-line p-1">
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                setRenaming(true);
+              }}
+              className="nav-item w-full"
+            >
+              <PencilSquareIcon className="h-4 w-4" />
+              เปลี่ยนชื่อโปรเจกต์นี้
+            </button>
+          </div>
           {others.length > 0 && (
             <div className="max-h-72 overflow-auto py-1">
               <p className="px-3 pb-1 pt-1.5 text-xs font-semibold text-faint">
@@ -83,17 +102,10 @@ export function ProjectSwitcher({
               <PlusIcon className="h-4 w-4" />
               โปรเจกต์ทั้งหมด หรือสร้างใหม่
             </Link>
-            <Link
-              href="/styleshopping"
-              onClick={() => setOpen(false)}
-              className="nav-item"
-            >
-              <Squares2X2Icon className="h-4 w-4" />
-              ตัวอย่างสไตล์
-            </Link>
           </div>
         </div>
       )}
+      {renaming && <RenameDialog project={{ id: currentId, name }} onClose={() => setRenaming(false)} onRenamed={setName} />}
     </div>
   );
 }

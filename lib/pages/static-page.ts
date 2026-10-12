@@ -1,4 +1,5 @@
 import type { SourceFile } from "./dispatcher.ts";
+import { pwaFiles, type PwaOptions } from "./pwa.ts";
 import { assertExecUrl, runShimScriptTag } from "./run-shim.ts";
 
 /**
@@ -133,7 +134,7 @@ function injectHead(html: string, head: string): string {
   return html.slice(0, at) + "\n" + head + html.slice(at);
 }
 
-export function buildStaticPage(files: SourceFile[], opts: { execUrl: string; shim: string }): SourceFile[] {
+export function buildStaticPage(files: SourceFile[], opts: { execUrl: string; shim: string; pwa?: PwaOptions | null }): SourceFile[] {
   assertExecUrl(opts.execUrl);
   let html = composeEntryPage(files);
 
@@ -147,11 +148,16 @@ export function buildStaticPage(files: SourceFile[], opts: { execUrl: string; sh
   const title = titleFromServerCode(files);
   if (title && !/<title[\s>]/i.test(html)) extras.push(`<title>${escapeHtml(title)}</title>`);
 
+  // Pro "ติดตั้งเป็นแอปบนหน้าจอ": manifest + service worker + icon, written by the app (lib/pages/pwa.ts)
+  const pwa = opts.pwa ? pwaFiles(opts.pwa) : null;
+  if (pwa) extras.push(...pwa.head);
+
   if (!/^\s*<!doctype/i.test(html)) html = "<!DOCTYPE html>\n" + html;
   html = injectHead(html, extras.concat(runShimScriptTag(opts.execUrl, opts.shim)).join("\n"));
 
   return [
     { path: STATIC_INDEX_PATH, content: html },
     { path: NOJEKYLL_PATH, content: "" },
+    ...(pwa?.files ?? []),
   ];
 }

@@ -111,7 +111,8 @@ npm run desktop:build   # Windows installer → dist/desktop/out
   Pro = valid key AND an unexpired activation token `EGA1.<p>.<sig>` for THIS machine (sig over "EGA1.<p>", same
   public key). Machine id = sha256 of the Windows MachineGuid (seed fallback, created only in a user action).
   `premiumStatus` reads files only; renewal (`refreshPremiumDeviceAction`, once per app session via
-  `PremiumRefresher`) talks to the server only when the token is 7+ days old. "เพิกถอนจากเครื่องนี้" frees the slot.
+  `PremiumRefresher`) talks to the server only when the token is 7+ days old. "เพิกถอนจากเครื่องนี้" frees the slot. The UI never states the device count; only a refused activation (`too_many_devices`)
+  names it, with the machines that hold the slots.
 - **The paid camera instructions are NOT in this repo**: the server sends them (`premium-content`, table
   `premium_content`) to a non-revoked licence on a registered machine; the app caches them in premium.json
   (`lib/premium/content.ts`). Never paste them back into the source; edit them on the server (bump `version`).
@@ -142,9 +143,39 @@ npm run desktop:build   # Windows installer → dist/desktop/out
   `update-deployment`), never creates one. Lint and the AI note count only what changed since the sync.
   "เช็คกับ Google" (`checkWithGoogle`, pure logic in `lib/sync-status.ts`) compares meaning, not bytes (Google
   re-formats appsscript.json). "เปิดโฟลเดอร์" spawns the file manager on `srcDir(id)` from the id only.
-- **Home screen** (`app/projects/page.tsx`): `ProjectSidebar` (every project, one click) beside two real tabs
-  (`StartModeTabs`, mode in the URL: `/projects` = compose, `/projects?mode=existing` = the script list; `/scripts`
-  redirects there). The panel changes, the sidebar stays.
+- **Two screens: home and code** (redesign 2026-10-12). Home (`app/projects/page.tsx`) = `ProjectTable` (filter,
+  search Ctrl+K, ⋯ rename / open folder / delete) + `CreateProjectDialog`: a NAME + "ใช้งานผ่านอะไร", never a prompt —
+  the AI is only talked to on the code screen. One header, a view switch under it (`ProjectTable` `mode`):
+  the list, `?mode=existing` = the script list (`/scripts` redirects there), `?mode=clone` = share link, `?mode=shares` =
+  ระบบที่คนแชร์ (`SharesView`, fetched only in that view; `/shares` redirects); `?new=1` opens the dialog. The rail holds home only. `/styleshopping` only redirects. Rename changes the local
+  name only (`renameProjectAction`), never the script title on Google.
+- **Code screen for an empty project** has no separate start screen: it opens on the "สไตล์" view
+  (`components/ide/StylePane.tsx`) beside the chat, and switches to พรีวิว when the first file arrives. The chat's
+  start chips (`ChatPanel`): เริ่มสร้างเลย / สร้างเดโม่ให้ดูก่อน (→ look picker · image · style tab · AI designs) /
+  ถามทีละข้อ. Chips are the APP's, never parsed from the AI's text. A demo = screen only, sample data, no Sheet/server
+  (`demoMessage` / `DEMO_RULES`: one page file, a few screens, NO `google.script.run` — the preview stub never calls
+  back, and a blocked localStorage/sessionStorage becomes a memory-only one — and a login screen lets anyone in with a role switch); `project.demo` makes the chat offer "ใช้แบบนี้ สร้างระบบจริง". Text from the style tab reaches the
+  chat box through the store (`draft`), the AI through `runAgent("send")`.
+- **Style mock-up** (`lib/style-mockup.ts`, pure, tested): picks from `lib/style-catalog.ts` assembled into one page
+  WITHOUT AI — fixed slots (nav · data · buttons · feedback · search · form · Thai formats), capability picks as
+  badges. Rendered in `<iframe sandbox="">` (no scripts); colours/fonts only from `LOOK_COLORS` / `LOOK_FONTS` / a
+  validated hex. The demo font is also saved as the project's `prefs.font`, so the Look & feel block agrees.
+- **"ใช้งานผ่านอะไร"** (`lib/project-use.ts`, tested) = kind + hosting as ONE choice of three: `google` (standalone,
+  free) · `sheet` (bound, getActiveSpreadsheet) · `github` (standalone + GitHub Pages, Pro). Asked at creation because
+  the AI must know the kind from its first line; the style tab's card can change it until Google holds the script
+  (`kindLockReason`: published, imported, cloned → kind fixed; google ↔ github still allowed). `setProjectUseAction`
+  checks the lock, Pro and busy; a kind change on a project with code puts `kindChangeMessage` in the chat box (the
+  changed core prompt starts a fresh CLI session by itself, `planSession`). Hosting is recorded at creation, so the
+  publish button does not ask a Pro user again. Imported scripts take the kind from Google (`scriptContainerId` =
+  Apps Script API `parentId`, `kind_from_google`; the code guess `kindForExisting` only when Google cannot be asked);
+  a clone keeps a share's `hosting: "github"` (Pro, standalone only).
+- **Pro extras** (`lib/pro-features.ts`): on GitHub Pages, `pwa` / `notify` (in-app only — NO push) / `camera` / `qr`,
+  stored as `project.pro_features` (`saveProFeaturesAction`, Pro-checked). A free install may tick and see the
+  mock-up change, but nothing is stored and `proFeatureLines` reaches the AI only for a Pro project saved on GitHub.
+  `pwa` = the PUBLISHER adds `manifest.webmanifest` + `sw.js` + `icon.svg` (`lib/pages/pwa.ts`, app-written; the
+  worker never touches other origins, so /exec calls are never cached) + `install.js` (`lib/pages/pwa-install.ts`): the
+  install pop-up with per-device help (Android/desktop prompt · iOS share-sheet steps · in-app browser → open in a
+  browser) and every `[data-egs-install]` button; the AI only PLACES that button (profile/settings), never writes install code. Camera still goes through the camera gate.
 - **"แก้ไขสคริปต์ที่มีอยู่" tab** (`GoogleScriptsList`): the list comes from
   Drive (`lib/drive-scripts.ts`, `trashed=false`; clasp's `list-scripts` includes the trash) with the token in
   the app's clasp login file, read server-side only; clasp's list is the fallback. Published or not = the Apps
@@ -207,11 +238,23 @@ npm run desktop:build   # Windows installer → dist/desktop/out
   send, publish, create; `.btn-soft` + `.tone-ai|.tone-info|.tone-warn` (tinted) a shortcut; `.btn-secondary`
   (outlined) an ordinary choice; `.btn-ghost` toolbars. Violet = talks to the AI, blue = look / explain,
   amber = needs attention. `.icon-chip` marks what a panel or row is about. Warn colours never as decoration.
+- "PRO" is always `.pro-badge` (solid yellow #F5B301 on #3D2A00) — the top bar, choices, shares; never a green or tinted badge.
+- Code screen hierarchy: the chat box (`.composer`, AI-violet frame, "สั่งงาน AI ตรงนี้") is the most visible thing. After an
+  answer the chat shows the APP's next steps (`nextSteps`: ดูพรีวิว · อธิบายโค้ด · ตรวจหาบั๊ก · เผยแพร่ → `view:preview` /
+  `publish` action requests). First open of an empty project lights the box once (`spot`, "เริ่มไอเดียของคุณที่นี่"); it waits
+  for the guided tour through `components/tour/tour-phase.ts` (GuidedTour is the only writer) and never dims the page.
+  The rail's top button is a show/hide switch (ซ่อนแชต / แชต), never a selected view. The style tab collapses
+  "ใช้งานผ่านอะไร" to one line once the project has code, labels its mock-up "ตัวอย่างสไตล์ · ยังไม่ใช่แอปของคุณ", and its
+  one action sits under the picks ("ให้ AI ปรับตามนี้" sends `RESTYLE_LEAD` + picks; an empty project puts them in the box).
+  The toolbar's look dialog is "ไลบรารีและฟอนต์" (not สไตล์, which is the rail tab).
 - Every screen uses `AppTopBar` (h-12). In the desktop app it is the window title bar (`.titlebar` drag region,
   `TITLEBAR_HEIGHT` in electron/main.js) — keep the two heights equal.
-- The launcher screens (home `/projects`, `/shares`) are an app shell: `AppRail` (left icon rail, md+) · a panel
-  (`bg-panel`, e.g. `ProjectSidebar`) · the work area (`bg-main`, its own scrollbar) · `AppStatusBar` (bottom, md+).
+- The launcher screen (home `/projects`) is an app shell: `AppRail` (left icon rail, md+) · a panel
+  where one exists (`bg-panel`) · the work area (`bg-main`, its own scrollbar) · `AppStatusBar` (bottom, md+).
   Below md the rail and status bar give way to `MobileNav`. Title / status bars are `bg-panel2`.
+  The code screen has the same `AppStatusBar` (`setupItems={false} phone={false}`: its top bar and chat box show
+  those) with `IdeQuotaSlot` — the quota of the AI picked in the chat; below md the quota stays under the chat box.
 - Wording: "เผยแพร่" (never deploy), "โปรเจกต์", "Ctrl+K". Settings deep links: `/settings?s=ai|google|style|data`,
   `/knowledge?s=rules|lessons`, plus `&from=<projectId>` to return to a project.
-- Hand-offs into the IDE travel in sessionStorage: `egs:kickoff` (prefill), `egs:kickoff-auto` (send), `egs:wizard`.
+- Hand-offs into the IDE travel in sessionStorage: `egs:kickoff` (prefill), `egs:kickoff-auto` (send — nothing sets it
+  since the name-first home; kept for old hand-offs), `egs:wizard`.

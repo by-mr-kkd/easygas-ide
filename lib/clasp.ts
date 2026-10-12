@@ -3,7 +3,7 @@ import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { childEnv } from "@/lib/child-env";
-import { NotConnectedError, UserSettingsDisabledError } from "@/lib/errors";
+import { NeedsReauthError, NotConnectedError, UserSettingsDisabledError } from "@/lib/errors";
 import { dataRoot } from "@/lib/local/paths";
 
 /**
@@ -75,11 +75,14 @@ export function runClasp(args: string[], opts: { projectDir?: string; timeoutMs?
 
 const NOT_LOGGED_IN = /No credentials found|Not logged in|invalid_grant|Could not read API credentials/i;
 const API_DISABLED = /not enabled the Apps Script API|script\.google\.com\/home\/usersettings/i;
+// the saved login exists but Google no longer accepts it (expired, revoked, password changed)
+const LOGIN_REJECTED = /invalid authentication credentials|UNAUTHENTICATED|Invalid Credentials|token has been expired or revoked/i;
 
 /** Map clasp's text output to the typed errors the UI already knows how to explain. */
 export function claspError(cmd: string, r: ClaspResult): Error {
   const text = `${r.stdout}\n${r.stderr}`;
   if (NOT_LOGGED_IN.test(text)) return new NotConnectedError();
+  if (LOGIN_REJECTED.test(text)) return new NeedsReauthError();
   if (API_DISABLED.test(text)) return new UserSettingsDisabledError();
   console.error(`[clasp] ${cmd} failed (exit ${r.code}):`, text.slice(0, 2000));
   return new Error(`clasp_${cmd}_failed`);
@@ -89,7 +92,7 @@ export function claspError(cmd: string, r: ClaspResult): Error {
 export async function claspOrThrow(args: string[], projectDir?: string): Promise<string> {
   const r = await runClasp(args, { projectDir });
   const text = `${r.stdout}\n${r.stderr}`;
-  if (r.code !== 0 || NOT_LOGGED_IN.test(text) || API_DISABLED.test(text) || /^Error:/m.test(r.stderr)) {
+  if (r.code !== 0 || NOT_LOGGED_IN.test(text) || LOGIN_REJECTED.test(text) || API_DISABLED.test(text) || /^Error:/m.test(r.stderr)) {
     throw claspError(args[0], r);
   }
   return r.stdout;

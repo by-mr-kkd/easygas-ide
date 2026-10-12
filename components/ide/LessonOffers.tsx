@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AcademicCapIcon } from "@heroicons/react/24/outline";
+import { AcademicCapIcon, CheckIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import { approveLessonAction, switchLessonAction } from "@/app/settings/actions";
 
 export interface LessonOffer {
@@ -39,24 +39,37 @@ export function LessonOffers({ offers, onResolved }: { offers: LessonOffer[]; on
   return (
     <div className="space-y-2">
       {offers.map((o) => (
-        <div key={o.id} className="card px-3.5 py-3">
-          <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold text-muted">
+        // set apart from the chat's own text: violet (it came from the AI), a header strip, and the
+        // proposed rule in its own box — it is a decision to make, not part of the answer
+        <section
+          key={o.id}
+          aria-label="ข้อเสนอบทเรียนจาก AI"
+          className="overflow-hidden rounded-xl border border-line border-l-4 border-l-ai bg-surface shadow-sm"
+        >
+          <div className="flex flex-wrap items-center gap-1.5 bg-ai-soft px-3.5 py-2 text-xs font-semibold text-ai">
             <AcademicCapIcon className="h-4 w-4" />
-            AI เสนอให้จำข้อนี้ไว้ใช้กับโปรเจกต์ต่อ ๆ ไป
+            ข้อเสนอจาก AI: จำข้อนี้ไว้ใช้กับโปรเจกต์ต่อ ๆ ไป
             {o.hits > 1 && <span className="font-normal">· เจอมาแล้ว {o.hits} ครั้ง</span>}
+            <span className="ml-auto rounded-full bg-surface px-2 py-0.5 font-normal text-muted">ยังไม่ใช้งาน</span>
           </div>
-          <p className="mt-1.5 text-sm font-medium leading-relaxed text-fg">{o.rule}</p>
-          {o.symptom && <p className="hint mt-0.5">ที่มา: {o.symptom}</p>}
-          <div className="mt-2.5 flex flex-wrap items-center gap-2">
-            <button onClick={() => decide(o.id, true)} disabled={busy !== null} className="btn btn-secondary btn-sm">
-              เก็บไว้
-            </button>
-            <button onClick={() => decide(o.id, false)} disabled={busy !== null} className="btn btn-ghost btn-sm">
-              ไม่ต้อง
-            </button>
+          <div className="px-3.5 py-3">
+            <blockquote className="rounded-lg border border-line bg-sunken px-3 py-2 text-sm font-medium leading-relaxed text-fg">
+              {o.rule}
+            </blockquote>
+            {o.symptom && <p className="hint mt-1.5 text-xs">ที่มา: {o.symptom}</p>}
+            <div className="mt-2.5 flex flex-wrap items-center gap-2">
+              <button onClick={() => decide(o.id, true)} disabled={busy !== null} className="btn btn-soft tone-ai btn-sm">
+                <CheckIcon className="h-4 w-4" />
+                เก็บไว้
+              </button>
+              <button onClick={() => decide(o.id, false)} disabled={busy !== null} className="btn btn-ghost btn-sm">
+                <XMarkIcon className="h-4 w-4" />
+                ไม่ต้อง
+              </button>
+              <span className="hint text-xs">แก้หรือลบทีหลังได้ที่ ตั้งค่า → บทเรียนของฉัน</span>
+            </div>
           </div>
-          <p className="hint mt-1.5">ยังไม่มีผลจนกว่าจะกด เก็บไว้ แก้หรือลบทีหลังได้ที่ ตั้งค่า → บทเรียนของฉัน</p>
-        </div>
+        </section>
       ))}
       {error && <p className="callout callout-danger">{error}</p>}
     </div>

@@ -54,6 +54,14 @@ export interface EgsProject {
   /** The backend's /exec answered without Google's permission wall (the owner approved it once). Set by
    *  backendAuthAction; cleared by a deploy that adds scopes, since Google asks again then. */
   backend_authorized_at?: string | null;
+  /** Imported: the kind came from Google (Apps Script API parentId), not guessed from the code — never re-guess it. */
+  kind_from_google?: boolean | null;
+  /** Pro extras picked in the style tab for a GitHub Pages project (lib/pro-features.ts). */
+  pro_features?: { pwa?: boolean; notify?: boolean; camera?: boolean; qr?: boolean } | null;
+  /** The look picked for the demo (lib/style-mockup.ts MockLook); its colour themes the installed app. */
+  look?: { color?: string; font?: string; tone?: "light" | "dark" } | null;
+  /** The last thing built was a screen-only demo (no Sheet, no server code yet) — the chat offers to build it for real. */
+  demo?: boolean | null;
   /** The GitHub Pages copy of the front page, once published (lib/pages). */
   pages?: { repo: string; url: string; published_at: string } | null;
   /** "imported" = an existing Apps Script cloned in from the user's Google account (lib/import.ts): its

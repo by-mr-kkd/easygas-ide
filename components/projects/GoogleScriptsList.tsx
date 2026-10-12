@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowPathIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline";
 import { importScriptAction, listGoogleScriptsAction, publishInfoAction } from "@/app/projects/import-actions";
@@ -34,6 +35,8 @@ export function GoogleScriptsList() {
   const [scripts, setScripts] = useState<GoogleScript[] | null>(null);
   const [publish, setPublish] = useState<Record<string, PublishInfo | null>>({});
   const [error, setError] = useState("");
+  // the Google login is missing or no longer accepted: offer the way to fix it next to the message
+  const [needsLogin, setNeedsLogin] = useState(false);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [showHidden, setShowHidden] = useState(false);
@@ -45,12 +48,16 @@ export function GoogleScriptsList() {
   const load = useCallback(async () => {
     const mine = ++run.current;
     setError("");
+    setNeedsLogin(false);
     setScripts(null);
     setPublish({});
     const r = await listGoogleScriptsAction().catch(() => null);
     if (mine !== run.current) return;
     if (!r) return setError("ติดต่อ Google ไม่สำเร็จ ลองใหม่อีกครั้ง");
-    if (!r.ok) return setError(r.error);
+    if (!r.ok) {
+      setNeedsLogin(r.code === "NEEDS_REAUTH" || r.code === "NOT_CONNECTED");
+      return setError(r.error);
+    }
     setScripts(r.data);
     // publish status a batch at a time, visible scripts first, so the badges fill in while the user reads
     const order = [...r.data.filter((s) => !s.hidden), ...r.data.filter((s) => s.hidden)].map((s) => s.id);
@@ -170,9 +177,14 @@ export function GoogleScriptsList() {
         </div>
       </div>
       {error && (
-        <p role="alert" className="border-t border-line p-4 text-sm text-danger">
-          {error}
-        </p>
+        <div role="alert" className="flex flex-wrap items-center gap-3 border-t border-line p-4 text-sm text-danger">
+          <span className="min-w-0 flex-1">{error}</span>
+          {needsLogin && (
+            <Link href="/settings?s=google" className="btn btn-primary btn-sm">
+              เชื่อมบัญชี Google ใหม่
+            </Link>
+          )}
+        </div>
       )}
     </div>
   );

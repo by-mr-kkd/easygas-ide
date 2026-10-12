@@ -8,6 +8,7 @@ import { pagesUrlFor, repoNameFor, SHARE_PARAM, shareUrlFor } from "@/lib/pages/
 import { ensurePagesRuntime } from "@/lib/premium/content";
 import { premiumStatus } from "@/lib/premium/status";
 import { getProject, updateProject } from "@/lib/projects";
+import { sanitizeProFeatures } from "@/lib/pro-features";
 import type { EgsProject } from "@/types/db";
 
 /**
@@ -60,7 +61,12 @@ export async function publishToPages(userId: string, project: EgsProject, deps: 
   // 2. the front page as static files (throws a typed error when it cannot be made static)
   step("build");
   const files = await getFiles(project.id);
-  const staticFiles = buildStaticPage(files, { execUrl: deploy.execUrl, shim: runtime.shim });
+  const pro = sanitizeProFeatures(project.pro_features);
+  const staticFiles = buildStaticPage(files, {
+    execUrl: deploy.execUrl,
+    shim: runtime.shim,
+    pwa: pro.pwa ? { name: project.name, color: project.look?.color ?? null } : null,
+  });
 
   // 3. the repo (reused on re-publish)
   step("repo");

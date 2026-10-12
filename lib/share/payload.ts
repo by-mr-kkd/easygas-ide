@@ -78,6 +78,8 @@ export type SharePublic = {
   cloneCount: number;
   forks: { slug: string; title: string; author: string; cloneCount: number }[];
   url: string;
+  /** where the author's front page lives; a "github" share is Pro (the website refuses its files to Free) */
+  hosting: "gas" | "github";
   createdAt: string;
   updatedAt: string;
 };
@@ -122,6 +124,7 @@ export function parseSharePublic(raw: unknown): SharePublic {
     cloneCount: Number(s.cloneCount) || 0,
     forks,
     url: /^https:\/\/[a-z0-9.-]+\/s\/[a-z0-9]{6,16}$/.test(str(s.url, 200)) ? str(s.url, 200) : "",
+    hosting: s.hosting === "github" ? "github" : "gas",
     createdAt: str(s.createdAt, 40),
     updatedAt: str(s.updatedAt, 40),
   };

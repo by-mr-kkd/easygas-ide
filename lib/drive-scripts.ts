@@ -52,6 +52,27 @@ async function accessToken(): Promise<string | null> {
   return body.access_token ?? null;
 }
 
+/**
+ * Where a script lives, from Google itself (Apps Script API projects.get): the id of the Sheet / Doc / Form it
+ * is bound to, "" for a standalone script, or null when Google could not be asked (then the caller guesses
+ * from the code, lib/bound.ts kindForExisting).
+ */
+export async function scriptContainerId(scriptId: string): Promise<string | null> {
+  try {
+    const token = await accessToken();
+    if (!token) return null;
+    const res = await fetch(`https://script.googleapis.com/v1/projects/${encodeURIComponent(scriptId)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { parentId?: unknown };
+    return typeof body.parentId === "string" ? body.parentId : "";
+  } catch {
+    return null;
+  }
+}
+
 /** Scripts not in the trash, most recently edited first; null when Drive could not be asked. */
 export async function listDriveScripts(): Promise<DriveScript[] | null> {
   try {

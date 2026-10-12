@@ -25,7 +25,9 @@ function Item({ href, tone = "muted", title, children }: { href: string; tone?: 
 }
 
 /**
- * The strip along the bottom of a wide window, as programs have. Left: what the app is set up with
+ * The strip along the bottom of a wide window, as programs have — on the home screen and the code screen
+ * (which leaves out what it already shows: Google and the AI pick, the phone button; its quota follows the
+ * project's AI). Left: what the app is set up with
  * (Google, the AI, the AI's quota left), each a link to where it is changed. Right: use from a phone,
  * the version / update, and the credits — About, the users' Facebook group, the source on GitHub — the
  * same links the page footer had. A phone has the tab bar there instead.
@@ -34,7 +36,24 @@ function Item({ href, tone = "muted", title, children }: { href: string; tone?: 
  * icons do (full wording from xl, labels on the brand links from 2xl); the left half shrinks and clips
  * last, so the corner the eye goes to is always there.
  */
-export async function AppStatusBar({ setup }: { setup: SetupStatus }) {
+export async function AppStatusBar({
+  setup,
+  setupItems = true,
+  phone = true,
+  quota,
+  from,
+}: {
+  setup: SetupStatus;
+  /** the Google and AI items (the code screen has the account top right and the AI picker in the chat box) */
+  setupItems?: boolean;
+  /** "ใช้จากมือถือ" (the code screen has it in its top bar) */
+  phone?: boolean;
+  /** replaces the quota part (the code screen's quota follows the AI picked in the chat: IdeQuotaSlot) */
+  quota?: React.ReactNode;
+  /** the project the bar sits under: its settings links come back there (`&from=`) */
+  from?: string;
+}) {
+  const back = from ? `&from=${encodeURIComponent(from)}` : "";
   const [remote, update, claudeQuotaAllowed] = await Promise.all([
     remoteSnapshot().catch(() => null),
     readUpdateState().catch(() => null),
@@ -80,16 +99,20 @@ export async function AppStatusBar({ setup }: { setup: SetupStatus }) {
     >
       {/* left: the setup — gives way first (shrinks, then clips) when the window is narrow */}
       <div className="flex min-w-0 flex-1 items-stretch overflow-hidden">
-        <Item href="/settings?s=google" title={setup.google.loggedIn ? "Google: เชื่อมแล้ว" : "Google: ยังไม่เชื่อม"}>
+        {setupItems && (
+          <>
+        <Item href={`/settings?s=google${back}`} title={setup.google.loggedIn ? "Google: เชื่อมแล้ว" : "Google: ยังไม่เชื่อม"}>
           <CheckCircleIcon className={`h-3.5 w-3.5 ${setup.google.loggedIn ? "text-accent-text" : "text-faint"}`} aria-hidden />
           <span className="hidden lg:inline">{setup.google.loggedIn ? "Google: เชื่อมแล้ว" : "Google: ยังไม่เชื่อม"}</span>
           <span className="lg:hidden">Google</span>
         </Item>
-        <Item href="/settings?s=ai" tone={setup.engineReady ? "muted" : "warn"}>
+        <Item href={`/settings?s=ai${back}`} tone={setup.engineReady ? "muted" : "warn"}>
           {setup.engineReady ? <span className="h-1.5 w-1.5 rounded-full bg-ai" aria-hidden /> : <ExclamationTriangleIcon className="h-3.5 w-3.5" aria-hidden />}
           {setup.engineReady ? `AI: ${shortEngineLabel(setup.engineLabel)}` : "ตั้งค่า AI ก่อนเริ่มสร้าง"}
         </Item>
-        {quotaEngine && (
+          </>
+        )}
+        {quota !== undefined ? quota : quotaEngine && (
           <div className="flex min-w-0 items-center px-0.5">
             <QuotaStatus engine={quotaEngine} claudeAllowed={claudeQuotaAllowed} settingsHref="/settings?s=ai" />
           </div>
@@ -98,13 +121,15 @@ export async function AppStatusBar({ setup }: { setup: SetupStatus }) {
 
       {/* right: keeps its width; words drop before icons */}
       <div className="flex shrink-0 items-stretch">
-        <Item href="/settings?s=remote" title={`ใช้จากมือถือ: ${phoneLabel}`}>
-          <DevicePhoneMobileIcon className={`h-3.5 w-3.5 ${online ? "text-accent-text" : "text-faint"}`} aria-hidden />
-          <span className="hidden xl:inline">ใช้จากมือถือ: </span>
-          {phoneLabel}
-        </Item>
+        {phone && (
+          <Item href={`/settings?s=remote${back}`} title={`ใช้จากมือถือ: ${phoneLabel}`}>
+            <DevicePhoneMobileIcon className={`h-3.5 w-3.5 ${online ? "text-accent-text" : "text-faint"}`} aria-hidden />
+            <span className="hidden xl:inline">ใช้จากมือถือ: </span>
+            {phoneLabel}
+          </Item>
+        )}
         {updateLabel && (
-          <Item href="/settings?s=data" tone={update?.status === "ready" ? "warn" : "muted"} title={updateLabel}>
+          <Item href={`/settings?s=data${back}`} tone={update?.status === "ready" ? "warn" : "muted"} title={updateLabel}>
             <ArrowPathIcon className="h-3.5 w-3.5" aria-hidden />
             <span className="hidden xl:inline">{updateLabel}</span>
             <span className="xl:hidden">{updateShort}</span>

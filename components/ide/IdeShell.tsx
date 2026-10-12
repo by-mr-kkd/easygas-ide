@@ -5,12 +5,15 @@ import Link from "next/link";
 import {
   ChatBubbleLeftRightIcon,
   CodeBracketIcon,
+  ChevronDoubleLeftIcon,
   Cog6ToothIcon,
   ExclamationTriangleIcon,
   EyeIcon,
   MagnifyingGlassIcon,
   SparklesIcon,
   SwatchIcon,
+  TableCellsIcon,
+  DevicePhoneMobileIcon,
   UserIcon,
   ViewColumnsIcon,
   XMarkIcon,
@@ -23,7 +26,6 @@ import { hasDoGet } from "@/lib/bound";
 import { GuidedTour } from "@/components/tour/GuidedTour";
 import { QuotaStatus } from "./QuotaStatus";
 import { ThemeSwitch } from "@/components/ui/ThemeToggle";
-import { Tooltip } from "@/components/ui/Tooltip";
 import { useMediaQuery } from "@/components/ui/useIsDark";
 import type { AiChoice } from "@/lib/ai-choice";
 import type { AiOption } from "@/lib/ai-options";
@@ -33,6 +35,10 @@ import { CommandPalette } from "./CommandPalette";
 import { ConnectGoogleDialog } from "./ConnectGoogleDialog";
 import { DeployButton } from "./DeployButton";
 import { ShareButton } from "./ShareButton";
+import { StylePane } from "./StylePane";
+import type { ProFeatures } from "@/lib/pro-features";
+import { USE_LIST, type ProjectUse } from "@/lib/project-use";
+import type { MockLook } from "@/lib/style-mockup";
 import { DeployedUrlBar } from "./DeployedUrlBar";
 import { EditorPane } from "./EditorPane";
 import { EditorToolbar } from "./EditorToolbar";
@@ -48,9 +54,10 @@ import { PhoneInvite, usePhoneInvite } from "@/components/remote/PhoneInvite";
 import { usePhoneRemote } from "@/components/remote/usePhoneRemote";
 import type { RemoteView } from "@/app/settings/remote-actions";
 
-type Pane = "chat" | "code" | "preview";
-/** What sits beside the chat on a wide window. "split" needs room for three columns (xl and up). */
-type View = "preview" | "code" | "split";
+type Pane = "chat" | "code" | "preview" | "style";
+/** What sits beside the chat on a wide window. "split" needs room for three columns (xl and up). "style" is
+ *  the start / look tab (StylePane): what an empty project opens on. */
+type View = "preview" | "code" | "split" | "style";
 
 const PANEL = "min-h-0 flex-col overflow-hidden bg-surface";
 const VIEW_KEY = "egs:view";
@@ -58,6 +65,7 @@ const VIEWS: { id: View; label: string; Icon: typeof EyeIcon; wideOnly?: boolean
   { id: "preview", label: "พรีวิว", Icon: EyeIcon },
   { id: "code", label: "โค้ด", Icon: CodeBracketIcon },
   { id: "split", label: "คู่กัน", Icon: ViewColumnsIcon, wideOnly: true },
+  { id: "style", label: "สไตล์", Icon: SwatchIcon },
 ];
 
 /**
@@ -95,6 +103,12 @@ export function IdeShell({
   imported = false,
   tourSeen = false,
   claudeQuotaAllowed = false,
+  demo = false,
+  use = "google",
+  kindLock = null,
+  proFeatures,
+  look = null,
+  statusBar = null,
 }: {
   projectId: string;
   imported?: boolean;
@@ -102,6 +116,16 @@ export function IdeShell({
   tourSeen?: boolean;
   /** Settings → AI: the user allowed reading Claude's quota. */
   claudeQuotaAllowed?: boolean;
+  /** the last build was a screen-only demo (project.demo) */
+  demo?: boolean;
+  /** "ใช้งานผ่านอะไร" (lib/project-use.ts) and why its kind can no longer change (null = it still can) */
+  use?: ProjectUse;
+  kindLock?: string | null;
+  proFeatures: ProFeatures;
+  /** the look picked for a demo (project.look) */
+  look?: MockLook | null;
+  /** the bottom status bar, rendered by the page (components/AppStatusBar) */
+  statusBar?: React.ReactNode;
   projectName: string;
   /** this install has Pro: the top bar shows the tag */
   pro?: boolean;
@@ -134,7 +158,7 @@ export function IdeShell({
 }) {
   // the picked AI lives in the store (chat box and re-check both read it); seed it before
   // the first render of the children, so a message sent on arrival already carries it
-  useState(() => useProjectStore.setState({ aiChoice: initialAiChoice }));
+  useState(() => useProjectStore.setState({ aiChoice: initialAiChoice, look, stylePicks: [] }));
   const aiChoice = useProjectStore((s) => s.aiChoice);
   const pickedAi = aiOptions.find((o) => aiChoice && o.engine === aiChoice.engine && (o.engine !== "api" || o.provider === aiChoice.provider));
   const engineReady = pickedAi?.ready ?? false;
@@ -143,7 +167,6 @@ export function IdeShell({
   // a project in a Sheet serves a page only when it has a doGet: then it is published as a web app too
   const hasPage = useProjectStore((s) => hasDoGet(Object.entries(s.files).map(([path, f]) => ({ path, content: f.content }))));
   const sheetOnly = !!bound && !hasPage;
-  const chatActive = useProjectStore((s) => s.chatActive);
   const setPaletteOpen = useProjectStore((s) => s.setPaletteOpen);
   // the file the agent is writing right now (null when idle) — drives the narrow-window code-tab pulse
   const workingPath = useProjectStore((s) => s.workingPath);
@@ -164,7 +187,7 @@ export function IdeShell({
   // narrow window (below lg): one pane at a time, switched by the bottom tabs
   const [pane, setPane] = useState<Pane>("chat");
   // wide window: what sits beside the chat, and whether the chat column is open at all
-  const [view, setView] = useState<View>("preview");
+  const [view, setView] = useState<View>(initialFiles.length === 0 ? "style" : "preview");
   const [chatOpen, setChatOpen] = useState(true);
   const roomForSplit = useMediaQuery("(min-width: 1280px)");
   const effView: View = view === "split" && !roomForSplit ? "code" : view;
@@ -173,20 +196,56 @@ export function IdeShell({
   const [previewW, setPreviewW] = useState(440);
   const [resizing, setResizing] = useState(false);
 
-  // An empty project that nobody has talked to yet shows ONE start screen, not three empty panes.
-  const isStart = fileCount === 0 && !chatActive;
-
   useEffect(() => {
     setInitial(initialFiles);
   }, [initialFiles, setInitial]);
   useEffect(() => {
+    // an empty project stays on the style tab; one with code opens on the view picked last time
+    if (initialFiles.length === 0) return;
     try {
       const saved = localStorage.getItem(VIEW_KEY);
       if (saved === "preview" || saved === "code" || saved === "split") setView(saved);
     } catch {
       /* storage unavailable — keep the default */
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // the first file arrived: show it (the style tab stays one click away)
+  const [hadFiles, setHadFiles] = useState(initialFiles.length > 0);
+  useEffect(() => {
+    // the file store is shared by the whole app: this render's count may still be the project opened before
+    // this one. setInitial (the effect above) has replaced it by now, so read the store, not the render
+    if (hadFiles || useProjectStore.getState().order.length === 0) return;
+    setHadFiles(true);
+    setView((v) => (v === "style" ? "preview" : v));
+    setPane((p) => (p === "style" ? "preview" : p));
+  }, [fileCount, hadFiles]);
+  // the chat's "เลือกจากสไตล์" chip
+  useEffect(() => {
+    if (actionRequest !== "view:style") return;
+    clearActionRequest();
+    setView("style");
+    setPane("style");
+  }, [actionRequest, clearActionRequest]);
+  // the chat's next-step "เผยแพร่": the same path as the palette (connect Google first when it is not)
+  useEffect(() => {
+    if (actionRequest !== "publish") return;
+    requestAction(google.connected ? "deploy" : "connectGoogle");
+  }, [actionRequest, requestAction, google.connected]);
+  // the chat's next-step "ดูพรีวิว": the preview beside the chat (wide) or its tab (narrow)
+  useEffect(() => {
+    if (actionRequest !== "view:preview") return;
+    clearActionRequest();
+    jumpPane("preview");
+    if (effView !== "preview" && effView !== "split") chooseView("preview");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actionRequest, clearActionRequest]);
+  // "ไลบรารีและฟอนต์" asked from the style tab: its dialog lives in the chat pane, so bring that pane on screen
+  useEffect(() => {
+    if (actionRequest !== "style") return;
+    setChatOpen(true);
+    setPane("chat");
+  }, [actionRequest]);
   // "ทดสอบรันจริง" / fix-from-issues stream their result into the chat pane — jump there so the user
   // actually sees it: the bottom tab on a narrow window, the (possibly folded) chat column on a wide one.
   useEffect(() => {
@@ -209,6 +268,8 @@ export function IdeShell({
 
   function chooseView(next: View) {
     setView(next);
+    // the style tab is not remembered: a project with code opens on its code or preview
+    if (next === "style") return;
     try {
       localStorage.setItem(VIEW_KEY, next);
     } catch {
@@ -224,7 +285,7 @@ export function IdeShell({
     if (p === "preview" && effView === "code") chooseView("preview");
   }
 
-  const onDesktop = (p: Pane) => (p === "chat" ? chatOpen : effView === "split" || effView === p);
+  const onDesktop = (p: Pane) => (p === "chat" ? chatOpen : p === "style" ? effView === "style" : effView === "split" || effView === p);
   const paneClass = (p: Pane) =>
     `${PANEL} ${pane === p ? "flex" : "max-lg:hidden"} ${onDesktop(p) ? "lg:flex" : "lg:hidden"}`;
   const TAB = (active: boolean) =>
@@ -232,9 +293,8 @@ export function IdeShell({
       active ? "bg-accent-soft font-semibold text-accent-text" : "font-medium text-muted hover:bg-sunken hover:text-fg"
     }`;
   // the chat column is a fixed 340px (the toolbar's left zone is sized to end exactly at its edge)
-  const gridCols = isStart
-    ? ""
-    : effView === "split"
+  const gridCols =
+    effView === "split"
       ? chatOpen
         ? "lg:grid-cols-[340px_minmax(0,1fr)_7px_var(--preview-w,440px)]"
         : "lg:grid-cols-[minmax(0,1fr)_7px_var(--preview-w,440px)]"
@@ -273,6 +333,8 @@ export function IdeShell({
   // the two monthly-plan AIs have a quota to show — under the chat box, on every window size
   const quotaEngine = engineReady && (aiChoice?.engine === "codex-cli" || aiChoice?.engine === "claude-cli") ? aiChoice.engine : null;
   const wide = useMediaQuery("(min-width: 1024px)");
+  // the status bar shows from md (AppStatusBar)
+  const withBar = useMediaQuery("(min-width: 768px)") && !!statusBar;
 
   const settingsHref = (section: string) => `/settings?s=${section}&from=${projectId}`;
 
@@ -280,7 +342,22 @@ export function IdeShell({
     <main className="flex h-dvh flex-col overflow-hidden bg-bg text-fg">
       <AppTopBar
         pro={pro}
-        center={<ProjectSwitcher currentId={projectId} currentName={projectName} projects={projects} />}
+        center={
+          <span className="flex min-w-0 items-center gap-2">
+            <ProjectSwitcher currentId={projectId} currentName={projectName} projects={projects} />
+            {/* "ใช้งานผ่านอะไร" — the same words as the create dialog and the style tab */}
+            <span title={USE_LIST.find((u) => u.id === use)?.hint} className="badge hidden shrink-0 sm:inline-flex">
+              {use === "sheet" ? (
+                <TableCellsIcon className="h-3.5 w-3.5" aria-hidden />
+              ) : use === "github" ? (
+                <DevicePhoneMobileIcon className="h-3.5 w-3.5" aria-hidden />
+              ) : (
+                <CodeBracketIcon className="h-3.5 w-3.5" aria-hidden />
+              )}
+              {USE_LIST.find((u) => u.id === use)?.short}
+            </span>
+          </span>
+        }
         right={
           <>
             {/* the identity corner: phone remote · Google account · theme, one bordered group */}
@@ -328,7 +405,7 @@ export function IdeShell({
         toolbar={
           <>
             {/* left zone: as wide as rail + chat column, so the divider after it lines up with the chat's edge */}
-            <div className={`flex min-w-0 items-center gap-1.5 ${!isStart && chatOpen ? "lg:min-w-[388px]" : ""}`}>
+            <div className={`flex min-w-0 items-center gap-1.5 ${chatOpen ? "lg:min-w-[388px]" : ""}`}>
               <button
                 type="button"
                 onClick={() => setPaletteOpen(true)}
@@ -340,42 +417,45 @@ export function IdeShell({
                 <span className="hidden md:inline">ค้นหา</span>
                 <span className="kbd hidden xl:inline-flex">Ctrl+K</span>
               </button>
-              {!isStart && (
-                <Tooltip label="ไลบรารีและหน้าตาที่ AI ใช้กับโปรเจกต์นี้" placement="bottom" className="shrink-0">
-                  {/* the dialog is rendered inside the chat pane: bring that pane on screen before asking for it */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setChatOpen(true);
-                      setPane("chat");
-                      requestAction("style");
-                    }}
-                    className="btn btn-ghost btn-sm"
-                  >
-                    <SwatchIcon className="h-4 w-4 text-info" />
-                    <span className="hidden md:inline">สไตล์โปรเจกต์</span>
-                    <span className="md:hidden">สไตล์</span>
-                  </button>
-                </Tooltip>
-              )}
-              {!isStart && <GuidedTour tour="ide" seen={tourSeen} className="btn-sm max-sm:hidden" />}
+              {/* the dialog is rendered inside the chat pane: bring that pane on screen before asking for it.
+                  Named after what it holds, so it never reads like the rail's สไตล์ tab; a plain title, no floating label */}
+              <button
+                type="button"
+                onClick={() => {
+                  setChatOpen(true);
+                  setPane("chat");
+                  requestAction("style");
+                }}
+                title="ไลบรารี ฟอนต์ และกล่องแจ้งเตือนที่ AI ใช้กับโปรเจกต์นี้"
+                className="btn btn-ghost btn-sm shrink-0"
+              >
+                <SwatchIcon className="h-4 w-4 text-info" />
+                <span className="hidden md:inline">ไลบรารีและฟอนต์</span>
+                <span className="md:hidden">ฟอนต์</span>
+              </button>
+              <GuidedTour tour="ide" seen={tourSeen} className="btn-sm max-sm:hidden" />
               {pro && support && <HelpButton project={{ id: projectId, name: projectName }} machineInfo={support.machineInfo} unread={support.unread} />}
             </div>
-            {!isStart && <span className="hidden h-5 w-px shrink-0 bg-line lg:block" aria-hidden />}
+            <span className="hidden h-5 w-px shrink-0 bg-line lg:block" aria-hidden />
             {/* the tools of whatever sits beside the chat: file tabs + editor buttons, and/or the preview's.
                 The editor toolbar stays mounted (hidden) while only the preview shows: it owns the
                 unsaved-changes warning and the palette's "ตรวจซ้ำ" request. */}
-            {!isStart && wide && (
+            {wide && (
               // narrower than the tools (1024–1280px with the code view on): this zone scrolls sideways
               // instead of pushing แชร์ / เผยแพร่ off the edge
               <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto [scrollbar-width:none]">
-                <div className={effView === "preview" ? "hidden" : "flex min-w-0 shrink-0 items-center gap-1.5"}>
+                {/* the file tabs take whatever room is left and scroll only when they run out of it */}
+                {/* split view below 1536px: the editor buttons go icon-only (.tools-compact) so the file tabs keep
+                    their room — at 1280px they were squeezed to two letters */}
+                <div className={effView === "code" || effView === "split" ? `flex min-w-0 items-center gap-1.5 ${effView === "split" ? "tools-compact" : ""}` : "hidden"}>
                   <FileTree variant="toolbar" />
                   <span className="h-5 w-px shrink-0 bg-line" aria-hidden />
-                  <EditorToolbar projectId={projectId} canVerify={!sheetOnly} variant="toolbar" />
+                  <div className="shrink-0">
+                    <EditorToolbar projectId={projectId} canVerify={!sheetOnly} variant="toolbar" />
+                  </div>
                 </div>
                 {effView === "split" && <span className="h-5 w-px shrink-0 bg-line" aria-hidden />}
-                {effView !== "code" && (
+                {(effView === "preview" || effView === "split") && (
                   <div className="shrink-0">
                     <PreviewTools />
                   </div>
@@ -383,7 +463,7 @@ export function IdeShell({
               </div>
             )}
             <span className="min-w-2 flex-1" />
-            {!isStart && <ShareButton projectId={projectId} projectName={projectName} className="shrink-0 max-md:w-[1.875rem] max-md:px-0" />}
+            <ShareButton projectId={projectId} projectName={projectName} className="shrink-0 max-md:w-[1.875rem] max-md:px-0" />
             <span data-tour="deploy" className="flex shrink-0 items-center">
               <DeployButton
                 projectId={projectId}
@@ -422,18 +502,18 @@ export function IdeShell({
       )}
 
       <div className="flex min-h-0 flex-1">
-        {/* RAIL (wide window) — which pane sits beside the chat; the chat button folds the chat column */}
-        {!isStart && (
+        {/* RAIL (wide window) — which pane sits beside the chat; the chat button folds the chat column. It is a
+            show/hide switch, not a view: it never looks selected, so only the view below it is highlighted. */}
           <nav aria-label="มุมมอง" className="hidden w-[60px] flex-none flex-col items-center gap-1 border-r border-line bg-panel px-1 py-2 lg:flex">
             <button
               type="button"
               onClick={() => setChatOpen((o) => !o)}
-              aria-pressed={chatOpen}
-              title={chatOpen ? "พับแผงแชต ให้พรีวิวหรือโค้ดเต็มจอ" : "เปิดแผงแชต"}
-              className="rail-btn rail-toggle"
+              aria-expanded={chatOpen}
+              title={chatOpen ? "ซ่อนแผงแชต ให้พรีวิวหรือโค้ดเต็มจอ" : "แสดงแผงแชต"}
+              className="rail-btn"
             >
-              <SparklesIcon className="h-[18px] w-[18px]" />
-              <span>แชต</span>
+              {chatOpen ? <ChevronDoubleLeftIcon className="h-[18px] w-[18px]" /> : <SparklesIcon className="h-[18px] w-[18px]" />}
+              <span>{chatOpen ? "ซ่อนแชต" : "แชต"}</span>
               {/* folded while the AI is writing: a pulse says there is something happening in there */}
               {!chatOpen && workingPath && <span className="absolute right-2 top-2 h-2 w-2 animate-pulse rounded-full bg-accent" aria-hidden />}
             </button>
@@ -452,18 +532,17 @@ export function IdeShell({
               <span>ตั้งค่า</span>
             </Link>
           </nav>
-        )}
 
         {/* BODY — the chat is the first column (when open); the view decides what sits beside it */}
         <div
           className={`grid min-h-0 min-w-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)] ${gridCols}`}
           style={{ "--preview-w": `${previewW}px` } as CSSProperties}
         >
-          <section data-tour="chat" className={`${isStart ? `${PANEL} flex bg-transparent` : `${paneClass("chat")} border-line lg:border-r`}`}>
+          <section data-tour="chat" className={`${paneClass("chat")} border-line lg:border-r lg:bg-panel`}>
             {pushNudge && <AppNudge strip />}
             <ChatPanel
               projectId={projectId}
-              start={isStart}
+              demo={demo}
               initialImages={initialImages}
               initialMessages={initialMessages}
               initialRunning={initialRunning}
@@ -475,17 +554,16 @@ export function IdeShell({
               styleDefaults={styleDefaults}
               imported={imported}
               footnote={
-                quotaEngine ? (
+                // the status bar (md and up) carries the quota; a phone keeps it under the box
+                quotaEngine && !withBar ? (
                   <div className="flex w-full items-center gap-3">
-                    <QuotaStatus engine={quotaEngine} claudeAllowed={claudeQuotaAllowed} settingsHref={settingsHref("ai")} quiet={!wide} compact />
-                    {wide && <span className="ml-auto text-faint">Enter ส่ง · Shift+Enter ขึ้นบรรทัดใหม่</span>}
+                    <QuotaStatus engine={quotaEngine} claudeAllowed={claudeQuotaAllowed} settingsHref={settingsHref("ai")} quiet compact />
                   </div>
                 ) : undefined
               }
             />
           </section>
 
-          {!isStart && (
             <>
               <section data-tour="code" className={paneClass("code")}>
                 {/* narrow window: the file tabs and editor buttons sit above the editor (a wide one has them in the toolbar row) */}
@@ -514,14 +592,16 @@ export function IdeShell({
               <section data-tour="preview" className={paneClass("preview")}>
                 <PreviewPane />
               </section>
+
+              <section data-tour="style-pane" className={paneClass("style")}>
+                <StylePane projectId={projectId} initialUse={use} kindLock={kindLock} initialProFeatures={proFeatures} empty={fileCount === 0} />
+              </section>
             </>
-          )}
         </div>
       </div>
 
-      {/* PANE TABS (narrow window) — a wide window shows the panes side by side instead */}
-      {!isStart && (
-        // hidden while the phone keyboard is up (a short window): the chat box needs the room
+      {/* PANE TABS (narrow window) — a wide window shows the panes side by side instead;
+          hidden while the phone keyboard is up (a short window): the chat box needs the room */}
         <nav className="flex flex-none items-center gap-1 border-t border-line bg-surface px-2 py-1.5 lg:hidden [@media(max-height:520px)]:hidden">
           <button type="button" onClick={() => setPane("chat")} aria-pressed={pane === "chat"} className={TAB(pane === "chat")}>
             <ChatBubbleLeftRightIcon className="h-4 w-4 shrink-0" />
@@ -536,8 +616,13 @@ export function IdeShell({
             โค้ด
             {codeBusy && <span className="absolute right-3 top-1.5 h-2 w-2 animate-pulse rounded-full bg-accent" />}
           </button>
+          <button type="button" onClick={() => setPane("style")} aria-pressed={pane === "style"} className={TAB(pane === "style")}>
+            <SwatchIcon className="h-4 w-4 shrink-0" />
+            สไตล์
+          </button>
         </nav>
-      )}
+
+      {statusBar}
 
       <CommandPalette
         projectId={projectId}

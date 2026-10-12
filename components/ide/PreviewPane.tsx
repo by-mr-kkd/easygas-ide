@@ -25,6 +25,17 @@ const SHIM = `<style>*{scrollbar-width:thin;scrollbar-color:rgba(100,116,139,.28
   window.onerror=function(m,s,line,col){post('error',[m+' ('+line+':'+col+')']);return false};
   window.addEventListener('unhandledrejection',function(ev){post('error',['Unhandled: '+((ev.reason&&ev.reason.message)||ev.reason)])});
   var noop=function(){};
+  // the preview has no origin (sandbox without allow-same-origin), so reading localStorage throws; give the page a
+  // memory-only stand-in so it runs on (forgotten on every refresh — the published page has the real one)
+  ['localStorage','sessionStorage'].forEach(function(name){
+    try{window[name];return}catch(e){}
+    var d={};
+    var s={getItem:function(k){k=String(k);return Object.prototype.hasOwnProperty.call(d,k)?d[k]:null},
+      setItem:function(k,v){d[String(k)]=String(v)},removeItem:function(k){delete d[String(k)]},
+      clear:function(){d={}},key:function(i){var k=Object.keys(d);return i<k.length?k[i]:null}};
+    Object.defineProperty(s,'length',{get:function(){return Object.keys(d).length}});
+    try{Object.defineProperty(window,name,{value:s,configurable:true})}catch(e){}
+  });
   // google.script.run is stubbed in preview (no server). Log each server call so the console
   // shows activity and explains why data-loading "hangs" here — handlers never fire without deploy.
   var BUILDERS={withSuccessHandler:1,withFailureHandler:1,withUserObject:1};
@@ -37,6 +48,11 @@ const SHIM = `<style>*{scrollbar-width:thin;scrollbar-color:rgba(100,116,139,.28
     };
   }});
   window.google={script:{run:runner,host:{close:noop,setHeight:noop},url:{}}};
+  // Pro "ติดตั้งเป็นแอป": the published page binds [data-egs-install] (lib/pages/pwa-install.ts); here it only says when it works
+  document.addEventListener('click',function(e){var el=e.target&&e.target.closest?e.target.closest('[data-egs-install]'):null;if(!el)return;e.preventDefault();
+    var t=document.createElement('div');t.textContent='ปุ่มติดตั้งเป็นแอปใช้ได้หลังเผยแพร่บน GitHub Pages';
+    t.style.cssText='position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:2147483000;background:#0f172a;color:#fff;padding:8px 14px;border-radius:10px;font:13px system-ui,sans-serif';
+    document.body.appendChild(t);setTimeout(function(){t.remove()},2600);post('info',['ปุ่ม data-egs-install: ใช้ได้หลังเผยแพร่บน GitHub Pages'])});
 })();
 </script>`;
 

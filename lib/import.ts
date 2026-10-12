@@ -9,7 +9,7 @@ import { deleteFile, getFiles, hashFiles, writeFile } from "@/lib/files";
 import { readJson, writeJsonAtomic } from "@/lib/local/json-store";
 import { dataRoot, projectDir, srcDir } from "@/lib/local/paths";
 import { createProject, getProject, listProjects, saveDeployment, updateProject } from "@/lib/projects";
-import { listDriveScripts } from "@/lib/drive-scripts";
+import { listDriveScripts, scriptContainerId } from "@/lib/drive-scripts";
 import { decideSync, type SyncStatus } from "@/lib/sync-status";
 import { snapshotProject } from "@/lib/versions";
 import type { EgsProject } from "@/types/db";
@@ -199,14 +199,17 @@ export async function importScript(input: string, nameHint?: string): Promise<{ 
 
   const remote = await readRemote(scriptId);
   const title = (nameHint ?? "").trim().slice(0, 120) || "สคริปต์ที่นำเข้า";
-  // a script that reads the active spreadsheet lives in a Sheet even when it is also a web app (lib/bound.ts)
-  const projectId = await createProject(title, kindForExisting(remote.files), { description: null, imported: true });
+  // Google knows whether the script is bound to a file (parentId); the code is only a guess (lib/bound.ts)
+  const container = await scriptContainerId(scriptId);
+  const kind = container === null ? kindForExisting(remote.files) : container ? "bound" : "webapp";
+  const projectId = await createProject(title, kind, { description: null, imported: true });
   await replaceScriptFiles(projectId, remote.files);
   await writeClaspConfig(projectId, scriptId);
   await writeBaseline(projectId, remote.files, remote.hash);
   await updateProject(projectId, {
     script_id: scriptId,
     origin: "imported",
+    kind_from_google: container !== null,
     remote: { hash: remote.hash, synced_at: new Date().toISOString(), title },
   });
   // the untouched original is always one click away in the history

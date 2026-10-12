@@ -2,18 +2,16 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { AcademicCapIcon, Cog6ToothIcon, HomeIcon, ShareIcon, SwatchIcon } from "@heroicons/react/24/outline";
+import { AcademicCapIcon, Cog6ToothIcon, HomeIcon } from "@heroicons/react/24/outline";
 
 const TABS = [
   { href: "/projects", label: "หน้าแรก", Icon: HomeIcon, match: (p: string) => p.startsWith("/projects") },
-  { href: "/shares", label: "ที่คนแชร์", Icon: ShareIcon, match: (p: string) => p.startsWith("/shares") },
-  { href: "/styleshopping", label: "สไตล์", Icon: SwatchIcon, match: (p: string) => p.startsWith("/styleshopping") },
   { href: "/knowledge?s=lessons", label: "AI เรียนรู้", Icon: AcademicCapIcon, match: (p: string) => p.startsWith("/knowledge") },
   { href: "/settings?s=ai", label: "ตั้งค่า", Icon: Cog6ToothIcon, match: (p: string) => p.startsWith("/settings") || p === "/about" },
 ];
 
 /** where the bar shows: the app's own screens, not the IDE (it has its own chat / preview / code tabs) */
-const SHOWN = /^\/(projects\/?$|shares|styleshopping|knowledge|settings|about)/;
+const SHOWN = /^\/(projects\/?$|knowledge|settings|about)/;
 
 /**
  * Phone-sized screens (below md): the app's menu as a bottom tab bar, like an installed app. A spacer of
