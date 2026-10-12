@@ -7,6 +7,8 @@ import { parseAttachedImages, storeChatImages, type AttachedImage } from "@/lib/
 import { runClaudeCliTurn } from "@/lib/engines/claude-cli";
 import { runCodexCliTurn } from "@/lib/engines/codex-cli";
 import { runMuseCliTurn } from "@/lib/engines/muse-cli";
+import { buildAllowed, setPlanOnly } from "@/lib/build-gate";
+import { getFiles } from "@/lib/files";
 import { finishTurnLessons, noteWrittenFile } from "@/lib/lessons-store";
 import { getDefaultProvider, providerConfig, resolveProvider } from "@/lib/llm/provider";
 import { runOpenAiAgentLoop } from "@/lib/openai-agent";
@@ -125,7 +127,9 @@ function prepareRun(
 }
 
 /**
- * POST /api/agent/[id]  body: { message: string, images?: [...], ai?: { engine, provider?, model? } }
+ * POST /api/agent/[id]  body: { message: string, images?: [...], ai?: { engine, provider?, model? }, build?: true }
+ * `build` = the user pressed an app button that starts the build (lib/build-gate): a project with no code
+ * stays talk-only (no file writes) until that, or a typed "สร้างเลย".
  * `ai` is the pick from the chat's AI switcher for this message; without it the project's last pick
  * (then Settings) is used. The pick is remembered on the project.
  * Streams the agent turn as SSE (text deltas, tool_call, file_mutation, lint, done).
@@ -138,8 +142,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   let message = "";
   let images: AttachedImage[] = [];
   let requested: AiChoice | null = null;
+  let go = false;
   try {
-    const body = (await req.json()) as { message?: string; images?: unknown; ai?: unknown };
+    const body = (await req.json()) as { message?: string; images?: unknown; ai?: unknown; build?: unknown };
+    go = body.build === true;
     // only the app may add the camera override heading (lib/premium/camera-gate)
     message = stripCameraClaims((body.message ?? "").trim());
     images = parseAttachedImages(body.images);
@@ -182,6 +188,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     throw e;
   }
   if (images.length > 0) await storeChatImages(id, images);
+  // no code yet and no approval → this turn may talk but not write (every engine checks isPlanOnly)
+  const planOnly = !buildAllowed({ hasCode: (await getFiles(id).catch(() => [])).length > 0, go, message });
+  setPlanOnly(id, planOnly);
 
   const encoder = new TextEncoder();
   let closed = false; // flipped by cancel() on client disconnect, and in finally
@@ -222,6 +231,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         emit({ type: "error", message: agentErrorMessage(e, secrets) });
         emit({ type: "done" });
       } finally {
+        setPlanOnly(id, false);
         await releaseProjectRun(id, lock);
         notifyTurnEnd(phone, id, turnNotice(project.name, said, failed));
         closed = true;

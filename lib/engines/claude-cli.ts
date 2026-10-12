@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { isPlanOnly } from "@/lib/build-gate";
 import { cameraAllowedFor } from "@/lib/premium/camera-gate";
 import { createHash } from "node:crypto";
 import { existsSync, realpathSync } from "node:fs";
@@ -51,6 +52,8 @@ import { lintScope } from "@/lib/import";
 
 const TURN_TIMEOUT_MS = 15 * 60 * 1000;
 const TOOLS = "Read,Edit,Write,Glob,Grep";
+/** The build gate is shut (lib/build-gate): the CLI gets no tool that writes. */
+const PLAN_TOOLS = "Read,Glob,Grep";
 const ENGINE_ID = "claude-cli" as const;
 const TOOL_NAME_MAP: Record<string, string> = {
   Write: "write_file",
@@ -72,7 +75,8 @@ You are running inside a local project folder. The current working directory IS 
 - write_file → use the Write tool with a path relative to the current directory (e.g. Code.gs, Index.html, appsscript.json).
 - edit_file → use the Edit tool. delete_file → not available; tell the user which file to remove.
 - read_project → use Glob + Read on the current directory.
-- propose_spec → not available in this mode. Skip the spec step and build directly.
+- propose_spec → not a tool here: write the spec as a short list in your answer and end the turn. The app shows
+  the user an approve button; you get the write tools only after they approve.
 - read_rule → rule cards are plain files: Read them from the folder named under "Rule cards" (never edit them).
 - save_preference → Write the JSON file named under "Look & feel" (that one file only).
 - propose_lesson → Write the JSON file named under "Lessons" (that one file only).
@@ -319,7 +323,7 @@ function runCliTurn(opts: {
     "--append-system-prompt-file",
     opts.engine.systemPromptFile,
     "--tools",
-    TOOLS,
+    isPlanOnly(opts.project.id) ? PLAN_TOOLS : TOOLS,
     "--permission-mode",
     "acceptEdits",
     "--setting-sources",

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isPlanOnly } from "@/lib/build-gate";
 import { cameraAllowedFor } from "@/lib/premium/camera-gate";
 import { mkdir, writeFile as fsWriteFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -66,6 +67,8 @@ export async function applyAnswer(projectId: string, answerText: string, emit: E
   const answer = parseCodexAnswer(answerText);
   const problems: string[] = [];
   for (const call of answerToToolCalls(answer)) {
+    // build gate shut (lib/build-gate): file changes are dropped, the reply still reaches the user
+    if (call.name.endsWith("_file") && isPlanOnly(projectId)) continue;
     emit({ type: "tool_call", name: call.name, input: call.name.endsWith("_file") ? { path: call.input.path } : {} });
     const outcome = await executeEgsTool(projectId, call.name, call.input, emit);
     // spec / preference / lesson results are for the model, not problems to repair

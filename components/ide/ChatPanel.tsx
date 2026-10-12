@@ -431,11 +431,17 @@ export function ChatPanel({
     }
   }
 
-  async function send(text?: string, opts?: { withImages?: boolean }) {
+  // "ส่งรูปให้ดู" leaves a demo request in the box: the user's send of it is the go for that demo
+  const goNextRef = useRef(false);
+
+  /** `go` = an app button that starts the build: a project with no code is talk-only until then (lib/build-gate). */
+  async function send(text?: string, opts?: { withImages?: boolean; go?: boolean }) {
     const msg = (text ?? input).trim();
     // staged images attach to a composer send, or to a chip that replaces the box's text (the demo chips)
     const attached = text === undefined || opts?.withImages ? images : [];
     if ((!msg && attached.length === 0) || busy) return;
+    const go = !!opts?.go || (text === undefined && goNextRef.current);
+    goNextRef.current = false;
     if (text === undefined) setInput("");
     if (attached.length > 0) setImages([]);
     setBusy(true);
@@ -459,6 +465,7 @@ export function ChatPanel({
           images: attached.map((a) => ({ dataBase64: a.dataBase64, mediaType: a.mediaType })),
           // read at send time: the user may have switched AI since this render
           ai: useProjectStore.getState().aiChoice ?? undefined,
+          ...(go ? { build: true } : {}),
         }),
       });
       if (!res.ok) {
@@ -539,8 +546,8 @@ export function ChatPanel({
   function buildNow() {
     if (needsIdea()) return;
     markDemo(false);
-    if (input.trim() || images.length > 0) send();
-    else send(BUILD_NOW);
+    if (input.trim() || images.length > 0) send(undefined, { go: true });
+    else send(BUILD_NOW, { go: true });
   }
 
   // "สร้างเดโม่ให้ดูก่อน" → one of the second-layer choices
@@ -554,7 +561,7 @@ export function ChatPanel({
     setDemoOpen(false);
     setLookOpen(false);
     setInput("");
-    send(msg, { withImages: true });
+    send(msg, { withImages: true, go: true });
   }
 
   // "ส่งรูปให้ดู": the box gets the demo request, the picker opens; the user sends with the pictures
@@ -562,6 +569,7 @@ export function ChatPanel({
     if (needsIdea()) return;
     const styles = stylePicks.map((id) => STYLE_CATALOG.find((c) => c.id === id)).filter((x): x is StyleItem => !!x);
     setInput(demoMessage({ description: stripAppBlocks(input), look, styles, fromImage: true }));
+    goNextRef.current = true;
     markDemo(true);
     setDemoOpen(false);
     fileRef.current?.click();
@@ -570,13 +578,14 @@ export function ChatPanel({
   const pickLook = (patch: Partial<MockLook>) => setLook({ ...(look ?? DEFAULT_LOOK), ...patch });
 
   // the start chips: an empty project (or a demo waiting to become the real thing), nothing running
+  const talked = messages.length > 0;
   const startChips = !busy && !hasFiles && (
     <div className="space-y-2" data-tour="start-chips">
-      <p className="text-xs font-semibold text-muted">จะเริ่มแบบไหน</p>
+      <p className="text-xs font-semibold text-muted">{talked ? "ตรงใจแล้วหรือยัง" : "จะเริ่มแบบไหน"}</p>
       <div className="flex flex-wrap gap-1.5">
         <button type="button" onClick={buildNow} disabled={!engineReady} className="btn btn-primary btn-sm rounded-full">
           <SparklesIcon className="h-4 w-4" />
-          เริ่มสร้างเลย
+          {talked ? "สร้างตามนี้" : "เริ่มสร้างเลย"}
         </button>
         <button
           type="button"
@@ -593,6 +602,7 @@ export function ChatPanel({
           ถามทีละข้อ
         </button>
       </div>
+      {talked && <p className="hint text-xs">AI จะยังไม่เขียนโค้ดจนกว่าคุณกดปุ่มนี้หรือพิมพ์ว่า “สร้างเลย” ยังไม่ตรงใจ พิมพ์บอกต่อได้เลย</p>}
       {needIdea && <p className="callout callout-warn text-[13px]">เล่าสั้น ๆ ในช่องด้านล่างก่อนว่าอยากได้ระบบอะไร แล้วกดอีกครั้ง หรือหยิบตัวอย่างจากแท็บสไตล์</p>}
 
       {demoOpen && (
@@ -1025,7 +1035,7 @@ export function ChatPanel({
               {pendingSpec.storage && <p>เก็บที่: {pendingSpec.storage}</p>}
               {pendingSpec.outputs && pendingSpec.outputs.length > 0 && <p>ผลลัพธ์: {pendingSpec.outputs.join(" · ")}</p>}
             </div>
-            <button onClick={() => send("ยืนยัน สร้างเลยตาม spec ที่สรุปไว้")} disabled={busy} className="btn btn-primary mt-3 w-full">
+            <button onClick={() => send("ยืนยัน สร้างเลยตาม spec ที่สรุปไว้", { go: true })} disabled={busy} className="btn btn-primary mt-3 w-full">
               <SparklesIcon className="h-4 w-4" />
               สร้างตามนี้
             </button>

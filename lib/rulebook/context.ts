@@ -1,4 +1,5 @@
 import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { isPlanOnly, PLAN_ONLY_BLOCK } from "@/lib/build-gate";
 import { join } from "node:path";
 import { briefFeatureIds, sanitizeBrief } from "@/lib/brief";
 import { buildCodegenSystemPrompt } from "@/lib/gas-codegen";
@@ -129,7 +130,9 @@ export async function buildTurnContext(args: {
     }
   }
   const importedBlock = project.origin === "imported" ? IMPORTED_BLOCK : "";
-  return { text: [importedBlock, plan.text, lessonsBlock, cameraBlock].filter(Boolean).join("\n\n"), sources: plan.sources };
+  // the build gate (lib/build-gate) is shut for this turn: say so in the message every engine reads
+  const planBlock = isPlanOnly(project.id) ? PLAN_ONLY_BLOCK : "";
+  return { text: [planBlock, importedBlock, plan.text, lessonsBlock, cameraBlock].filter(Boolean).join("\n\n"), sources: plan.sources };
 }
 
 /** read_rule tool: full text of the requested cards (unknown ids are reported, not guessed). */

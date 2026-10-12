@@ -156,6 +156,11 @@ npm run desktop:build   # Windows installer → dist/desktop/out
   (`demoMessage` / `DEMO_RULES`: one page file, a few screens, NO `google.script.run` — the preview stub never calls
   back, and a blocked localStorage/sessionStorage becomes a memory-only one — and a login screen lets anyone in with a role switch); `project.demo` makes the chat offer "ใช้แบบนี้ สร้างระบบจริง". Text from the style tab reaches the
   chat box through the store (`draft`), the AI through `runAgent("send")`.
+- **Build gate** (`lib/build-gate.ts`, tested): a project with NO code is talk-only until the user approves — an app
+  button sends `build: true` (สร้างตามนี้ / เริ่มสร้างเลย, the spec card, the demo choices) or the message is a typed
+  go (`isGoMessage`: "สร้างเลย", "ยืนยัน …", negations refused; a bare "โอเค" is not one). The route sets `setPlanOnly`
+  for the turn; `executeEgsTool` refuses file tools, the API loops drop them, the JSON engines skip ops, Claude Code
+  gets `Read,Glob,Grep`, and `PLAN_ONLY_BLOCK` rides on the turn message. Never let an engine write around it.
 - **Style mock-up** (`lib/style-mockup.ts`, pure, tested): picks from `lib/style-catalog.ts` assembled into one page
   WITHOUT AI — fixed slots (nav · data · buttons · feedback · search · form · Thai formats), capability picks as
   badges. Rendered in `<iframe sandbox="">` (no scripts); colours/fonts only from `LOOK_COLORS` / `LOOK_FONTS` / a

@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { isPlanOnly, PLAN_ONLY_REFUSAL } from "@/lib/build-gate";
 import { cameraAllowedFor } from "@/lib/premium/camera-gate";
 import { validateGasFiles } from "@/lib/gas-codegen";
 import { reviewProject } from "@/lib/critic";
@@ -197,6 +198,9 @@ export const EGS_TOOLS: Anthropic.Tool[] = [
   },
 ];
 
+/** The tools that change files: off while the build gate is shut (lib/build-gate). */
+export const FILE_TOOLS = new Set(["write_file", "edit_file", "delete_file"]);
+
 interface ToolOutcome {
   content: string;
   isError: boolean;
@@ -234,6 +238,10 @@ export async function executeEgsTool(
   emit: Emit,
 ): Promise<ToolOutcome> {
   try {
+    // no code yet and the user has not approved the build (lib/build-gate): talk only
+    if ((name === "write_file" || name === "edit_file" || name === "delete_file") && isPlanOnly(projectId)) {
+      return { isError: true, content: PLAN_ONLY_REFUSAL };
+    }
     if (
       (name === "write_file" || name === "edit_file" || name === "delete_file") &&
       !isValidGasPath(String(input.path ?? ""))
@@ -572,7 +580,7 @@ async function runTurn(
       model: model || pickModel(turn),
       max_tokens: MAX_TOKENS,
       system,
-      tools: EGS_TOOLS,
+      tools: isPlanOnly(projectId) ? EGS_TOOLS.filter((t) => !FILE_TOOLS.has(t.name)) : EGS_TOOLS,
       messages: withPrefixCache(messages),
     });
     stream.on("text", (delta: string) => emit({ type: "text", delta }));

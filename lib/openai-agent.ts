@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { isPlanOnly } from "@/lib/build-gate";
 import { cameraAllowedFor } from "@/lib/premium/camera-gate";
 import { validateGasFiles } from "@/lib/gas-codegen";
 import { reviewProject } from "@/lib/critic";
@@ -6,6 +7,7 @@ import { getFiles } from "@/lib/files";
 import { appendRawMessages, getRawHistory, trimIncompleteOpenAiTail } from "@/lib/messages";
 import {
   EGS_TOOLS,
+  FILE_TOOLS,
   executeEgsTool,
   turnContextFor,
   type AgentRunResult,
@@ -183,7 +185,7 @@ async function runOpenAiTurn(
       model: cfg.model,
       max_tokens: cfg.maxOutputTokens ?? MAX_TOKENS_FALLBACK,
       messages,
-      tools: OPENAI_TOOLS,
+      tools: isPlanOnly(projectId) ? OPENAI_TOOLS.filter((t) => t.type !== "function" || !FILE_TOOLS.has(t.function.name)) : OPENAI_TOOLS,
       stream: true,
       stream_options: { include_usage: true },
     };
