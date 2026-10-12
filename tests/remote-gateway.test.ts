@@ -23,7 +23,12 @@ const upstream = http.createServer((req, res) => {
     }, 200);
     return;
   }
-  res.writeHead(200, { "content-type": "application/json", "set-cookie": "app=1; Path=/" });
+  res.writeHead(200, {
+    "content-type": "application/json",
+    "set-cookie": "app=1; Path=/",
+    "x-frame-options": "DENY",
+    "content-security-policy": "frame-ancestors 'none'; object-src 'none'",
+  });
   res.end(JSON.stringify({ path: req.url }));
 });
 
@@ -36,6 +41,7 @@ let pairing: PairingCode | null = null;
 const cfg: RemoteConfig = { v: 1, enabled: true, mode: "lan", port: null, pin: null, devices: [], relayId: null, relayName: null, vapid: null };
 let tokenSeq = 0;
 let pro = true;
+let mode: "lan" | "tunnel" = "lan";
 const APP = "https://easygaside.tech";
 const pushes = new Map<string, unknown>();
 
@@ -45,7 +51,7 @@ before(async () => {
   gw = createGateway({
     upstreamPort: upPort,
     secret: SECRET,
-    mode: () => "lan",
+    mode: () => mode,
     config: () => cfg,
     pairing: () => pairing,
     endPairing: () => {
@@ -299,4 +305,102 @@ test("a removed device is out at once", async () => {
   assert.equal((await go("/echo", { cookie: dev })).status, 200);
   cfg.devices = cfg.devices.filter((d) => d.id !== id);
   assert.equal((await go("/echo", { cookie: dev })).status, 403);
+});
+
+test("Pro app frame: over https the app's origin may frame the IDE; http, Free and other sites may not", async () => {
+  const dev = await pairPhone();
+  const https = { "cf-visitor": '{"scheme":"https"}', "cf-connecting-ip": "203.0.113.9" };
+  // same Wi-Fi (http): untouched
+  const lan = await go("/echo", { cookie: dev });
+  assert.equal(lan.headers.get("x-frame-options"), "DENY");
+  mode = "tunnel";
+  try {
+    const page = await go("/__egs/resume?next=%2F", { headers: https });
+    assert.equal(page.headers.get("x-frame-options"), null);
+    assert.equal(page.headers.get("content-security-policy"), `frame-ancestors 'self' ${APP}`);
+    const proxied = await go("/echo", { cookie: dev, headers: https });
+    assert.equal(proxied.headers.get("x-frame-options"), null);
+    assert.equal(proxied.headers.get("content-security-policy"), `frame-ancestors 'self' ${APP}; object-src 'none'`);
+    // the cookie the frame needs: SameSite=None + Partitioned, https only
+    const value = dev.slice("egs_dev=".length);
+    const r = await go("/__egs/resume", { method: "POST", headers: { ...https, "content-type": "application/x-www-form-urlencoded" }, body: `t=${encodeURIComponent(value)}` });
+    assert.match(r.headers.getSetCookie().join(" | "), /SameSite=None; Secure; Partitioned/);
+    // tunnel without https, or Free: DENY as before
+    assert.equal((await go("/echo", { cookie: dev })).headers.get("x-frame-options"), "DENY");
+    pro = false;
+    assert.equal((await go("/__egs/resume?next=%2F", { headers: https })).headers.get("x-frame-options"), "DENY");
+  } finally {
+    mode = "lan";
+    pro = true;
+  }
+});
+
+test("ping: 204 with a paired cookie, 403 without (the framed resume page checks its cookie stuck)", async () => {
+  const dev = await pairPhone();
+  assert.equal((await go("/__egs/ping", { cookie: dev })).status, 204);
+  assert.equal((await go("/__egs/ping")).status, 403);
+});
+
+test("resume with a remembered PIN: right = session at once, wrong (PIN changed) = the PIN page again", async () => {
+  const dev = await pairPhone();
+  const value = dev.slice("egs_dev=".length);
+  cfg.pin = hashPin("482913");
+  // tunnel mode: its own client address, untouched by the lock-out tests above
+  mode = "tunnel";
+  try {
+    const ip = { "cf-connecting-ip": "203.0.113.20" };
+    const form = (p: string) => ({ method: "POST", headers: { ...ip, "content-type": "application/x-www-form-urlencoded" }, body: `t=${encodeURIComponent(value)}&p=${p}` });
+    const ok = await go("/__egs/resume", form("482913"));
+    assert.equal(ok.status, 204);
+    const session = cookieOf(ok, "egs_pin");
+    assert.ok(session, "a session cookie with the device cookie");
+    assert.equal((await go("/echo", { cookie: `${dev}; ${session}` })).status, 200);
+    const old = await go("/__egs/resume", form("111111"));
+    assert.equal(old.status, 204, "the device still resumes");
+    assert.equal(cookieOf(old, "egs_pin"), null, "but no session: the PIN page asks");
+    const page = await go("/echo", { cookie: dev, headers: { ...ip, accept: "text/html" } });
+    assert.equal(page.status, 303);
+    assert.match(page.headers.get("location") ?? "", /^\/__egs\/pin/);
+  } finally {
+    cfg.pin = null;
+    mode = "lan";
+  }
+});
+
+test("PIN page: the remember box (and the hand-off to the app) only where the Pro app may frame it", async () => {
+  const dev = await pairPhone();
+  cfg.pin = hashPin("482913");
+  mode = "tunnel";
+  try {
+    const https = { "cf-visitor": '{"scheme":"https"}', "cf-connecting-ip": "203.0.113.10" };
+    const framed = await (await go("/__egs/pin?next=%2F", { cookie: dev, headers: https })).text();
+    assert.match(framed, /จำ PIN ไว้ในแอป/);
+    assert.match(framed, /postMessage\(\{egs:"pin"/);
+    assert.match(framed, /"https:\/\/easygaside\.tech"/);
+    const plain = await (await go("/__egs/pin?next=%2F", { cookie: dev })).text();
+    assert.doesNotMatch(plain, /จำ PIN ไว้ในแอป/);
+  } finally {
+    cfg.pin = null;
+    mode = "lan";
+  }
+});
+
+test("handoff: a phone paired on this host hands its record to the Pro app (fragment only)", async () => {
+  const dev = await pairPhone();
+  const plain = await go("/__egs/handoff", { cookie: dev });
+  assert.equal(plain.status, 303);
+  assert.equal(plain.headers.get("location"), `${APP}/app`, "no link name yet: just the app");
+  cfg.relayId = "relay123";
+  cfg.relayName = "kkd-easygas";
+  try {
+    const r = await go("/__egs/handoff", { cookie: dev });
+    const loc = r.headers.get("location") ?? "";
+    assert.ok(loc.startsWith(`${APP}/app#import=`));
+    const rec = JSON.parse(Buffer.from(loc.split("#import=")[1], "base64url").toString("utf8"));
+    assert.deepEqual(rec, { id: "relay123", name: "kkd-easygas", token: dev.slice("egs_dev=".length), vapid: "VAPID_PUBLIC" });
+    assert.equal((await go("/__egs/handoff")).status, 403, "never without the device cookie");
+  } finally {
+    cfg.relayId = null;
+    cfg.relayName = null;
+  }
 });

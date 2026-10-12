@@ -42,6 +42,7 @@ p{margin:0 0 22px;color:var(--ink2);font-size:15px}
 button{margin-top:18px;width:100%;padding:14px;border:0;border-radius:14px;background:var(--ink);color:var(--paper);font:inherit;font-weight:600;font-size:17px;cursor:pointer}
 button:disabled{opacity:.5}
 .err{color:var(--bad);font-weight:600;font-size:14px;margin:12px 2px 0}
+.keep{display:flex;align-items:center;gap:10px;margin:16px 2px 0;font-size:14px;color:var(--ink2)}.keep input{width:20px;height:20px;accent-color:var(--green)}.keep[hidden]{display:none}
 .fine{font-size:13px;color:var(--faint);margin:22px 2px 0}
 .spin{width:28px;height:28px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--green);animation:r .8s linear infinite;margin:0 0 18px}
 @keyframes r{to{transform:rotate(360deg)}}@media (prefers-reduced-motion:reduce){.spin{animation:none}}
@@ -53,7 +54,8 @@ document.querySelectorAll(".code").forEach(function(box){
   var inp=box.querySelector("input"),mask=box.hasAttribute("data-mask"),cells=[];
   for(var i=0;i<6;i++){var c=document.createElement("span");c.className="cell";c.setAttribute("aria-hidden","true");box.appendChild(c);cells.push(c)}
   function draw(){var v=inp.value;cells.forEach(function(c,i){c.innerHTML="";if(v[i]){if(mask){var d=document.createElement("span");d.className="dotc";c.appendChild(d)}else c.textContent=v[i]}c.classList.toggle("at",i===Math.min(v.length,5))})}
-  inp.addEventListener("input",function(){var v=inp.value.replace(/\\D/g,"").slice(0,6);if(v!==inp.value)inp.value=v;box.classList.remove("bad");draw();if(v.length===6){var b=inp.form.querySelector("button");b.disabled=true;inp.form.submit()}});
+  inp.addEventListener("input",function(){var v=inp.value.replace(/\\D/g,"").slice(0,6);if(v!==inp.value)inp.value=v;box.classList.remove("bad");draw();if(v.length===6){var b=inp.form.querySelector("button");b.disabled=true;if(window.egsBeforeSubmit)egsBeforeSubmit(v);inp.form.submit()}});
+  inp.form.addEventListener("submit",function(){if(window.egsBeforeSubmit)egsBeforeSubmit(inp.value)});
   inp.addEventListener("focus",function(){box.classList.add("focus")});inp.addEventListener("blur",function(){box.classList.remove("focus")});
   box.addEventListener("click",function(){inp.focus()});draw();
 });`;
@@ -85,13 +87,27 @@ ${opts.error ? `<p class="err">${esc(opts.error)}</p>` : ""}
   return page("จับคู่", body, opts.auto && opts.code && !opts.error ? `document.forms[0].submit()` : "");
 }
 
-export function pinPage(opts: { next: string; error?: string }): string {
+/**
+ * `appOrigins` (Pro, https only): inside the Pro app's frame, "จำ PIN ไว้ในแอปนี้" hands the typed PIN to the app
+ * (postMessage to those origins only); the app sends it with its next resume, so the PIN is asked again only when
+ * it no longer matches. Unticked = the app forgets it.
+ */
+export function pinPage(opts: { next: string; error?: string; appOrigins?: readonly string[] }): string {
+  const origins = opts.appOrigins ?? [];
+  const remember = origins.length
+    ? `<label class="keep" id="keep" hidden><input type="checkbox" id="keepbox" checked> จำ PIN ไว้ในแอป EasyGAS บนมือถือนี้</label>`
+    : "";
+  const script = origins.length
+    ? `(function(){if(window.top===window)return;var k=document.getElementById("keep"),b=document.getElementById("keepbox"),O=${JSON.stringify(origins).replace(/</g, "\\u003c")};k.hidden=false;
+window.egsBeforeSubmit=function(v){O.forEach(function(o){try{parent.postMessage({egs:"pin",pin:b.checked?v:""},o)}catch(e){}})}})();`
+    : "";
   return page(
     "ใส่ PIN",
     `${LOCK}<h1>ใส่ PIN</h1><p>PIN 6 หลักที่ตั้งไว้บนคอม <span class="nw">เพื่อเปิด EasyGAS ในมือถือนี้</span></p>
 ${codeForm({ action: "/__egs/pin", name: "pin", next: opts.next, mask: true, label: "PIN 6 หลัก", button: "ปลดล็อก", bad: !!opts.error })}
-${opts.error ? `<p class="err">${esc(opts.error)}</p>` : ""}
+${opts.error ? `<p class="err">${esc(opts.error)}</p>` : ""}${remember}
 <p class="fine">ลืม PIN? <span class="nw">ตั้งใหม่ได้บนคอมที่</span> <span class="nw">ตั้งค่า → ใช้จากมือถือ</span></p>`,
+    script,
   );
 }
 
@@ -105,12 +121,17 @@ export function lockedPage(minutes: number): string {
 /**
  * Pro: the Pro app (easygaside.tech/app or /r/<name>) sends the phone here with its device token after `#`;
  * trade it for a cookie on this host, then go to `next` (a path on this host, already checked by safeNext).
+ * After the token, `!<pin>` = the PIN the app remembers (pinPage): a right one skips the PIN page.
+ * `?app=1` = sent from the INSTALLED app: remembered in this host's localStorage so AppNudge stays away.
+ * In the Pro app's frame it says "ready" to the app, then checks the cookie stuck (/__egs/ping); a browser that
+ * refuses it there gets "need-top" and the app opens this host as a page of its own instead.
  */
 export function resumePage(next: string): string {
-  const script = `(function(){var t=location.hash.slice(1),next=${JSON.stringify(next).replace(/</g, "\\u003c")};history.replaceState(null,"",location.pathname);
-var m=document.getElementById("m");function stop(x){m.textContent=x;document.getElementById("s").style.display="none"}if(!t){stop("ลิงก์ไม่ครบ เปิดจากแอป EasyGAS ในมือถืออีกครั้ง");return}
-fetch("/__egs/resume",{method:"POST",headers:{"content-type":"application/x-www-form-urlencoded"},body:"t="+encodeURIComponent(t),credentials:"same-origin"})
-.then(function(r){if(r.ok)location.replace(next);else stop(r.status===429?"ลองหลายครั้งเกินไป รอสักครู่":"เครื่องนี้ถูกถอนการจับคู่แล้ว จับคู่ใหม่จากหน้า ตั้งค่า บนคอม")})
+  const script = `(function(){var h=location.hash.slice(1),bang=h.indexOf("!"),t=bang<0?h:h.slice(0,bang),pn=bang<0?"":h.slice(bang+1),next=${JSON.stringify(next).replace(/</g, "\\u003c")};try{if(/[?&]app=1(&|$)/.test(location.search))localStorage.setItem("egs:from-app","1")}catch(e){}history.replaceState(null,"",location.pathname);
+var m=document.getElementById("m"),framed=window.top!==window;function tell(x){if(framed)try{parent.postMessage({egs:x},"*")}catch(e){}}tell("ready");function stop(x){m.textContent=x;document.getElementById("s").style.display="none"}if(!t){stop("ลิงก์ไม่ครบ เปิดจากแอป EasyGAS ในมือถืออีกครั้ง");return}
+function go(){if(!framed)return location.replace(next);fetch("/__egs/ping",{credentials:"same-origin"}).then(function(r){if(r.status===204)location.replace(next);else tell("need-top")}).catch(function(){tell("need-top")})}
+fetch("/__egs/resume",{method:"POST",headers:{"content-type":"application/x-www-form-urlencoded"},body:"t="+encodeURIComponent(t)+(pn?"&p="+encodeURIComponent(pn):""),credentials:"same-origin"})
+.then(function(r){if(r.ok)go();else stop(r.status===429?"ลองหลายครั้งเกินไป รอสักครู่":"เครื่องนี้ถูกถอนการจับคู่แล้ว จับคู่ใหม่จากหน้า ตั้งค่า บนคอม")})
 .catch(function(){stop("เชื่อมต่อไม่ได้ ลองอีกครั้ง")})})();`;
   return page("กำลังเชื่อม", `<div class="spin" id="s"></div><h1>กำลังเชื่อมกับคอม</h1><p id="m">แป๊บเดียว</p>`, script);
 }

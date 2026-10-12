@@ -80,7 +80,9 @@ test("cookies: parse, strip ours, serialize with the safe flags", () => {
   assert.equal(stripCookies("a=1; egs_dev=x.y; egs_pin=s; b=2", ["egs_dev", "egs_pin"]), "a=1; b=2");
   assert.equal(stripCookies("egs_dev=x", ["egs_dev"]), undefined);
   const c = serializeCookie("egs_dev", "id.tok", { maxAgeS: 60, secure: true });
-  assert.match(c, /^egs_dev=id\.tok; Path=\/; Max-Age=60; HttpOnly; SameSite=Lax; Secure$/);
+  assert.match(c, /^egs_dev=id\.tok; Path=\/; Max-Age=60; HttpOnly; SameSite=None; Secure; Partitioned$/);
+  // plain http (same Wi-Fi) is never framed: Lax, no Secure
+  assert.match(serializeCookie("x", "1", { maxAgeS: 1, secure: false }), /SameSite=Lax$/);
   assert.doesNotMatch(serializeCookie("x", "1", { maxAgeS: 1, secure: false }), /Secure/);
 });
 

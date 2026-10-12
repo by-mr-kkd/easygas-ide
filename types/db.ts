@@ -70,10 +70,11 @@ export interface EgsProject {
   origin?: "created" | "imported" | "cloned" | null;
   /** "cloned" = made from an EasyGAS share link (lib/share): where it came from, for the share dialog's
    *  "ต่อยอดจาก" and the sidebar label. */
-  cloned_from?: { slug: string; url: string; title: string; author: string; version: number; cloned_at: string } | null;
+  /** `license` = the terms the sharer set (lib/share/license.ts); absent on clones made before licenses */
+  cloned_from?: { slug: string; url: string; title: string; author: string; version: number; cloned_at: string; license?: "mit" | "egs" | "personal" } | null;
   /** This project is published as an EasyGAS share link (lib/share). The token proves ownership to the
    *  website (new version, take down) and never leaves this computer. */
-  share?: { slug: string; url: string; token: string; title: string; version: number; shared_at: string; updated_at: string } | null;
+  share?: { slug: string; url: string; token: string; title: string; version: number; shared_at: string; updated_at: string; license?: "mit" | "egs" | "personal" } | null;
   /** Imported projects: what Google held at the last sync (import, pull, or our own push). */
   remote?: { hash: string; synced_at: string; title: string; /** local files last pushed */ pushed?: string } | null;
   created_at: string;

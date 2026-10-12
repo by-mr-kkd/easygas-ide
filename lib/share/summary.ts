@@ -3,6 +3,7 @@
  * the home screen: no sources, one line of description. Pure: parses another server's answer field by
  * field (lib/share/payload.ts does the same for one share).
  */
+import { licenseOf, type ShareLicense } from "./license.ts";
 import { ShareRefusal } from "./payload.ts";
 
 export type ShareSummary = {
@@ -14,6 +15,7 @@ export type ShareSummary = {
   services: string[];
   /** its front page is on GitHub Pages: only Pro can clone it (the website checks at clone time) */
   proOnly: boolean;
+  license: ShareLicense;
   cloneCount: number;
   url: string;
   createdAt: string;
@@ -39,6 +41,7 @@ export function parseShareSummaries(raw: unknown): ShareSummary[] {
       fileCount: Math.max(0, Number(s.fileCount) || 0),
       services: Array.isArray(s.services) ? s.services.filter((x): x is string => typeof x === "string").slice(0, 12) : [],
       proOnly: s.proOnly === true || s.hosting === "github",
+      license: licenseOf(s.license),
       cloneCount: Math.max(0, Number(s.cloneCount) || 0),
       url: /^https:\/\/[a-z0-9.-]+\/s\/[a-z0-9]{6,16}$/.test(str(s.url, 200)) ? str(s.url, 200) : "",
       createdAt: str(s.createdAt, 40),

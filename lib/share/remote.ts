@@ -2,6 +2,7 @@
  * The website's share API, server-only (the app's own server calls it; a phone goes through the app, never
  * to the website directly). easygaside.tech/api/share — see EasyGAS-Site/app/api/share.
  */
+import type { ShareLicense } from "./license";
 import { deviceIdentity } from "@/lib/premium/device";
 import { readPremium } from "@/lib/premium/store";
 import { parseSharePublic, ShareRefusal, type SharePublic } from "./payload";
@@ -91,15 +92,19 @@ export async function listSharesRemote(order: ShareOrder = "new", limit = 60): P
 export type Created = { slug: string; url: string; token: string; warnings: unknown[] };
 
 /** Publish: a Pro key + this machine's registration gets the PRO badge; without, a guest share. */
-export async function createShareRemote(input: { title: string; description: string; name: string; files: ShareFile[]; parent: string | null; hosting: "gas" | "github" }): Promise<Created> {
+export async function createShareRemote(
+  input: { title: string; description: string; name: string; files: ShareFile[]; parent: string | null; hosting: "gas" | "github"; license: ShareLicense },
+  authorKey: string,
+): Promise<Created> {
   const [{ key }, device] = await Promise.all([readPremium(), deviceIdentity()]);
   const pro = key && device ? { key, deviceHash: device.hash } : {};
-  const r = (await call("/api/share", { method: "POST", body: { ...input, parent: input.parent ?? undefined, ...pro }, timeoutMs: 30_000 })) as Record<string, unknown>;
+  // the author key (lib/share/author.ts) names the sharer; `name` is only for an older website
+  const r = (await call("/api/share", { method: "POST", body: { ...input, parent: input.parent ?? undefined, ...pro }, headers: { "x-egs-author": authorKey }, timeoutMs: 30_000 })) as Record<string, unknown>;
   if (typeof r.slug !== "string" || typeof r.token !== "string" || typeof r.url !== "string") throw new ShareApiError("เว็บไซต์ตอบกลับไม่ครบ ลองใหม่อีกครั้ง");
   return { slug: r.slug, url: r.url, token: r.token, warnings: Array.isArray(r.warnings) ? r.warnings : [] };
 }
 
-export async function postVersionRemote(slug: string, token: string, input: { title?: string; description?: string; files: ShareFile[]; hosting: "gas" | "github" }): Promise<{ version: number }> {
+export async function postVersionRemote(slug: string, token: string, input: { title?: string; description?: string; files: ShareFile[]; hosting: "gas" | "github"; license?: ShareLicense }): Promise<{ version: number }> {
   const r = (await call(`/api/share/${slug}`, { method: "POST", body: { action: "version", token, ...input }, timeoutMs: 30_000 })) as Record<string, unknown>;
   return { version: Math.max(1, Number(r.version) || 1) };
 }

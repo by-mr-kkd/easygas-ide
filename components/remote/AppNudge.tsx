@@ -5,7 +5,9 @@ import Image from "next/image";
 import { XMarkIcon } from "@heroicons/react/24/outline";
 
 const CLOSED_KEY = "egs:push-nudge-closed";
-const PRO_APP = "https://easygaside.tech/app";
+const FROM_APP_KEY = "egs:from-app";
+/** the gateway hands this phone's pairing to the Pro app, then lands there (lib/remote/gateway.ts handoff) */
+const PRO_APP = "/__egs/handoff";
 
 /**
  * Pro, on a paired phone without notifications (lib/remote/nudge.ts decides): install the EasyGAS app from
@@ -17,7 +19,8 @@ export function AppNudge({ strip = false }: { strip?: boolean }) {
   const [closed, setClosed] = useState(true);
   useEffect(() => {
     try {
-      setClosed(localStorage.getItem(CLOSED_KEY) === "1");
+      // opened from the installed app (resumePage remembers ?app=1): it is installed already
+      setClosed(localStorage.getItem(CLOSED_KEY) === "1" || localStorage.getItem(FROM_APP_KEY) === "1");
     } catch {
       setClosed(false);
     }

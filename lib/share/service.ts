@@ -7,6 +7,8 @@
  *  clone:  the website's copy becomes a new local project (origin "cloned") with a first version snapshot,
  *          so the untouched original is one click away in the history.
  */
+import { licenseOf, type ShareLicense } from "./license";
+import { ensureAuthor } from "./author";
 import { randomUUID } from "node:crypto";
 import { getFiles, writeFile } from "@/lib/files";
 import { createProject, getProject, listProjects, updateProject } from "@/lib/projects";
@@ -33,7 +35,7 @@ export async function scanProject(projectId: string): Promise<ScanResult> {
   return { ...r, fileCount: files.length, bytes: files.reduce((n, f) => n + Buffer.byteLength(f.source, "utf8"), 0) };
 }
 
-export type ShareInput = { title: string; description: string; name: string; parent: string | null };
+export type ShareInput = { title: string; description: string; parent: string | null; license?: string };
 
 /** Publish the project (a share that exists already gets a new version instead). */
 export async function shareProject(projectId: string, input: ShareInput): Promise<NonNullable<EgsProject["share"]>> {
@@ -41,9 +43,8 @@ export async function shareProject(projectId: string, input: ShareInput): Promis
   if (!project) throw new ShareRefusal("ไม่พบโปรเจกต์");
   const title = clean(input.title, SHARE_LIMITS.title[1]) || project.name.slice(0, SHARE_LIMITS.title[1]);
   const description = clean(input.description, SHARE_LIMITS.description);
-  const name = clean(input.name, SHARE_LIMITS.name[1]).replace(/\s+/g, " ");
+  const license = licenseOf(input.license);
   if (title.length < SHARE_LIMITS.title[0]) throw new ShareRefusal("ตั้งชื่อระบบก่อน อย่างน้อย 3 ตัวอักษร");
-  if (!name) throw new ShareRefusal("ใส่ชื่อที่จะแสดงบนลิงก์ก่อน");
   const files = toShareFiles(await getFiles(projectId));
   const { blocked } = scanShare(files);
   if (blocked.length) {
@@ -54,15 +55,17 @@ export async function shareProject(projectId: string, input: ShareInput): Promis
   // a front page on GitHub Pages is Pro: the website tags the share and lets only Pro clone it
   const hosting = project.hosting === "github" ? "github" : "gas";
   if (project.share?.slug && project.share.token) {
-    const { version } = await postVersionRemote(project.share.slug, project.share.token, { title, description, files, hosting });
-    const share = { ...project.share, title, version, updated_at: new Date().toISOString() };
+    const { version } = await postVersionRemote(project.share.slug, project.share.token, { title, description, files, hosting, license });
+    const share = { ...project.share, title, version, license, updated_at: new Date().toISOString() };
     await updateProject(projectId, { share });
     return share;
   }
   const parent = input.parent ? parseShareLink(input.parent) : (project.cloned_from?.slug ?? null);
-  const r = await createShareRemote({ title, description, name, files, parent, hosting });
+  // the sharer = the Google account signed in here (lib/share/author.ts); its name, not a typed one
+  const author = await ensureAuthor();
+  const r = await createShareRemote({ title, description, name: author.author.display, files, parent, hosting, license }, author.key);
   const now = new Date().toISOString();
-  const share = { slug: r.slug, url: r.url, token: r.token, title, version: 1, shared_at: now, updated_at: now };
+  const share = { slug: r.slug, url: r.url, token: r.token, title, version: 1, license, shared_at: now, updated_at: now };
   await updateProject(projectId, { share });
   return share;
 }
@@ -76,11 +79,11 @@ export async function unshareProject(projectId: string): Promise<void> {
 }
 
 /** The link only (never the token) plus what the dialog needs to show. */
-export async function shareState(projectId: string): Promise<{ share: { slug: string; url: string; title: string; version: number; updated_at: string } | null; clonedFrom: EgsProject["cloned_from"] | null; name: string }> {
+export async function shareState(projectId: string): Promise<{ share: { slug: string; url: string; title: string; version: number; updated_at: string; license: ShareLicense } | null; clonedFrom: EgsProject["cloned_from"] | null; name: string }> {
   const project = await getProject(projectId);
   if (!project) return { share: null, clonedFrom: null, name: "" };
   const s = project.share;
-  return { share: s ? { slug: s.slug, url: s.url, title: s.title, version: s.version, updated_at: s.updated_at } : null, clonedFrom: project.cloned_from ?? null, name: project.name };
+  return { share: s ? { slug: s.slug, url: s.url, title: s.title, version: s.version, updated_at: s.updated_at, license: licenseOf(s.license) } : null, clonedFrom: project.cloned_from ?? null, name: project.name };
 }
 
 /** What a pasted link points at; the slug is resolved locally, the details come from the website. */
@@ -104,7 +107,7 @@ export async function cloneShare(link: string): Promise<{ projectId: string; tit
   await updateProject(projectId, {
     ...(github ? { hosting: "github" as const } : {}),
     origin: "cloned",
-    cloned_from: { slug: share.slug, url: share.url || `${siteOrigin()}/s/${share.slug}`, title: share.title, author: share.author.name, version: share.version, cloned_at: new Date().toISOString() },
+    cloned_from: { slug: share.slug, url: share.url || `${siteOrigin()}/s/${share.slug}`, title: share.title, author: share.author.name, version: share.version, cloned_at: new Date().toISOString(), license: share.license },
   });
   await snapshotProject(projectId, "import", { label: `ต้นฉบับจากลิงก์แชร์ (${share.author.name})` });
   void countCloneRemote(share.slug);

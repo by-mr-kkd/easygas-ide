@@ -351,6 +351,32 @@ export interface CriticInfo {
 }
 
 /** What the critic is currently wired to — for availability checks at call sites. */
+/**
+ * One plain-text answer from the API AI the critic would use (same choice order), for small writing jobs such as
+ * the share dialog's "ให้ AI สรุป". Throws when no API AI is set up.
+ */
+export async function askApiText(project: EgsProject, system: string, user: string, maxTokens = 1200): Promise<string> {
+  const c = await resolveCritic(project);
+  if (!c) throw new Error("critic_not_configured");
+  if (c.family === "anthropic") {
+    const msg = await new Anthropic({ apiKey: c.apiKey }).messages.create({ model: c.model, max_tokens: maxTokens, system, messages: [{ role: "user", content: user }] });
+    return msg.content
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .map((b) => b.text)
+      .join("");
+  }
+  const reasoning = /v4-pro|reasoner|glm-5/i.test(c.model);
+  const res = await new OpenAI({ apiKey: c.apiKey, baseURL: c.baseURL }).chat.completions.create({
+    model: c.model,
+    max_tokens: reasoning ? Math.max(6000, maxTokens) : maxTokens,
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
+  });
+  return res.choices[0]?.message?.content?.trim() ?? "";
+}
+
 export async function getCriticInfo(project?: EgsProject | null): Promise<CriticInfo> {
   const cfg = await resolveCritic(project);
   return { provider: cfg?.provider ?? null, model: cfg?.model ?? "", configured: cfg !== null };

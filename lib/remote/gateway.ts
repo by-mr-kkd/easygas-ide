@@ -75,11 +75,18 @@ export interface GatewayContext {
 const HOP_BY_HOP = ["connection", "keep-alive", "proxy-connection", "proxy-authenticate", "proxy-authorization", "te", "trailer", "transfer-encoding", "upgrade"];
 const DROP_PREFIX = /^(x-forwarded-|cf-|x-real-ip$|forwarded$|cdn-loop$|true-client-ip$|x-egs-)/i;
 
-function send(res: http.ServerResponse, status: number, html: string, headers: Record<string, string | string[]> = {}): void {
+/** `frameAncestors` set = the page may show inside the Pro app's frame (see `framing` in createGateway). */
+function send(
+  res: http.ServerResponse,
+  status: number,
+  html: string,
+  headers: Record<string, string | string[]> = {},
+  frameAncestors?: string,
+): void {
   res.writeHead(status, {
     "content-type": "text/html; charset=utf-8",
     "cache-control": "no-store",
-    "x-frame-options": "DENY",
+    ...(frameAncestors ? { "content-security-policy": `frame-ancestors ${frameAncestors}` } : { "x-frame-options": "DENY" }),
     "referrer-policy": "no-referrer",
     ...headers,
   });
@@ -127,6 +134,16 @@ export function createGateway(ctx: GatewayContext): http.Server {
     return sock ?? "unknown";
   };
   const secureOf = (req: http.IncomingMessage) => ctx.mode() === "tunnel" && /https/i.test(String(req.headers["cf-visitor"] ?? req.headers["x-forwarded-proto"] ?? ""));
+
+  /**
+   * Pro over https: the Pro app (ctx.appOrigins only) may show this host full-screen in a frame, so an installed
+   * app stays an app instead of handing the phone to a browser tab. Everyone else, and plain http, still gets DENY.
+   */
+  const framing = (req: http.IncomingMessage): string | undefined =>
+    ctx.pro() && secureOf(req) && ctx.appOrigins.length > 0 ? `'self' ${ctx.appOrigins.join(" ")}` : undefined;
+
+  /** where the PIN page may hand a PIN to remember: the Pro app, only when it may frame this host */
+  const pinOrigins = (req: http.IncomingMessage): readonly string[] => (framing(req) ? ctx.appOrigins : []);
 
   const deviceCookie = (req: http.IncomingMessage, id: string, token: string) =>
     serializeCookie(DEVICE_COOKIE, `${id}.${token}`, { maxAgeS: DEVICE_COOKIE_MAX_AGE_S, secure: secureOf(req) });
@@ -278,7 +295,7 @@ export function createGateway(ctx: GatewayContext): http.Server {
   // ------------------------------------------------------------ /__egs/resume (Pro app → this host)
 
   async function resume(req: http.IncomingMessage, res: http.ServerResponse, url: URL) {
-    if (req.method === "GET") return send(res, 200, resumePage(safeNext(url.searchParams.get("next"))));
+    if (req.method === "GET") return send(res, 200, resumePage(safeNext(url.searchParams.get("next"))), {}, framing(req));
     if (req.method !== "POST") return send(res, 405, errorPage("ไม่รองรับ", "ใช้ไม่ได้"));
     const key = `resume:${clientOf(req)}`;
     if (lockedMinutes(key)) return send(res, 429, "", { "content-type": "text/plain" });
@@ -290,7 +307,21 @@ export function createGateway(ctx: GatewayContext): http.Server {
     }
     lockout.clear(key);
     const [id, token] = [device.id, (form.get("t") ?? "").slice(device.id.length + 1)];
-    res.writeHead(204, { "set-cookie": deviceCookie(req, id, token), "cache-control": "no-store" });
+    const cookies = [deviceCookie(req, id, token)];
+    // the Pro app may remember the PIN (the user ticked it on the PIN page): a right one opens the session at
+    // once; a wrong one (the PIN was changed) counts like any wrong PIN and the PIN page asks again
+    const pinHash = ctx.config().pin;
+    const pinTry = form.get("p") ?? "";
+    if (pinHash && pinTry) {
+      const keys = [`pin:${device.id}`, `pin-ip:${clientOf(req)}`];
+      if (!lockedMinutes(...keys)) {
+        if (verifyPin(pinTry, pinHash)) {
+          keys.forEach((k) => lockout.clear(k));
+          cookies.push(startSession(req, device));
+        } else keys.forEach((k) => lockout.fail(k, now()));
+      }
+    }
+    res.writeHead(204, { "set-cookie": cookies, "cache-control": "no-store" });
     res.end();
   }
 
@@ -303,8 +334,8 @@ export function createGateway(ctx: GatewayContext): http.Server {
     const ip = clientOf(req);
     const keys = [`pin:${device.id}`, `pin-ip:${ip}`];
     const locked = lockedMinutes(...keys);
-    if (locked) return send(res, 429, lockedPage(locked));
-    if (req.method === "GET") return send(res, 200, pinPage({ next }));
+    if (locked) return send(res, 429, lockedPage(locked), {}, framing(req));
+    if (req.method === "GET") return send(res, 200, pinPage({ next, appOrigins: pinOrigins(req) }), {}, framing(req));
     if (req.method !== "POST") return send(res, 405, errorPage("ไม่รองรับ", "ใช้ไม่ได้"));
     const form = await readForm(req);
     const back = safeNext(form.get("next"));
@@ -312,9 +343,9 @@ export function createGateway(ctx: GatewayContext): http.Server {
       const lockedNow = keys.map((k) => lockout.fail(k, now())).some(Boolean);
       if (lockedNow) {
         ctx.notify("ใส่ PIN ผิด 5 ครั้ง", `${device.name} ใส่ PIN ผิดหลายครั้ง ล็อกไว้ 15 นาที ถ้าไม่ใช่คุณ ถอนเครื่องนี้ที่ ตั้งค่า → ใช้จากมือถือ`);
-        return send(res, 429, lockedPage(Math.ceil(lockout.lockedFor(keys[0], now()) / 60_000) || 15));
+        return send(res, 429, lockedPage(Math.ceil(lockout.lockedFor(keys[0], now()) / 60_000) || 15), {}, framing(req));
       }
-      return send(res, 401, pinPage({ next: back, error: "PIN ไม่ถูกต้อง" }));
+      return send(res, 401, pinPage({ next: back, error: "PIN ไม่ถูกต้อง", appOrigins: pinOrigins(req) }), {}, framing(req));
     }
     keys.forEach((k) => lockout.clear(k));
     redirect(res, back, { "set-cookie": startSession(req, device) });
@@ -367,6 +398,16 @@ export function createGateway(ctx: GatewayContext): http.Server {
         for (const o of [`http://${upstream}`, `http://localhost:${ctx.upstreamPort}`]) {
           const rest = loc.slice(o.length);
           if (loc.startsWith(o) && (rest === "" || /^[/?#]/.test(rest))) out.location = rest || "/";
+        }
+      }
+      const frame = framing(req);
+      if (frame) {
+        // the app's own headers forbid every frame; through the gateway the Pro app may hold it
+        delete out["x-frame-options"];
+        const csp = out["content-security-policy"];
+        if (csp !== undefined) {
+          const fix = (v: string) => v.replace(/frame-ancestors[^;]*/i, `frame-ancestors ${frame}`);
+          (out as Record<string, string | string[]>)["content-security-policy"] = Array.isArray(csp) ? csp.map(fix) : fix(String(csp));
         }
       }
       if (extraCookie) out["set-cookie"] = [...(Array.isArray(out["set-cookie"]) ? out["set-cookie"] : out["set-cookie"] ? [String(out["set-cookie"])] : []), extraCookie];
@@ -428,13 +469,18 @@ export function createGateway(ctx: GatewayContext): http.Server {
     const cookies = parseCookies(req.headers.cookie);
     const device = deviceFromCookie(cookies[DEVICE_COOKIE], ctx.config().devices);
     if (!device) {
-      if (wantsPage(req)) return send(res, 403, pairPage({}));
+      if (wantsPage(req)) return send(res, 403, pairPage({}), {}, framing(req));
       res.writeHead(403, { "content-type": "application/json", "cache-control": "no-store" });
       return res.end(JSON.stringify({ error: "not_paired" }));
     }
     ctx.touchDevice(device.id);
     if (url.pathname === "/__egs/pin") return pin(req, res, url, device);
-    if (url.pathname.startsWith("/__egs/")) return send(res, 404, errorPage("ไม่พบหน้า", "ไม่มีหน้านี้"));
+    // the resume page in a frame asks whether its cookie stuck (a browser may refuse it there)
+    if (url.pathname === "/__egs/ping") {
+      res.writeHead(204, { "cache-control": "no-store" });
+      return res.end();
+    }
+    if (url.pathname.startsWith("/__egs/") && url.pathname !== "/__egs/handoff") return send(res, 404, errorPage("ไม่พบหน้า", "ไม่มีหน้านี้"));
 
     let extraCookie: string | null = null;
     if (!sessionOf(req, device.id)) {
@@ -445,7 +491,24 @@ export function createGateway(ctx: GatewayContext): http.Server {
       }
       extraCookie = startSession(req, device);
     }
+    if (url.pathname === "/__egs/handoff") return handoff(req, res, cookies[DEVICE_COOKIE], extraCookie);
     proxy(req, res, device, extraCookie);
+  }
+
+  // ------------------------------------------------------------ /__egs/handoff (this host → Pro app)
+
+  /**
+   * "ติดตั้งแอป" from a phone that paired HERE (the computer's QR / code, not the Pro app): the Pro app has never
+   * heard of this computer, so installing it would ask to pair again. Hand it this phone's record in the URL
+   * fragment (never sent to a server; the app files it and wipes the address). Behind the device cookie and
+   * the PIN session like every page; no Pro / no link name = just the app.
+   */
+  async function handoff(req: http.IncomingMessage, res: http.ServerResponse, token: string | undefined, extraCookie: string | null) {
+    const cfg = ctx.config();
+    const headers: Record<string, string> = extraCookie ? { "set-cookie": extraCookie } : {};
+    if (req.method !== "GET" || !ctx.pro() || !cfg.relayId || !token) return redirect(res, `${PRO_APP_ORIGIN}/app`, headers);
+    const rec = { id: cfg.relayId, name: cfg.relayName, token, vapid: await ctx.vapidKey().catch(() => null) };
+    redirect(res, `${PRO_APP_ORIGIN}/app#import=${Buffer.from(JSON.stringify(rec), "utf8").toString("base64url")}`, headers);
   }
 
   const server = http.createServer((req, res) => {

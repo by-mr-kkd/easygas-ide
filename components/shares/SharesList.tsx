@@ -1,5 +1,6 @@
 "use client";
 
+import { licenseInfo } from "@/lib/share/license";
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowTopRightOnSquareIcon, DocumentDuplicateIcon, MagnifyingGlassIcon, ShareIcon } from "@heroicons/react/24/outline";
@@ -52,9 +53,9 @@ export function SharesList({ shares, stale }: { shares: ShareCardData[]; stale: 
       {shown.length === 0 ? (
         <p className="hint py-8 text-center">{shares.length === 0 ? "ยังไม่มีระบบที่แชร์" : `ไม่มีระบบที่ตรงกับ “${query.trim()}”`}</p>
       ) : (
-        <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {shown.map((s) => (
-            <li key={s.slug} className="card flex flex-col gap-2.5 p-4">
+            <li key={s.slug} className="card flex min-w-0 flex-col gap-2.5 p-4">
               <div className="flex items-start gap-2.5">
                 <span className={`icon-chip mt-0.5 ${s.proOnly ? "tone-warn" : "tone-accent"}`}>
                   <ShareIcon className="h-4 w-4" aria-hidden />
@@ -68,8 +69,12 @@ export function SharesList({ shares, stale }: { shares: ShareCardData[]; stale: 
                 {s.proOnly && <ProTag className="shrink-0" />}
               </div>
               {s.description && <p className="line-clamp-2 text-sm text-muted">{s.description}</p>}
-              {s.services.length > 0 && (
+              {/* the license always; the services when the code uses any */}
+              {(
                 <div className="flex flex-wrap gap-1">
+                  <span className="badge" title={licenseInfo(s.license).text}>
+                    {licenseInfo(s.license).short}
+                  </span>
                   {s.services.map((x) => (
                     <span key={x} className="badge">
                       {x}

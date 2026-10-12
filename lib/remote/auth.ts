@@ -179,8 +179,10 @@ export function serializeCookie(name: string, value: string, opts: { maxAgeS: nu
     "Path=/",
     `Max-Age=${opts.maxAgeS}`,
     "HttpOnly",
-    "SameSite=Lax",
-    ...(opts.secure ? ["Secure"] : []),
+    // https (the tunnel): the Pro app shows this host in a full-screen frame (easygaside.tech/app), where a Lax
+    // cookie is never sent. None + Partitioned (CHIPS) = a cookie of its own per top-level site, which browsers
+    // that block third-party cookies still keep. Cross-site writes stay refused by the gateway's Origin check.
+    ...(opts.secure ? ["SameSite=None", "Secure", "Partitioned"] : ["SameSite=Lax"]),
   ].join("; ");
 }
 

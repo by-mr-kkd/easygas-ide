@@ -3,6 +3,7 @@
  * round when a share is cloned. Mirrors the website's rules (EasyGAS-Site/lib/shares.ts checkFiles) so the
  * app refuses the same things before uploading, with the reason in Thai.
  */
+import { licenseOf, type ShareLicense } from "./license.ts";
 import type { ShareFile } from "./scan.ts";
 import { kindForExisting } from "../bound.ts";
 
@@ -80,6 +81,8 @@ export type SharePublic = {
   url: string;
   /** where the author's front page lives; a "github" share is Pro (the website refuses its files to Free) */
   hosting: "gas" | "github";
+  /** what the code may be used for (license.ts) */
+  license: ShareLicense;
   createdAt: string;
   updatedAt: string;
 };
@@ -125,6 +128,7 @@ export function parseSharePublic(raw: unknown): SharePublic {
     forks,
     url: /^https:\/\/[a-z0-9.-]+\/s\/[a-z0-9]{6,16}$/.test(str(s.url, 200)) ? str(s.url, 200) : "",
     hosting: s.hosting === "github" ? "github" : "gas",
+    license: licenseOf(s.license),
     createdAt: str(s.createdAt, 40),
     updatedAt: str(s.updatedAt, 40),
   };

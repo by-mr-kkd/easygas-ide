@@ -212,7 +212,16 @@ npm run desktop:build   # Windows installer → dist/desktop/out
   version + SHA-256 (`lib/remote/tunnel.ts`); bumping it = new url + hash + size. Pro only: the fixed link /
   link name (`premium-remote`), the phone app at easygaside.tech/app (EasyGAS-Site lib/remote-app.ts) talking to
   `/__egs/api/*` with a Bearer device token (CORS: easygaside.tech + EASYGAS_SITE_ORIGIN), and Web Push sent by the
-  computer itself (`lib/remote/webpush.ts`, `notifyTurnEnd` in the agent / verify routes). Electron reads
+  computer itself (`lib/remote/webpush.ts`, `notifyTurnEnd` in the agent / verify routes). The installed Pro app shows the computer
+  full screen in an iframe: ONLY over https + Pro, the gateway swaps the app's `frame-ancestors 'none'` / DENY for
+  `'self'` + `appOrigins`, and its cookies are `SameSite=None; Secure; Partitioned` (http keeps Lax + DENY). The framed
+  resume page posts "ready", checks `/__egs/ping`, and posts "need-top" when the cookie did not stick (the app then
+  opens the host as a page). A PIN ticked "จำ PIN" on the framed PIN page goes to the app (postMessage to appOrigins
+  only) and rides after the token (`#<token>!<pin>`, frame only); a wrong one (changed PIN) counts toward the lock-out
+  and the PIN page asks again. `/__egs/handoff` (device cookie + PIN session) hands a phone that paired on this host
+  to the app as `/app#import=<base64url record>` (AppNudge's ติดตั้ง). The IDE's look needs no site change (the frame shows whatever the IDE serves); the
+  CONTRACT does — resume/ping, the "ready"/"need-top" messages, `/__egs/api/*`, the tunnel domain (site `TUNNEL_RE` +
+  `frame-src`) — change it in EasyGAS-Site `lib/remote-app.ts` too. Electron reads
   `<data>/remote-state.json` for the tray / keep-awake / notifications and never writes it.
 - **Share links ("แชร์โปรเจกต์" / "โคลนจากลิงก์", `lib/share/*`):** a project is published to easygaside.tech as
   `/s/<slug>` (EasyGAS-Site `app/api/share`) and anyone clones it into their own IDE. `scan.ts` + `link.ts` are
@@ -223,6 +232,14 @@ npm run desktop:build   # Windows installer → dist/desktop/out
   (electron/main.js `appPathForLink`; `protocols` in electron-builder.yml). A phone may preview and clone: the share
   actions deliberately do not call `assertLocalRequest()`. The vendored files only speak to `EASYGAS_SITE_ORIGIN`
   (default easygaside.tech); folders in `src/` are refused (the website takes flat Apps Script names only).
+  The SHARER is the Google account signed in here (`lib/share/author.ts`, site `lib/authors.ts`): the app refreshes
+  clasp's login once to get a Google ID TOKEN (identity only, opens nothing) and sends only that to the site,
+  never the access token, never stored. The site answers with an author key (`<dataRoot>/share-author.json`,
+  server-side only, forgotten on Google sign-out or when another account signs in). Shares show a masked email
+  until a name is picked in Settings → บัญชี Google (unique, once every 30 days, spread to every share and its
+  thread). The share dialog never asks for a name. It asks for the LICENSE (`lib/share/license.ts`, vendored from
+  the site's `lib/share-license.ts` — change both): egs (default, no resale) / mit / personal; a fork may not be
+  looser than its parent (the site refuses). A paid kind is planned: add it to both files + the site's check.
 - **Pro content lives on the licence server, not here** (`premium-content`, cached in `premium.json`,
   `lib/premium/content.ts`): `camera_rules` (the camera prompt text) and, since 2026-10-09, `pages_runtime` = JSON
   `{v, shim, dispatcher}` — the browser stand-in for `google.script.run` and `EgsRemote.gs`. `lib/pages/run-shim.ts`,

@@ -1,5 +1,6 @@
 "use server";
 
+import { forgetAuthor } from "@/lib/share/author";
 import { assertLocalRequest } from "@/lib/remote/request";
 import { AUTO_UPDATE_KEY } from "@/lib/app-update";
 import { MODEL_ID } from "@/lib/ai-choice";
@@ -84,6 +85,7 @@ export async function googleStatusAction(): Promise<ClaspAccount> {
 export async function googleLogoutAction(): Promise<void> {
   await assertLocalRequest();
   await claspLogout();
+  await forgetAuthor(); // the next account signed in is a different sharer (lib/share/author.ts)
   revalidatePath("/settings");
   revalidatePath("/projects");
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { licenseInfo } from "@/lib/share/license";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -149,6 +150,13 @@ export function CloneFromLink({ initialLink = "" }: { initialLink?: string }) {
           </div>
 
           {s.description && <p className="whitespace-pre-wrap border-b border-line p-4 text-sm leading-relaxed">{s.description}</p>}
+
+          {/* the sharer's terms, before anyone clones (lib/share/license.ts) */}
+          <div className="border-b border-line p-4">
+            <p className="text-xs font-semibold text-muted">เงื่อนไขการใช้โค้ด</p>
+            <p className="mt-1 text-sm font-semibold">{licenseInfo(s.license).label}</p>
+            <p className="hint text-xs">{licenseInfo(s.license).text}</p>
+          </div>
 
           <div className="grid gap-4 p-4 sm:grid-cols-2">
             <div>

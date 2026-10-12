@@ -5,7 +5,8 @@ import { getProject } from "@/lib/projects";
 import { ShareRefusal, type SharePublic } from "@/lib/share/payload";
 import { ShareApiError } from "@/lib/share/remote";
 import { cloneShare, previewShare, projectsClonedFrom, scanProject, shareProject, shareState, unshareProject, type ScanResult, type ShareInput } from "@/lib/share/service";
-import { getAppSetting, setAppSetting } from "@/lib/settings";
+import { describeProject } from "@/lib/share/describe";
+import { ensureAuthor, renameAuthor, storedAuthor, type ShareAuthor } from "@/lib/share/author";
 
 /**
  * Share links (easygaside.tech/s/<slug>): publish a project, look at a pasted link, clone it. A phone (the
@@ -14,8 +15,6 @@ import { getAppSetting, setAppSetting } from "@/lib/settings";
  */
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string; code?: string };
-
-const NAME_KEY = "share_name";
 
 function failFrom(e: unknown): { ok: false; error: string; code?: string } {
   if (e instanceof ShareRefusal) return { ok: false, error: e.message, code: "refused" };
@@ -27,13 +26,45 @@ function failFrom(e: unknown): { ok: false; error: string; code?: string } {
 const PROJECT_ID = /^[a-z0-9-]{8,64}$/;
 
 /** The dialog's opening state: link so far, scan of the current files, the remembered display name. */
-export async function shareDialogAction(projectId: string): Promise<Result<{ state: Awaited<ReturnType<typeof shareState>>; scan: ScanResult | null; scanError: string | null; name: string }>> {
+export async function shareDialogAction(projectId: string): Promise<Result<{ state: Awaited<ReturnType<typeof shareState>>; scan: ScanResult | null; scanError: string | null; author: ShareAuthor | null }>> {
   if (!PROJECT_ID.test(projectId) || !(await getProject(projectId))) return { ok: false, error: "ไม่พบโปรเจกต์" };
-  const [state, name] = await Promise.all([shareState(projectId), getAppSetting(NAME_KEY)]);
+  // the name the share will carry: the one known here (no network), refreshed on publish
+  const [state, author] = await Promise.all([shareState(projectId), storedAuthor()]);
   try {
-    return { ok: true, data: { state, scan: await scanProject(projectId), scanError: null, name: name ?? "" } };
+    return { ok: true, data: { state, scan: await scanProject(projectId), scanError: null, author } };
   } catch (e) {
-    return { ok: true, data: { state, scan: null, scanError: e instanceof ShareRefusal ? e.message : "อ่านไฟล์ไม่สำเร็จ", name: name ?? "" } };
+    return { ok: true, data: { state, scan: null, scanError: e instanceof ShareRefusal ? e.message : "อ่านไฟล์ไม่สำเร็จ", author } };
+  }
+}
+
+/** "ให้ AI สรุป": a short description for the share page, written by the AI picked in the chat (`ai`). */
+export async function describeShareAction(projectId: string, ai: unknown): Promise<Result<string>> {
+  if (!PROJECT_ID.test(projectId)) return { ok: false, error: "ไม่พบโปรเจกต์" };
+  try {
+    return { ok: true, data: await describeProject(projectId, ai) };
+  } catch (e) {
+    if (e instanceof ShareRefusal) return { ok: false, error: e.message };
+    console.error("[share] describe", e);
+    return { ok: false, error: "AI สรุปไม่สำเร็จ ลองใหม่อีกครั้ง หรือพิมพ์เอง" };
+  }
+}
+
+/** Who shares (the Google account signed in here): made / refreshed on the website. */
+export async function shareAuthorAction(): Promise<Result<ShareAuthor>> {
+  try {
+    return { ok: true, data: (await ensureAuthor()).author };
+  } catch (e) {
+    return failFrom(e);
+  }
+}
+
+/** Pick the name shares show (null = the masked email). The website allows it once every 30 days. */
+export async function renameShareAuthorAction(name: string | null): Promise<Result<ShareAuthor>> {
+  try {
+    const clean = typeof name === "string" ? name.trim().slice(0, 60) : "";
+    return { ok: true, data: await renameAuthor(clean || null) };
+  } catch (e) {
+    return failFrom(e);
   }
 }
 
@@ -43,11 +74,9 @@ export async function shareProjectAction(projectId: string, input: ShareInput): 
     const share = await shareProject(projectId, {
       title: String(input?.title ?? ""),
       description: String(input?.description ?? ""),
-      name: String(input?.name ?? ""),
       parent: typeof input?.parent === "string" && input.parent ? input.parent : null,
+      license: typeof input?.license === "string" ? input.license : undefined,
     });
-    const name = String(input?.name ?? "").trim().slice(0, 40);
-    if (name) await setAppSetting(NAME_KEY, name);
     return { ok: true, data: { slug: share.slug, url: share.url, version: share.version } };
   } catch (e) {
     return failFrom(e);

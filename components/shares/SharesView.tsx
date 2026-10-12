@@ -20,9 +20,10 @@ export async function SharesView({ order }: { order: "new" | "clones" }) {
 
   return (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="hint min-w-0 flex-1">โค้ดที่คนอื่นแชร์ไว้บนเว็บบอร์ด กดดูไฟล์และสิทธิ์ที่ขอ แล้วโคลนลงเครื่องได้เลย อันที่ติดป้าย Pro โคลนได้เฉพาะผู้ใช้ EasyGAS Pro</p>
-        <nav aria-label="เรียงลำดับ" className="seg">
+      {/* a phone stacks the line above the sort switch; side by side it would squeeze the line into a column */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="hint min-w-0 sm:flex-1">โค้ดที่คนอื่นแชร์ไว้บนเว็บบอร์ด กดดูไฟล์และสิทธิ์ที่ขอ แล้วโคลนลงเครื่องได้เลย อันที่ติดป้าย Pro โคลนได้เฉพาะผู้ใช้ EasyGAS Pro</p>
+        <nav aria-label="เรียงลำดับ" className="seg self-start sm:self-auto">
           <Link href="/projects?mode=shares" scroll={false} aria-current={order === "new" ? "page" : undefined} className="seg-item">
             <ClockIcon className="h-4 w-4" aria-hidden />
             ใหม่ล่าสุด

@@ -1,9 +1,11 @@
 "use client";
 
+import { DEFAULT_LICENSE, licensesAllowed, SHARE_LICENSES, type ShareLicense } from "@/lib/share/license";
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowTopRightOnSquareIcon, CheckCircleIcon, ClipboardDocumentIcon, ExclamationTriangleIcon, LinkIcon, TrashIcon, XMarkIcon } from "@heroicons/react/24/outline";
-import { shareDialogAction, shareProjectAction, unshareProjectAction } from "@/app/projects/share-actions";
+import { ArrowTopRightOnSquareIcon, CheckCircleIcon, ClipboardDocumentIcon, ExclamationTriangleIcon, LinkIcon, SparklesIcon, TrashIcon, XMarkIcon } from "@heroicons/react/24/outline";
+import { describeShareAction, shareDialogAction, shareProjectAction, unshareProjectAction } from "@/app/projects/share-actions";
+import { useProjectStore } from "@/store/useProjectStore";
 import type { ScanResult } from "@/lib/share/service";
 
 type Loaded = Awaited<ReturnType<typeof shareDialogAction>>;
@@ -57,7 +59,7 @@ function Findings({ scan }: { scan: ScanResult }) {
 
 /**
  * "แชร์โปรเจกต์": publish this project as an EasyGAS link others clone into their own IDE. The dialog scans
- * the files first (credentials refuse, personal values warn), asks for a title, a few words and the name to
+ * the files first (credentials refuse, personal values warn), asks for a title and a few words (the name is the sharer's, Settings) to
  * show, then gives the link. A project shared before gets "อัปเดตเวอร์ชัน" and "ลบลิงก์" instead.
  * Opens from the button, Ctrl+K ("แชร์โปรเจกต์"), or the `egs:share-open` window event.
  */
@@ -67,21 +69,35 @@ export function ShareButton({ projectId, projectName, className = "" }: { projec
   const [loadError, setLoadError] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
+  const [license, setLicense] = useState<ShareLicense>(DEFAULT_LICENSE);
+  const [describing, setDescribing] = useState(false);
+  const [describeError, setDescribeError] = useState("");
+
+  // "ให้ AI สรุป": the AI picked in the chat writes the description; the user edits it before sending
+  async function describe() {
+    if (description.trim() && !window.confirm("แทนที่ข้อความที่พิมพ์ไว้ด้วยคำสรุปจาก AI?")) return;
+    setDescribing(true);
+    setDescribeError("");
+    const r = await describeShareAction(projectId, useProjectStore.getState().aiChoice ?? undefined).catch(() => null);
+    setDescribing(false);
+    if (!r) return setDescribeError("AI สรุปไม่สำเร็จ ลองใหม่อีกครั้ง หรือพิมพ์เอง");
+    if (!r.ok) return setDescribeError(r.error);
+    setDescription(r.data);
+  }
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
 
   const load = useCallback(async () => {
     setLoadError("");
-    setMsg(null);
     const r = await shareDialogAction(projectId).catch(() => null);
     if (!r) return setLoadError("อ่านข้อมูลไม่สำเร็จ ลองใหม่อีกครั้ง");
     if (!r.ok) return setLoadError(r.error);
     setData(r.data);
     setTitle((t) => t || r.data.state.share?.title || projectName);
-    setName((n) => n || r.data.name);
+    // the share's own terms; a clone starts from the original's (it may not go looser, the site checks too)
+    setLicense(r.data.state.share?.license ?? r.data.state.clonedFrom?.license ?? DEFAULT_LICENSE);
   }, [projectId, projectName]);
 
   useEffect(() => {
@@ -90,21 +106,28 @@ export function ShareButton({ projectId, projectName, className = "" }: { projec
     return () => window.removeEventListener("egs:share-open", on);
   }, []);
 
+  // load once per opening: `busy` must not be a dependency here, or pressing สร้างลิงก์แชร์ re-ran the load,
+  // which cleared the dialog and wiped the answer (a refusal looked like the dialog bouncing back)
   useEffect(() => {
     if (!open) return;
     setData(null);
+    setMsg(null); // the answer of the last publish stays until the dialog is opened again
     void load();
+  }, [open, load]);
+
+  useEffect(() => {
+    if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !busy) setOpen(false);
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [open, load, busy]);
+  }, [open, busy]);
 
   async function publish() {
     setBusy(true);
     setMsg(null);
-    const r = await shareProjectAction(projectId, { title, description, name, parent: data?.state.clonedFrom?.slug ?? null }).catch(() => null);
+    const r = await shareProjectAction(projectId, { title, description, license, parent: data?.state.clonedFrom?.slug ?? null }).catch(() => null);
     setBusy(false);
     if (!r) return setMsg({ ok: false, text: "ไม่สำเร็จ ลองใหม่อีกครั้ง" });
     if (!r.ok) return setMsg({ ok: false, text: r.error });
@@ -134,7 +157,7 @@ export function ShareButton({ projectId, projectName, className = "" }: { projec
 
   const share = data?.state.share ?? null;
   const scan = data?.scan ?? null;
-  const canPublish = !!scan && scan.blocked.length === 0 && title.trim().length >= 3 && name.trim().length > 0 && !busy;
+  const canPublish = !!scan && scan.blocked.length === 0 && title.trim().length >= 3 && !busy;
 
   return (
     <>
@@ -196,29 +219,56 @@ export function ShareButton({ projectId, projectName, className = "" }: { projec
                       <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={120} className="field w-full" placeholder="เช่น ระบบจองห้องประชุม + LINE แจ้งเตือน" />
                     </label>
                     <label className="block text-sm">
-                      <span className="mb-1 block font-semibold">เล่าสั้น ๆ</span>
+                      <span className="mb-1 flex items-center justify-between gap-2">
+                        <span className="font-semibold">เล่าสั้น ๆ</span>
+                        <button type="button" onClick={describe} disabled={describing || busy} className="btn btn-soft tone-ai btn-sm" title="ให้ AI ที่เลือกในแชตอ่านโค้ดแล้วเขียนคำอธิบายให้ แก้ต่อได้">
+                          <SparklesIcon className="h-4 w-4" />
+                          {describing ? "กำลังสรุป…" : "ให้ AI สรุป"}
+                        </button>
+                      </span>
                       <textarea
                         value={description}
                         onChange={(e) => setDescription(e.target.value)}
                         maxLength={4000}
                         rows={3}
                         className="field w-full"
-                        placeholder="ทำอะไร ใช้กับงานไหน หลังโคลนต้องตั้งค่าอะไรเอง (เช่น ใส่ token ใน Script Properties)"
+                        placeholder="ทำอะไร ใช้กับงานไหน หลังโคลนต้องตั้งค่าอะไรเอง (เช่น ใส่ token ใน Script Properties) พิมพ์เอง หรือกด ให้ AI สรุป"
                       />
+                      {describeError && <span className="mt-1 block text-xs font-semibold text-danger">{describeError}</span>}
                     </label>
                     {!share && (
-                      <label className="block text-sm">
-                        <span className="mb-1 block font-semibold">ชื่อที่แสดงบนลิงก์</span>
-                        <input value={name} onChange={(e) => setName(e.target.value)} maxLength={40} className="field w-full sm:max-w-xs" placeholder="เช่น ต้นกล้า" />
-                      </label>
+                      // the sharer is the Google account signed in here (lib/share/author.ts): one name everywhere,
+                      // changed only in Settings, never typed per share
+                      <p className="text-sm">
+                        <span className="font-semibold">แชร์ในชื่อ</span>{" "}
+                        {data.author ? <b className="font-semibold text-accent-text">{data.author.display}</b> : <span className="text-muted">อีเมล Google ของคุณแบบปิดบางส่วน</span>}{" "}
+                        <a href={`/settings?s=google&from=${projectId}`} className="link text-xs">
+                          เปลี่ยนในตั้งค่า
+                        </a>
+                      </p>
                     )}
+                    <fieldset className="text-sm">
+                      <legend className="mb-1 font-semibold">เงื่อนไขการใช้โค้ด</legend>
+                      <div className="space-y-1.5">
+                        {SHARE_LICENSES.filter((l) => licensesAllowed(data.state.clonedFrom ? (data.state.clonedFrom.license ?? DEFAULT_LICENSE) : null).includes(l.id)).map((l) => (
+                          <label key={l.id} className={`flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2 ${license === l.id ? "border-accent bg-accent-soft/40" : "border-line"}`}>
+                            <input type="radio" name="share-license" checked={license === l.id} onChange={() => setLicense(l.id)} className="mt-1" />
+                            <span className="min-w-0">
+                              <span className="block font-semibold">{l.label}</span>
+                              <span className="hint block text-xs">{l.text}</span>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                      {data.state.clonedFrom && <p className="hint mt-1 text-xs">ต่อยอดจากระบบของคนอื่น เลือกได้เฉพาะเงื่อนไขเดียวกับต้นฉบับหรือเข้มกว่า</p>}
+                    </fieldset>
                     {!share && data.state.clonedFrom && (
                       <p className="hint">
                         จะระบุว่าต่อยอดจาก <b>{data.state.clonedFrom.title}</b> ของ {data.state.clonedFrom.author}
                       </p>
                     )}
                     <p className="hint">
-                      ทุกคนที่มีลิงก์อ่านโค้ดและโคลนลงเครื่องตัวเองได้ ลิงก์ขึ้นในห้อง แชร์ระบบที่สร้าง เมื่อคุณตั้งกระทู้ · โค้ดที่โคลนไปเป็นของผู้โคลน แก้ได้ ขายต่อไม่ได้
+                      ทุกคนที่มีลิงก์อ่านโค้ดและโคลนลงเครื่องตัวเองได้ ลิงก์ขึ้นในห้อง แชร์ระบบที่สร้าง เมื่อคุณตั้งกระทู้ · คนที่โคลนไปต้องใช้ตามเงื่อนไขที่คุณเลือกข้างบน
                     </p>
                   </>
                 )}

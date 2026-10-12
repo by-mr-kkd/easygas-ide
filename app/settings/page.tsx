@@ -7,6 +7,7 @@ import { autoUpdateEnabled, readUpdateState } from "@/lib/app-update";
 import { EngineForm } from "@/components/settings/EngineForm";
 import { PremiumSection } from "@/components/premium/PremiumSection";
 import { GoogleConnect } from "@/components/settings/GoogleConnect";
+import { ShareAuthorCard } from "@/components/settings/ShareAuthorCard";
 import { RemoteSection } from "@/components/settings/RemoteSection";
 import { SupportSection } from "@/components/settings/SupportSection";
 import { APP_VERSION } from "@/lib/rulebook/store";
@@ -138,6 +139,7 @@ export default async function SettingsPage({
       {section === "google" && (
         <>
           <GoogleConnect loggedIn={status.google.loggedIn} email={status.google.email} />
+          <ShareAuthorCard loggedIn={status.google.loggedIn} />
           <GoogleConnectGuide open={!status.google.loggedIn} />
         </>
       )}
