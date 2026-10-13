@@ -71,7 +71,18 @@ export interface EgsProject {
   /** "cloned" = made from an EasyGAS share link (lib/share): where it came from, for the share dialog's
    *  "ต่อยอดจาก" and the sidebar label. */
   /** `license` = the terms the sharer set (lib/share/license.ts); absent on clones made before licenses */
-  cloned_from?: { slug: string; url: string; title: string; author: string; version: number; cloned_at: string; license?: "mit" | "egs" | "personal" } | null;
+  cloned_from?: {
+    slug: string;
+    url: string;
+    title: string;
+    author: string;
+    /** the share's version this project's code is based on: the one cloned, then each "รับอัปเดต" */
+    version: number;
+    cloned_at: string;
+    license?: "mit" | "egs" | "personal";
+    /** the website was told this clone is in use (POST /published), so it is told once */
+    published_sent?: boolean;
+  } | null;
   /** This project is published as an EasyGAS share link (lib/share). The token proves ownership to the
    *  website (new version, take down) and never leaves this computer. */
   share?: { slug: string; url: string; token: string; title: string; version: number; shared_at: string; updated_at: string; license?: "mit" | "egs" | "personal" } | null;

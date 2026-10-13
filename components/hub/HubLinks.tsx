@@ -1,6 +1,7 @@
 "use client";
 
 /* eslint-disable @next/next/no-img-element -- pictures from the hub-images bucket */
+import { Portal } from "@/components/ui/Portal";
 import { useRef, useState } from "react";
 import {
   ArrowDownIcon,
@@ -173,48 +174,50 @@ export function HubLinks({ hubId, doc, onChange, pro }: { hubId: string; doc: Hu
       ))}
 
       {picker && (
-        <div className="dialog-backdrop" onClick={() => setPicker(null)}>
-          <div role="dialog" aria-modal="true" aria-label="เลือกโปรเจกต์" className="dialog max-w-md p-5" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between gap-2">
-              <h3 className="text-[15px] font-semibold">เพิ่มจากโปรเจกต์ของฉัน</h3>
-              <button type="button" onClick={() => setPicker(null)} className="btn btn-ghost btn-sm btn-icon" aria-label="ปิด">
-                <XMarkIcon className="h-5 w-5" />
-              </button>
+        <Portal>
+          <div className="dialog-backdrop" onClick={() => setPicker(null)}>
+            <div role="dialog" aria-modal="true" aria-label="เลือกโปรเจกต์" className="dialog max-w-md p-5" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-[15px] font-semibold">เพิ่มจากโปรเจกต์ของฉัน</h3>
+                <button type="button" onClick={() => setPicker(null)} className="btn btn-ghost btn-sm btn-icon" aria-label="ปิด">
+                  <XMarkIcon className="h-5 w-5" />
+                </button>
+              </div>
+              <p className="hint mt-1">โปรเจกต์ที่เผยแพร่แล้วในเครื่องนี้ กดเพื่อเพิ่มลงหมวด “{doc.sections.find((x) => x.id === sectionId)?.title || "แรก"}”</p>
+              <ul className="mt-3 flex max-h-[50vh] flex-col gap-1.5 overflow-y-auto">
+                {picker.length === 0 ? (
+                  <li className="hint py-4">ยังไม่มีโปรเจกต์ที่เผยแพร่ (หรือกำลังโหลด…)</li>
+                ) : (
+                  picker.map((p) => {
+                    const already = doc.sections.some((x) => x.items.some((i) => i.url === p.url));
+                    return (
+                      <li key={p.id}>
+                        <button
+                          type="button"
+                          disabled={already}
+                          onClick={() => {
+                            addTo(sectionId, [newItem(p.url, p.name.slice(0, LIMITS.itemTitle), { deployment: p.deployment, icon: "i:computer-desktop" })]);
+                            setPicker(null);
+                          }}
+                          className="row-btn flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left disabled:opacity-50"
+                        >
+                          <span className="icon-chip tone-accent shrink-0">
+                            <CodeBracketIcon className="h-4 w-4" />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-medium">{p.name}</span>
+                            <span className="block truncate font-mono text-[11px] text-muted">{p.url.replace(/^https:\/\//, "")}</span>
+                          </span>
+                          {already && <span className="badge">เพิ่มแล้ว</span>}
+                        </button>
+                      </li>
+                    );
+                  })
+                )}
+              </ul>
             </div>
-            <p className="hint mt-1">โปรเจกต์ที่เผยแพร่แล้วในเครื่องนี้ กดเพื่อเพิ่มลงหมวด “{doc.sections.find((x) => x.id === sectionId)?.title || "แรก"}”</p>
-            <ul className="mt-3 flex max-h-[50vh] flex-col gap-1.5 overflow-y-auto">
-              {picker.length === 0 ? (
-                <li className="hint py-4">ยังไม่มีโปรเจกต์ที่เผยแพร่ (หรือกำลังโหลด…)</li>
-              ) : (
-                picker.map((p) => {
-                  const already = doc.sections.some((x) => x.items.some((i) => i.url === p.url));
-                  return (
-                    <li key={p.id}>
-                      <button
-                        type="button"
-                        disabled={already}
-                        onClick={() => {
-                          addTo(sectionId, [newItem(p.url, p.name.slice(0, LIMITS.itemTitle), { deployment: p.deployment, icon: "i:computer-desktop" })]);
-                          setPicker(null);
-                        }}
-                        className="row-btn flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left disabled:opacity-50"
-                      >
-                        <span className="icon-chip tone-accent shrink-0">
-                          <CodeBracketIcon className="h-4 w-4" />
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-medium">{p.name}</span>
-                          <span className="block truncate font-mono text-[11px] text-muted">{p.url.replace(/^https:\/\//, "")}</span>
-                        </span>
-                        {already && <span className="badge">เพิ่มแล้ว</span>}
-                      </button>
-                    </li>
-                  );
-                })
-              )}
-            </ul>
           </div>
-        </div>
+        </Portal>
       )}
     </div>
   );

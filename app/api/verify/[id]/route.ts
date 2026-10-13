@@ -217,7 +217,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       } finally {
         // the repair loop is an agent turn too: close its lesson bookkeeping and offer what it proposed
         for (const l of await finishTurnLessons(id)) {
-          emit({ type: "lesson", lesson: { id: l.id, rule: l.rule, symptom: l.symptom, card: l.card, hits: l.hits } });
+          emit({ type: "lesson", lesson: l });
         }
         await releaseProjectRun(id, lock);
         notifyTurnEnd(phone, id, verifyNotice(project.name, verdict));

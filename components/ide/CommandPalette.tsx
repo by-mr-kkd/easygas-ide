@@ -1,5 +1,6 @@
 "use client";
 
+import { Portal } from "@/components/ui/Portal";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -254,85 +255,87 @@ export function CommandPalette({
   }
 
   return (
-    <div className="dialog-backdrop place-items-start justify-items-center pt-[12vh]" onMouseDown={close}>
-      <div className="dialog max-w-lg overflow-hidden" onMouseDown={(e) => e.stopPropagation()}>
-        <div className="flex items-center gap-2.5 border-b border-line px-4">
-          <MagnifyingGlassIcon className="h-4 w-4 shrink-0 text-faint" />
-          <input
-            ref={inputRef}
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setSel(0);
-            }}
-            onKeyDown={onInputKey}
-            placeholder="ค้นหาไฟล์ หรือสั่งงาน…"
-            className="flex-1 bg-transparent py-3 text-sm text-fg outline-none placeholder:text-faint"
-          />
-          <span className="kbd">Esc</span>
-        </div>
+    <Portal>
+      <div className="dialog-backdrop place-items-start justify-items-center pt-[12vh]" onMouseDown={close}>
+        <div className="dialog max-w-lg overflow-hidden" onMouseDown={(e) => e.stopPropagation()}>
+          <div className="flex items-center gap-2.5 border-b border-line px-4">
+            <MagnifyingGlassIcon className="h-4 w-4 shrink-0 text-faint" />
+            <input
+              ref={inputRef}
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setSel(0);
+              }}
+              onKeyDown={onInputKey}
+              placeholder="ค้นหาไฟล์ หรือสั่งงาน…"
+              className="flex-1 bg-transparent py-3 text-sm text-fg outline-none placeholder:text-faint"
+            />
+            <span className="kbd">Esc</span>
+          </div>
 
-        <div className="max-h-[52vh] overflow-auto py-1.5">
-          {filtered.length === 0 ? (
-            <p className="hint px-4 py-6 text-center">
-              ไม่พบรายการที่ตรงกับ &ldquo;{query}&rdquo;
-            </p>
-          ) : (
-            filtered.map((c, i) => {
-              const Icon = c.icon;
-              const isActive = i === sel;
-              const showHeader = i === 0 || filtered[i - 1].group !== c.group;
-              return (
-                <div key={c.id}>
-                  {showHeader && (
-                    <p className="px-4 pb-1 pt-2 text-xs font-semibold text-faint">
-                      {c.group}
-                    </p>
-                  )}
-                  <button
-                    ref={isActive ? activeRef : null}
-                    onMouseEnter={() => setSel(i)}
-                    onClick={() => runCmd(c)}
-                    className={`flex w-full items-center gap-3 px-4 py-2 text-left transition ${isActive ? "bg-accent-soft" : "hover:bg-sunken"}`}
-                  >
-                    <Icon
-                      className={`h-4 w-4 shrink-0 ${isActive ? "text-accent-text" : "text-faint"}`}
-                    />
-                    <span
-                      className={`min-w-0 flex-1 truncate text-sm ${c.group === "ไฟล์" ? "font-mono" : "font-medium"} ${
-                        isActive ? "text-accent-text" : "text-fg"
-                      }`}
-                    >
-                      {c.label}
-                    </span>
-                    {c.hint && (
-                      <span className="hidden shrink-0 truncate text-xs text-muted sm:block">
-                        {c.hint}
-                      </span>
+          <div className="max-h-[52vh] overflow-auto py-1.5">
+            {filtered.length === 0 ? (
+              <p className="hint px-4 py-6 text-center">
+                ไม่พบรายการที่ตรงกับ &ldquo;{query}&rdquo;
+              </p>
+            ) : (
+              filtered.map((c, i) => {
+                const Icon = c.icon;
+                const isActive = i === sel;
+                const showHeader = i === 0 || filtered[i - 1].group !== c.group;
+                return (
+                  <div key={c.id}>
+                    {showHeader && (
+                      <p className="px-4 pb-1 pt-2 text-xs font-semibold text-faint">
+                        {c.group}
+                      </p>
                     )}
-                  </button>
-                </div>
-              );
-            })
-          )}
-        </div>
+                    <button
+                      ref={isActive ? activeRef : null}
+                      onMouseEnter={() => setSel(i)}
+                      onClick={() => runCmd(c)}
+                      className={`flex w-full items-center gap-3 px-4 py-2 text-left transition ${isActive ? "bg-accent-soft" : "hover:bg-sunken"}`}
+                    >
+                      <Icon
+                        className={`h-4 w-4 shrink-0 ${isActive ? "text-accent-text" : "text-faint"}`}
+                      />
+                      <span
+                        className={`min-w-0 flex-1 truncate text-sm ${c.group === "ไฟล์" ? "font-mono" : "font-medium"} ${
+                          isActive ? "text-accent-text" : "text-fg"
+                        }`}
+                      >
+                        {c.label}
+                      </span>
+                      {c.hint && (
+                        <span className="hidden shrink-0 truncate text-xs text-muted sm:block">
+                          {c.hint}
+                        </span>
+                      )}
+                    </button>
+                  </div>
+                );
+              })
+            )}
+          </div>
 
-        <div className="flex items-center gap-3 border-t border-line px-4 py-2 text-xs text-muted">
-          <span className="flex items-center gap-1">
-            <kbd className="kbd">↑</kbd>
-            <kbd className="kbd">↓</kbd>
-            เลื่อน
-          </span>
-          <span className="flex items-center gap-1">
-            <kbd className="kbd">Enter</kbd>
-            เลือก
-          </span>
-          <span className="ml-auto flex items-center gap-1">
-            <kbd className="kbd">Ctrl+K</kbd>
-            เปิด/ปิด
-          </span>
+          <div className="flex items-center gap-3 border-t border-line px-4 py-2 text-xs text-muted">
+            <span className="flex items-center gap-1">
+              <kbd className="kbd">↑</kbd>
+              <kbd className="kbd">↓</kbd>
+              เลื่อน
+            </span>
+            <span className="flex items-center gap-1">
+              <kbd className="kbd">Enter</kbd>
+              เลือก
+            </span>
+            <span className="ml-auto flex items-center gap-1">
+              <kbd className="kbd">Ctrl+K</kbd>
+              เปิด/ปิด
+            </span>
+          </div>
         </div>
       </div>
-    </div>
+    </Portal>
   );
 }

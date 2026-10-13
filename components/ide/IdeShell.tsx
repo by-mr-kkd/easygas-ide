@@ -35,6 +35,7 @@ import { CommandPalette } from "./CommandPalette";
 import { ConnectGoogleDialog } from "./ConnectGoogleDialog";
 import { DeployButton } from "./DeployButton";
 import { ShareButton } from "./ShareButton";
+import { SourceButton } from "./SourceButton";
 import { StylePane } from "./StylePane";
 import type { ProFeatures } from "@/lib/pro-features";
 import { USE_LIST, type ProjectUse } from "@/lib/project-use";
@@ -101,6 +102,7 @@ export function IdeShell({
   stylePrefs = {},
   styleDefaults = DEFAULT_PREFS,
   imported = false,
+  cloned = false,
   tourSeen = false,
   claudeQuotaAllowed = false,
   demo = false,
@@ -112,6 +114,8 @@ export function IdeShell({
 }: {
   projectId: string;
   imported?: boolean;
+  /** made from a share link (project.cloned_from): the toolbar gets "ต้นฉบับ" */
+  cloned?: boolean;
   /** The IDE tour was shown before (from the settings file). */
   tourSeen?: boolean;
   /** Settings → AI: the user allowed reading Claude's quota. */
@@ -253,6 +257,15 @@ export function IdeShell({
     setPane("chat");
     setChatOpen(true);
   }, [command]);
+  // a dialog put a message in the chat box (รับอัปเดตจากต้นฉบับ / รับข้อเสนอ): bring the box on screen
+  useEffect(() => {
+    const on = () => {
+      setPane("chat");
+      setChatOpen(true);
+    };
+    window.addEventListener("egs:show-chat", on);
+    return () => window.removeEventListener("egs:show-chat", on);
+  }, []);
   // command palette → "เผยแพร่" while Google is not connected
   useEffect(() => {
     if (actionRequest !== "connectGoogle") return;
@@ -463,6 +476,7 @@ export function IdeShell({
               </div>
             )}
             <span className="min-w-2 flex-1" />
+            {cloned && <SourceButton projectId={projectId} className="shrink-0 max-md:px-1.5" />}
             <ShareButton projectId={projectId} projectName={projectName} className="shrink-0 max-md:w-[1.875rem] max-md:px-0" />
             <span data-tour="deploy" className="flex shrink-0 items-center">
               <DeployButton

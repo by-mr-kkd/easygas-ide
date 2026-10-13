@@ -2,11 +2,15 @@
 
 import { DEFAULT_LICENSE, licensesAllowed, SHARE_LICENSES, type ShareLicense } from "@/lib/share/license";
 import { useCallback, useEffect, useState } from "react";
-import { createPortal } from "react-dom";
+import { Portal } from "@/components/ui/Portal";
 import { ArrowTopRightOnSquareIcon, CheckCircleIcon, ClipboardDocumentIcon, ExclamationTriangleIcon, LinkIcon, SparklesIcon, TrashIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import { describeShareAction, shareDialogAction, shareProjectAction, unshareProjectAction } from "@/app/projects/share-actions";
 import { useProjectStore } from "@/store/useProjectStore";
 import type { ScanResult } from "@/lib/share/service";
+import { describeChangesAction, forkChangesAction, ownerInfoAction, saveSupportAction } from "@/app/projects/share-owner-actions";
+import { IssuesTab, ProposalsTab, ProposeForm, SupportPicker } from "@/components/share/ShareOwnerPanels";
+import type { OwnerInfo } from "@/lib/share/owner";
+import type { SupportMode } from "@/lib/share/v2";
 
 type Loaded = Awaited<ReturnType<typeof shareDialogAction>>;
 type Data = Extract<Loaded, { ok: true }>["data"];
@@ -73,6 +77,48 @@ export function ShareButton({ projectId, projectName, className = "" }: { projec
   const [license, setLicense] = useState<ShareLicense>(DEFAULT_LICENSE);
   const [describing, setDescribing] = useState(false);
   const [describeError, setDescribeError] = useState("");
+  // share system 1.2: how the owner looks after it, the owner's issues / proposals, a new version's note
+  const [support, setSupport] = useState<{ mode: SupportMode; note: string }>({ mode: "self", note: "" });
+  const [savedSupport, setSavedSupport] = useState<string>("");
+  const [owner, setOwner] = useState<OwnerInfo | null>(null);
+  const [tab, setTab] = useState<"link" | "issues" | "proposals">("link");
+  const [notes, setNotes] = useState("");
+  const [fixes, setFixes] = useState<number[]>([]);
+  // a fork: what it changed against the share it was cloned from (prefilled from the file diff)
+  const [changes, setChanges] = useState("");
+  const [changesBusy, setChangesBusy] = useState(false);
+  const [proposeOpen, setProposeOpen] = useState(false);
+
+  // "ให้ AI สรุป" for a fork's "what changed": the same path as the description, given the diffs
+  async function describeChanges() {
+    if (changes.trim() && !window.confirm("แทนที่ข้อความที่พิมพ์ไว้ด้วยคำสรุปจาก AI?")) return;
+    setChangesBusy(true);
+    setDescribeError("");
+    const r = await describeChangesAction(projectId, useProjectStore.getState().aiChoice ?? undefined).catch(() => null);
+    setChangesBusy(false);
+    if (!r) return setDescribeError("AI สรุปไม่สำเร็จ ลองใหม่อีกครั้ง หรือพิมพ์เอง");
+    if (!r.ok) return setDescribeError(r.error);
+    setChanges(r.data);
+  }
+
+  const loadOwner = useCallback(async () => {
+    const r = await ownerInfoAction(projectId).catch(() => null);
+    if (!r?.ok) return;
+    setOwner(r.data);
+    if (r.data.extra) {
+      setSupport(r.data.extra.support);
+      setSavedSupport(JSON.stringify(r.data.extra.support));
+    }
+  }, [projectId]);
+
+  async function saveSupport() {
+    setBusy(true);
+    const r = await saveSupportAction(projectId, support).catch(() => null);
+    setBusy(false);
+    if (!r || !r.ok) return setMsg({ ok: false, text: r && !r.ok ? r.error : "บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง" });
+    setSavedSupport(JSON.stringify(support));
+    setMsg({ ok: true, text: "บันทึกการดูแลแล้ว" });
+  }
 
   // "ให้ AI สรุป": the AI picked in the chat writes the description; the user edits it before sending
   async function describe() {
@@ -96,9 +142,14 @@ export function ShareButton({ projectId, projectName, className = "" }: { projec
     if (!r.ok) return setLoadError(r.error);
     setData(r.data);
     setTitle((t) => t || r.data.state.share?.title || projectName);
+    if (r.data.state.share) void loadOwner();
+    else if (r.data.state.clonedFrom)
+      void forkChangesAction(projectId)
+        .then((c) => c.ok && setChanges((cur) => cur || c.data))
+        .catch(() => {});
     // the share's own terms; a clone starts from the original's (it may not go looser, the site checks too)
     setLicense(r.data.state.share?.license ?? r.data.state.clonedFrom?.license ?? DEFAULT_LICENSE);
-  }, [projectId, projectName]);
+  }, [projectId, projectName, loadOwner]);
 
   useEffect(() => {
     const on = () => setOpen(true);
@@ -111,6 +162,11 @@ export function ShareButton({ projectId, projectName, className = "" }: { projec
   useEffect(() => {
     if (!open) return;
     setData(null);
+    setOwner(null);
+    setTab("link");
+    setNotes("");
+    setFixes([]);
+    setProposeOpen(false);
     setMsg(null); // the answer of the last publish stays until the dialog is opened again
     void load();
   }, [open, load]);
@@ -127,11 +183,23 @@ export function ShareButton({ projectId, projectName, className = "" }: { projec
   async function publish() {
     setBusy(true);
     setMsg(null);
-    const r = await shareProjectAction(projectId, { title, description, license, parent: data?.state.clonedFrom?.slug ?? null }).catch(() => null);
+    const first = !data?.state.share;
+    const fork = first && !!data?.state.clonedFrom;
+    const r = await shareProjectAction(projectId, {
+      title,
+      description,
+      license,
+      parent: data?.state.clonedFrom?.slug ?? null,
+      ...(first ? { support } : { notes, fixes }),
+      ...(fork ? { changes } : {}),
+    }).catch(() => null);
     setBusy(false);
     if (!r) return setMsg({ ok: false, text: "ไม่สำเร็จ ลองใหม่อีกครั้ง" });
     if (!r.ok) return setMsg({ ok: false, text: r.error });
-    setMsg({ ok: true, text: r.data.version > 1 ? `อัปเดตเป็นเวอร์ชัน ${r.data.version} แล้ว ลิงก์เดิมใช้ได้ต่อ` : "สร้างลิงก์แล้ว คัดลอกไปแปะในกระทู้หรือส่งให้เพื่อนได้เลย" });
+    setMsg({ ok: true, text: r.data.version > 1 ? `แชร์เวอร์ชัน ${r.data.version} แล้ว ลิงก์เดิมใช้ได้ต่อ คนที่โคลนไปจะเห็นว่ามีของใหม่` : "สร้างลิงก์แล้ว คัดลอกไปแปะในกระทู้หรือส่งให้เพื่อนได้เลย" });
+    setNotes("");
+    setFixes([]);
+    if (fork) setProposeOpen(true);
     await load();
   }
 
@@ -166,8 +234,8 @@ export function ShareButton({ projectId, projectName, className = "" }: { projec
         <span className="hidden md:inline">{share ? "ลิงก์แชร์" : "แชร์"}</span>
       </button>
 
-      {open &&
-        createPortal(
+      {open && (
+        <Portal>
           <div className="dialog-backdrop" onClick={() => !busy && setOpen(false)}>
             <div role="dialog" aria-modal="true" aria-label="แชร์โปรเจกต์" className="dialog max-w-lg p-0" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3.5">
@@ -182,9 +250,41 @@ export function ShareButton({ projectId, projectName, className = "" }: { projec
                 </button>
               </div>
 
+              {share && owner?.v2 && (
+                // an own share on a website with share system 1.2: the link, the issues people reported, proposals from forks
+                <div className="border-b border-line px-5 pt-2">
+                  <div className="seg no-scrollbar mb-2 max-w-full overflow-x-auto" role="tablist" aria-label="ส่วนของลิงก์แชร์">
+                    {(
+                      [
+                        ["link", "ลิงก์และเวอร์ชัน", 0],
+                        ["issues", "ปัญหาที่แจ้ง", owner.issues.filter((i) => i.status === "open" || i.status === "looking").length],
+                        ["proposals", "ข้อเสนอจากทางแยก", owner.proposals.filter((p) => p.status === "open").length],
+                      ] as const
+                    ).map(([id, label, n]) => (
+                      <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)} className="seg-item h-8 shrink-0 text-[13px]">
+                        {label}
+                        {n > 0 && <span className="text-xs tabular-nums text-faint">{n}</span>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {share && owner && tab === "issues" ? (
+                <div className="max-h-[70vh] overflow-y-auto px-5 py-4">
+                  <IssuesTab projectId={projectId} issues={owner.issues} onChanged={() => void loadOwner()} />
+                </div>
+              ) : share && owner && tab === "proposals" ? (
+                <div className="max-h-[70vh] overflow-y-auto px-5 py-4">
+                  <ProposalsTab projectId={projectId} proposals={owner.proposals} onChanged={() => void loadOwner()} />
+                </div>
+              ) : (
               <div className="max-h-[70vh] space-y-4 overflow-y-auto px-5 py-4">
                 {loadError && <p className="callout callout-warn text-sm">{loadError}</p>}
                 {!data && !loadError && <p className="hint">กำลังสแกนไฟล์…</p>}
+                {proposeOpen && data?.state.clonedFrom && (
+                  <ProposeForm projectId={projectId} parentTitle={data.state.clonedFrom.title} initialSummary={changes} onDone={() => setProposeOpen(false)} />
+                )}
 
                 {share && (
                   <div className="rounded-lg border border-line bg-sunken p-3">
@@ -263,9 +363,56 @@ export function ShareButton({ projectId, projectName, className = "" }: { projec
                       {data.state.clonedFrom && <p className="hint mt-1 text-xs">ต่อยอดจากระบบของคนอื่น เลือกได้เฉพาะเงื่อนไขเดียวกับต้นฉบับหรือเข้มกว่า</p>}
                     </fieldset>
                     {!share && data.state.clonedFrom && (
-                      <p className="hint">
-                        จะระบุว่าต่อยอดจาก <b>{data.state.clonedFrom.title}</b> ของ {data.state.clonedFrom.author}
-                      </p>
+                      <label className="block text-sm">
+                        <span className="mb-1 flex items-center justify-between gap-2">
+                          <span className="font-semibold">เปลี่ยนอะไรจากต้นฉบับ</span>
+                          <button type="button" onClick={describeChanges} disabled={changesBusy || busy} className="btn btn-soft tone-ai btn-sm" title="ให้ AI ที่เลือกในแชตอ่านความต่างจากต้นฉบับแล้วสรุปให้ แก้ต่อได้">
+                            <SparklesIcon className="h-4 w-4" />
+                            {changesBusy ? "กำลังสรุป…" : "ให้ AI สรุป"}
+                          </button>
+                        </span>
+                        <textarea value={changes} onChange={(e) => setChanges(e.target.value)} maxLength={2000} rows={3} className="field w-full" placeholder="เช่น - เพิ่มหน้ารายงานรายเดือน" />
+                        <span className="hint mt-1 block text-xs">
+                          จะขึ้นเป็นทางแยกของ <b>{data.state.clonedFrom.title}</b> ({data.state.clonedFrom.author}) เวอร์ชัน {data.state.clonedFrom.version}
+                        </span>
+                      </label>
+                    )}
+                    {!share && <SupportPicker value={support} onChange={setSupport} />}
+                    {share && owner?.v2 && (
+                      <>
+                        <label className="block text-sm">
+                          <span className="mb-1 block font-semibold">มีอะไรใหม่ในเวอร์ชันนี้</span>
+                          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={2000} rows={2} className="field w-full" placeholder="คนที่โคลนไปจะเห็นข้อความนี้ตอนมีอัปเดต" />
+                        </label>
+                        {owner.issues.some((i) => i.status === "open" || i.status === "looking") && (
+                          <fieldset className="text-sm">
+                            <legend className="mb-1 font-semibold">เวอร์ชันนี้แก้ปัญหาที่แจ้งไว้</legend>
+                            <div className="space-y-1">
+                              {owner.issues
+                                .filter((i) => i.status === "open" || i.status === "looking")
+                                .map((i) => (
+                                  <label key={i.number} className="flex cursor-pointer items-start gap-2">
+                                    <input
+                                      type="checkbox"
+                                      checked={fixes.includes(i.number)}
+                                      onChange={(e) => setFixes((cur) => (e.target.checked ? [...cur, i.number] : cur.filter((n) => n !== i.number)))}
+                                      className="mt-1"
+                                    />
+                                    <span className="min-w-0 [overflow-wrap:anywhere]">
+                                      <span className="font-mono text-xs text-muted">#{i.number}</span> {i.title}
+                                    </span>
+                                  </label>
+                                ))}
+                            </div>
+                          </fieldset>
+                        )}
+                        <SupportPicker value={support} onChange={setSupport} />
+                        {JSON.stringify(support) !== savedSupport && (
+                          <button type="button" onClick={saveSupport} disabled={busy} className="btn btn-secondary btn-sm">
+                            บันทึกการดูแล
+                          </button>
+                        )}
+                      </>
                     )}
                     <p className="hint">
                       ทุกคนที่มีลิงก์อ่านโค้ดและโคลนลงเครื่องตัวเองได้ ลิงก์ขึ้นในห้อง แชร์ระบบที่สร้าง เมื่อคุณตั้งกระทู้ · คนที่โคลนไปต้องใช้ตามเงื่อนไขที่คุณเลือกข้างบน
@@ -275,7 +422,9 @@ export function ShareButton({ projectId, projectName, className = "" }: { projec
 
                 {msg && <p className={`text-sm font-semibold ${msg.ok ? "text-accent-text" : "text-danger"}`}>{msg.text}</p>}
               </div>
+              )}
 
+              {tab === "link" && (
               <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-5 py-3.5">
                 {share ? (
                   confirmRemove ? (
@@ -303,14 +452,15 @@ export function ShareButton({ projectId, projectName, className = "" }: { projec
                   </button>
                   <button type="button" onClick={publish} disabled={!canPublish} className="btn btn-primary">
                     <LinkIcon className="h-4 w-4" />
-                    {busy ? "กำลังส่ง…" : share ? "อัปเดตเวอร์ชัน" : "สร้างลิงก์แชร์"}
+                    {busy ? "กำลังส่ง…" : share ? "แชร์เวอร์ชันใหม่" : "สร้างลิงก์แชร์"}
                   </button>
                 </span>
               </div>
+              )}
             </div>
-          </div>,
-          document.body,
-        )}
+          </div>
+        </Portal>
+      )}
     </>
   );
 }

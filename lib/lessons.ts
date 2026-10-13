@@ -1,3 +1,4 @@
+import { isRuleRef } from "./lessons-rulebook.ts";
 import { cleanCustom } from "./preferences.ts";
 
 /**
@@ -20,7 +21,7 @@ export const MAX_LESSONS = 200;
 export const REPEAT_THRESHOLD = 2;
 const MAX_PER_NEW_BUILD = 12;
 const MAX_PER_EDIT = 6;
-const MIN_RULE_LENGTH = 8;
+export const MIN_RULE_LENGTH = 8;
 
 /** ai = proposed by the AI after fixing its own mistake · lint = counted by the app · user = typed in. */
 export type LessonSource = "ai" | "lint" | "user";
@@ -103,6 +104,8 @@ export interface LessonProposal {
   card: string;
   /** Id of an existing lesson this is a repeat of. */
   repeatOf: string | null;
+  /** "card#n": the mistake broke a rule the rulebook already has — no new lesson, the app says which rule */
+  ruleOf: string | null;
 }
 
 /**
@@ -113,10 +116,11 @@ export function sanitizeProposal(raw: unknown, validCards: string[]): LessonProp
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const r = raw as Record<string, unknown>;
   const repeatOf = isLessonId(r.repeatOf) ? r.repeatOf : null;
+  const ruleOf = isRuleRef(r.ruleOf) ? r.ruleOf.trim().toLowerCase() : null;
   const rule = oneLine(r.rule, MAX_RULE_LENGTH);
-  if (!repeatOf && rule.length < MIN_RULE_LENGTH) return null;
+  if (!repeatOf && !ruleOf && rule.length < MIN_RULE_LENGTH) return null;
   const card = typeof r.card === "string" && validCards.includes(r.card) ? r.card : GENERAL_CARD;
-  return { rule, symptom: oneLine(r.symptom, MAX_SYMPTOM_LENGTH), card, repeatOf };
+  return { rule, symptom: oneLine(r.symptom, MAX_SYMPTOM_LENGTH), card, repeatOf, ruleOf };
 }
 
 function hit(lesson: Lesson, now: string): Lesson {
@@ -368,6 +372,7 @@ export function renderLessonsGuide(propose: ProposeHint): string {
 - Keep it general: no project name, file name, person, link, key or other private detail — a lesson may later be shared.
 - Not a lesson: a typo, a one-off slip, a project decision or the user's taste (those are look & feel or the user's own instructions).
 - If the mistake breaks a lesson listed for this turn (ids like L-0003), propose with "repeatOf":"L-0003" instead of writing a new one.
+- If the mistake breaks a rule a rule card already states (its "## Rule #N" headings), it is NOT a new lesson: propose with "ruleOf":"<card id>#<N>" (e.g. "data-integrity#1") and a short "symptom", no "rule". The app shows the user which rule was missed; then make sure the code follows that rule in full.
 - At most one proposal per turn. The user decides whether to keep it — never tell them a lesson was saved, only that you proposed one.`;
 }
 

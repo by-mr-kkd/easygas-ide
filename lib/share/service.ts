@@ -17,8 +17,10 @@ import { snapshotProject } from "@/lib/versions";
 import type { EgsProject } from "@/types/db";
 import { parseShareLink } from "./link";
 import { fromShareFiles, kindOf, SHARE_LIMITS, ShareRefusal, toShareFiles, type SharePublic } from "./payload";
-import { countCloneRemote, createShareRemote, deleteShareRemote, fetchShare, postVersionRemote, siteOrigin } from "./remote";
+import { countCloneRemote, createShareRemote, deleteShareRemote, fetchShare, postVersionRemote, shareSettingsRemote, siteOrigin } from "./remote";
 import { scanShare, type Finding } from "./scan";
+import { saveShareBase } from "./source";
+import { supportMode, SUPPORT_NOTE_MAX, type SupportMode } from "./v2";
 
 export type ScanResult = { blocked: Finding[]; warnings: Finding[]; fileCount: number; bytes: number };
 
@@ -35,7 +37,24 @@ export async function scanProject(projectId: string): Promise<ScanResult> {
   return { ...r, fileCount: files.length, bytes: files.reduce((n, f) => n + Buffer.byteLength(f.source, "utf8"), 0) };
 }
 
-export type ShareInput = { title: string; description: string; parent: string | null; license?: string };
+export type ShareInput = {
+  title: string;
+  description: string;
+  parent: string | null;
+  license?: string;
+  /** share system 1.2: how the owner looks after it (first share; later through saveShareSupport) */
+  support?: { mode: SupportMode; note: string };
+  /** a new version: what changed, and the reported issues it fixes */
+  notes?: string;
+  fixes?: number[];
+  /** a fork (a project cloned from a share): what it changed against its parent */
+  changes?: string;
+};
+
+const cleanSupport = (s: ShareInput["support"]): { mode: SupportMode; note: string } | undefined =>
+  s ? { mode: supportMode(s.mode), note: clean(s.note, SUPPORT_NOTE_MAX) } : undefined;
+const cleanFixes = (v: unknown): number[] =>
+  Array.isArray(v) ? [...new Set(v.map((x) => Math.floor(Number(x))).filter((n) => Number.isFinite(n) && n >= 1))].slice(0, 50) : [];
 
 /** Publish the project (a share that exists already gets a new version instead). */
 export async function shareProject(projectId: string, input: ShareInput): Promise<NonNullable<EgsProject["share"]>> {
@@ -55,7 +74,15 @@ export async function shareProject(projectId: string, input: ShareInput): Promis
   // a front page on GitHub Pages is Pro: the website tags the share and lets only Pro clone it
   const hosting = project.hosting === "github" ? "github" : "gas";
   if (project.share?.slug && project.share.token) {
-    const { version } = await postVersionRemote(project.share.slug, project.share.token, { title, description, files, hosting, license });
+    const { version } = await postVersionRemote(project.share.slug, project.share.token, {
+      title,
+      description,
+      files,
+      hosting,
+      license,
+      notes: clean(input.notes, 2000),
+      fixes: cleanFixes(input.fixes),
+    });
     const share = { ...project.share, title, version, license, updated_at: new Date().toISOString() };
     await updateProject(projectId, { share });
     return share;
@@ -63,11 +90,34 @@ export async function shareProject(projectId: string, input: ShareInput): Promis
   const parent = input.parent ? parseShareLink(input.parent) : (project.cloned_from?.slug ?? null);
   // the sharer = the Google account signed in here (lib/share/author.ts); its name, not a typed one
   const author = await ensureAuthor();
-  const r = await createShareRemote({ title, description, name: author.author.display, files, parent, hosting, license }, author.key);
+  // a fork names the version it is built on and what it changed (the parent's page lists it under ทางแยก)
+  const fork = parent && project.cloned_from?.slug === parent;
+  const r = await createShareRemote(
+    {
+      title,
+      description,
+      name: author.author.display,
+      files,
+      parent,
+      hosting,
+      license,
+      support: cleanSupport(input.support),
+      parentVersion: fork ? project.cloned_from!.version : null,
+      changes: fork ? clean(input.changes, 2000) : "",
+    },
+    author.key,
+  );
   const now = new Date().toISOString();
   const share = { slug: r.slug, url: r.url, token: r.token, title, version: 1, license, shared_at: now, updated_at: now };
   await updateProject(projectId, { share });
   return share;
+}
+
+/** The owner's support mode for an existing share. */
+export async function saveShareSupport(projectId: string, support: { mode: SupportMode; note: string }): Promise<void> {
+  const project = await getProject(projectId);
+  if (!project?.share?.slug || !project.share.token) throw new ShareRefusal("โปรเจกต์นี้ยังไม่ได้แชร์");
+  await shareSettingsRemote(project.share.slug, project.share.token, cleanSupport(support)!);
 }
 
 /** Take the link down on the website and forget it here. */
@@ -110,7 +160,9 @@ export async function cloneShare(link: string): Promise<{ projectId: string; tit
     cloned_from: { slug: share.slug, url: share.url || `${siteOrigin()}/s/${share.slug}`, title: share.title, author: share.author.name, version: share.version, cloned_at: new Date().toISOString(), license: share.license },
   });
   await snapshotProject(projectId, "import", { label: `ต้นฉบับจากลิงก์แชร์ (${share.author.name})` });
-  void countCloneRemote(share.slug);
+  // the base for "เทียบกับต้นฉบับ" / "รับอัปเดต" later (app metadata, outside src/)
+  await saveShareBase(projectId, share.slug, share.version, files).catch(() => {});
+  void countCloneRemote(share.slug, share.version);
   return { projectId, title: share.title };
 }
 

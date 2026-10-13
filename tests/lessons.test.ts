@@ -50,8 +50,20 @@ test("an unknown card falls back to general instead of inventing a card", () => 
 });
 
 test("a repeat may name an existing lesson without restating the rule", () => {
-  assert.deepEqual(sanitizeProposal({ repeatOf: "L-0003" }, CARDS), { rule: "", symptom: "", card: GENERAL_CARD, repeatOf: "L-0003" });
+  assert.deepEqual(sanitizeProposal({ repeatOf: "L-0003" }, CARDS), { rule: "", symptom: "", card: GENERAL_CARD, repeatOf: "L-0003", ruleOf: null });
   assert.equal(sanitizeProposal({ repeatOf: "3" }, CARDS), null, "a malformed id is not a repeat");
+});
+
+test("a missed rulebook rule is named, not restated (ruleOf = card#n)", () => {
+  assert.deepEqual(sanitizeProposal({ ruleOf: "Data-Integrity#1", symptom: "ฟอร์มทับข้อมูลใหม่" }, CARDS), {
+    rule: "",
+    symptom: "ฟอร์มทับข้อมูลใหม่",
+    card: GENERAL_CARD,
+    repeatOf: null,
+    ruleOf: "data-integrity#1",
+  });
+  assert.equal(sanitizeProposal({ ruleOf: "--rm -rf#1" }, CARDS), null, "not a rule reference, and no rule of its own");
+  assert.equal(sanitizeProposal({ ruleOf: "L-0003" }, CARDS), null);
 });
 
 // ── approval gate ──

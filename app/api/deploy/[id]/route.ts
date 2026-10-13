@@ -8,6 +8,7 @@ import { getCurrentUser, getProject } from "@/lib/projects";
 import { snapshotProject } from "@/lib/versions";
 import { getFile } from "@/lib/files";
 import { runUrlFor } from "@/lib/run-link";
+import { reportClonePublished } from "@/lib/share/source";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -31,6 +32,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   try {
     const result = await deployProject(user.id, project);
     if (!result.unchanged) await snapshotProject(id, "deploy");
+    void reportClonePublished(id); // a clone in use: its share's reviews read "ใช้งานจริง" (best effort, once)
     // Auto-probe the live /exec for an immediate "opened OK / has a problem" verdict. Best-effort.
     let probe: Awaited<ReturnType<typeof probeExec>> | undefined;
     if (result.execUrl) {

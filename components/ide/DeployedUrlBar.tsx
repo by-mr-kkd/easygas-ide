@@ -1,5 +1,6 @@
 "use client";
 
+import { Portal } from "@/components/ui/Portal";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -272,20 +273,22 @@ export function DeployedUrlBar({ url: execUrl, projectId, googleEmail = null, sh
         </a>
       )}
       {linksOpen && (
-        <div className="dialog-backdrop" onClick={() => setLinksOpen(false)}>
-          <div role="dialog" aria-modal="true" aria-label="ลิงก์ของแอป" className="dialog max-w-lg p-5" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between gap-2">
-              <h3 className="text-[15px] font-semibold">ลิงก์ของแอป</h3>
-              <button type="button" onClick={() => setLinksOpen(false)} className="btn btn-ghost btn-sm btn-icon" aria-label="ปิด">
-                <XMarkIcon className="h-5 w-5" />
-              </button>
-            </div>
-            {authNeeded && <p className="callout callout-warn mt-3">ยังไม่ได้กดอนุญาตครั้งแรก คนที่เปิดลิงก์จะยังใช้แอปไม่ได้ กด “เปิดหน้าอนุญาต” ในแถบสีเหลืองก่อน</p>}
-            <div className="mt-3">
-              <AppLinks runUrl={auth?.runUrl ?? null} execUrl={execUrl} authorized={!authNeeded} />
+        <Portal>
+          <div className="dialog-backdrop" onClick={() => setLinksOpen(false)}>
+            <div role="dialog" aria-modal="true" aria-label="ลิงก์ของแอป" className="dialog max-w-lg p-5" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-[15px] font-semibold">ลิงก์ของแอป</h3>
+                <button type="button" onClick={() => setLinksOpen(false)} className="btn btn-ghost btn-sm btn-icon" aria-label="ปิด">
+                  <XMarkIcon className="h-5 w-5" />
+                </button>
+              </div>
+              {authNeeded && <p className="callout callout-warn mt-3">ยังไม่ได้กดอนุญาตครั้งแรก คนที่เปิดลิงก์จะยังใช้แอปไม่ได้ กด “เปิดหน้าอนุญาต” ในแถบสีเหลืองก่อน</p>}
+              <div className="mt-3">
+                <AppLinks runUrl={auth?.runUrl ?? null} execUrl={execUrl} authorized={!authNeeded} />
+              </div>
             </div>
           </div>
-        </div>
+        </Portal>
       )}
 
       <ConfirmDialog

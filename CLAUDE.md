@@ -77,7 +77,9 @@ npm run desktop:build   # Windows installer → dist/desktop/out
   stored in history or put in the cached system block.
 - **Lessons** (`lib/lessons.ts`, docs/RULEBOOK.md): the AI may only PROPOSE. Model-written lesson text
   reaches a prompt only after the user approved that exact text (status `active`); never widen that, and
-  never let a proposal rewrite an approved lesson. Lessons ride on the turn's user message like rule cards.
+  never let a proposal rewrite an approved lesson. Lessons ride on the turn's user message like rule cards. A mistake that
+  breaks a rule the rulebook already has is named (`ruleOf: "card#n"`, nothing stored, the chat shows the missed rule); a
+  close text match (`lib/lessons-rulebook.ts`) only adds a note to the offer, never hides it.
 - **A resumed Claude Code session keeps its ORIGINAL system prompt** (`--append-system-prompt-file` is not
   re-applied on `--resume`; verified live). Anything that can change mid-project must reach a resumed
   session through the turn's message — see `engineSystemPrompt` / `settingsNotice` in claude-cli.ts.
@@ -240,6 +242,20 @@ npm run desktop:build   # Windows installer → dist/desktop/out
   thread). The share dialog never asks for a name. It asks for the LICENSE (`lib/share/license.ts`, vendored from
   the site's `lib/share-license.ts` — change both): egs (default, no resale) / mit / personal; a fork may not be
   looser than its parent (the site refuses). A paid kind is planned: add it to both files + the site's check.
+  **Share system 1.2** (`lib/share/v2.ts` parsers, `merge.ts` 3-way, `source.ts` clone side, `owner.ts` owner side,
+  `remote.ts` endpoints over `remote-core.ts`): Pro-only = GitHub Pages AND camera (site's `proOnly`; an older site: every
+  GitHub share). Every new endpoint degrades quietly on 404 (an older site). Reads send the STORED author key only
+  (`storedAuthorKey`, no sign-in); writes go through `ensureAuthor`. `share.parent` stays a slug; the object is
+  `parentShare`. A clone's base (the share's files at `cloned_from.version`) lives in `<project>/share-base.json`
+  (outside src/; fallback the site's `/versions/<n>`, then the clone's "import" snapshot). "ต้นฉบับ" (`SourceButton`,
+  code-screen toolbar of a cloned project): compare / รับอัปเดต (snapshot first; untouched files take the new
+  version; files changed on BOTH sides become ONE chat-box draft the user sends — never written around the build gate
+  or the AI pick) / แจ้งปัญหา (support ≠ self; preview of exactly what is sent; names of changed files, never code;
+  credentials refuse) / รีวิว / ติดตาม. Owner side lives in `ShareButton` (support mode, version notes + fixed issues,
+  issues tab, proposals tab — "รับเข้า" is the same merge path). After any publish of a clone the app calls
+  `/published` once (`reportClonePublished`). Home notices (`shareNotices`, cached 4 min, seen state in
+  `<dataRoot>/share-seen.json`) come from a client effect. On Google hosting the PUSHED copy of html with
+  `data-egs-install` gets a hiding `<style>` (`lib/share/install-hide.ts`, not for imported scripts); src is untouched.
 - **Pro content lives on the licence server, not here** (`premium-content`, cached in `premium.json`,
   `lib/premium/content.ts`): `camera_rules` (the camera prompt text) and, since 2026-10-09, `pages_runtime` = JSON
   `{v, shim, dispatcher}` — the browser stand-in for `google.script.run` and `EgsRemote.gs`. `lib/pages/run-shim.ts`,
@@ -250,7 +266,7 @@ npm run desktop:build   # Windows installer → dist/desktop/out
 - **Several Google accounts in one browser** break web apps (Chrome rewrites /exec to /macros/u/<n>/ → "ไม่สามารถเปิดไฟล์ได้";
   Google: multi-login unsupported). A PUBLIC app (ANYONE_ANONYMOUS + USER_DEPLOYING) opens through
   `run.easygaside.tech/<deploymentId>` (`lib/run-link.ts`, site `app/run/[id]` = `<iframe credentialless>`, its own host
-  because the Pro phone app's scope is all of easygaside.tech); others keep /exec. The owner's Allow cannot happen there:
+  so it sits outside every installed EasyGAS app; the Pro phone app's scope is /app only); others keep /exec. The owner's Allow cannot happen there:
   `AuthOpenButton` opens /exec in a private window on the computer (`lib/private-window.ts`, Chrome --incognito / Edge
   --inprivate, the project's own URL only) and, on a phone, copies the link with the incognito-tab steps.
 - **Hubs ("ฮับ" · หน้ารวมลิงก์, home `?mode=hub`, `components/hub/*`, `lib/hub/*`, site `lib/hubs.ts`):** link pages at

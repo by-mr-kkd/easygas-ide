@@ -139,7 +139,7 @@ export function ChatPanel({
   projectId: string;
   /** a script imported from the user's Google account: offer "วิเคราะห์โค้ด" */
   imported?: boolean;
-  /** replaces the "Enter ส่ง" hint under the box (a phone: the AI quota — a phone has no Enter / Shift+Enter) */
+  /** replaces the keyboard hint under the box (a phone: the AI quota — a phone has no Ctrl+Enter) */
   footnote?: ReactNode;
   /** The last build was a screen-only demo: offer to build it for real. */
   demo?: boolean;
@@ -857,7 +857,8 @@ export function ChatPanel({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+            // Enter is a new line (never sends by itself); Ctrl/⌘+Enter is the deliberate keyboard send
+            if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.nativeEvent.isComposing) {
               e.preventDefault();
               send();
             }
@@ -894,7 +895,7 @@ export function ChatPanel({
       {footnote ? (
         <div className="mt-1 flex min-h-5 items-center text-xs">{footnote}</div>
       ) : (
-        <p className="mt-1 px-1 text-xs text-faint">Enter ส่ง · Shift+Enter ขึ้นบรรทัดใหม่</p>
+        <p className="mt-1 px-1 text-xs text-faint">Enter ขึ้นบรรทัดใหม่ · กดปุ่ม ส่ง (หรือ Ctrl+Enter) เมื่อพิมพ์เสร็จ</p>
       )}
     </>
   );

@@ -6,6 +6,8 @@ import { ShareRefusal, type SharePublic } from "@/lib/share/payload";
 import { ShareApiError } from "@/lib/share/remote";
 import { cloneShare, previewShare, projectsClonedFrom, scanProject, shareProject, shareState, unshareProject, type ScanResult, type ShareInput } from "@/lib/share/service";
 import { describeProject } from "@/lib/share/describe";
+import { premiumStatus } from "@/lib/premium/status";
+import { supportMode } from "@/lib/share/v2";
 import { ensureAuthor, renameAuthor, storedAuthor, type ShareAuthor } from "@/lib/share/author";
 
 /**
@@ -76,6 +78,10 @@ export async function shareProjectAction(projectId: string, input: ShareInput): 
       description: String(input?.description ?? ""),
       parent: typeof input?.parent === "string" && input.parent ? input.parent : null,
       license: typeof input?.license === "string" ? input.license : undefined,
+      support: input?.support && typeof input.support === "object" ? { mode: supportMode(input.support.mode), note: String(input.support.note ?? "") } : undefined,
+      notes: typeof input?.notes === "string" ? input.notes : undefined,
+      fixes: Array.isArray(input?.fixes) ? input.fixes.map(Number) : undefined,
+      changes: typeof input?.changes === "string" ? input.changes : undefined,
     });
     return { ok: true, data: { slug: share.slug, url: share.url, version: share.version } };
   } catch (e) {
@@ -94,10 +100,12 @@ export async function unshareProjectAction(projectId: string): Promise<Result<nu
 }
 
 /** What a pasted link is, before cloning: title, author, files, permissions, warnings. */
-export async function previewShareAction(link: string): Promise<Result<{ share: SharePublic; existing: { id: string; name: string }[] }>> {
+export async function previewShareAction(link: string): Promise<Result<{ share: SharePublic; existing: { id: string; name: string }[]; pro: boolean }>> {
   try {
     const share = await previewShare(String(link ?? "").slice(0, 300));
-    return { ok: true, data: { share, existing: await projectsClonedFrom(share.slug) } };
+    // pro: a GitHub Pages share without the camera clones as a Google project on Free (the note says so)
+    const pro = (await premiumStatus().catch(() => ({ active: false }))).active;
+    return { ok: true, data: { share, existing: await projectsClonedFrom(share.slug), pro } };
   } catch (e) {
     return failFrom(e);
   }

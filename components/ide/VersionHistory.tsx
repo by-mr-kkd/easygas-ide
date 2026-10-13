@@ -1,5 +1,6 @@
 "use client";
 
+import { Portal } from "@/components/ui/Portal";
 import { useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
@@ -119,106 +120,108 @@ export function VersionHistory({ projectId }: { projectId: string }) {
       </button>
 
       {open && (
-        <div className="dialog-backdrop" onClick={() => setOpen(false)}>
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="ประวัติโค้ด"
-            className={`dialog flex max-h-[85vh] flex-col overflow-hidden ${diff ? "w-[min(1100px,95vw)] max-w-none" : "max-w-md"}`}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-2 border-b border-line px-4 py-2.5">
-              {diff ? (
-                <>
-                  <button onClick={() => setDiff(null)} className="btn btn-ghost btn-sm">← กลับ</button>
-                  <h3 className="truncate text-[15px] font-semibold">เทียบ “{diff.label}” กับโค้ดตอนนี้</h3>
-                </>
-              ) : (
-                <h3 className="text-[15px] font-semibold">ประวัติโค้ด</h3>
-              )}
-              <span className="flex-1" />
-              {diff && (
-                <button onClick={() => restore(diff.versionId)} disabled={restoring !== null} className="btn btn-secondary btn-sm">
-                  <ArrowUturnLeftIcon className="h-4 w-4" />
-                  กู้คืนเวอร์ชันนี้
+        <Portal>
+          <div className="dialog-backdrop" onClick={() => setOpen(false)}>
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="ประวัติโค้ด"
+              className={`dialog flex max-h-[85vh] flex-col overflow-hidden ${diff ? "w-[min(1100px,95vw)] max-w-none" : "max-w-md"}`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-2 border-b border-line px-4 py-2.5">
+                {diff ? (
+                  <>
+                    <button onClick={() => setDiff(null)} className="btn btn-ghost btn-sm">← กลับ</button>
+                    <h3 className="truncate text-[15px] font-semibold">เทียบ “{diff.label}” กับโค้ดตอนนี้</h3>
+                  </>
+                ) : (
+                  <h3 className="text-[15px] font-semibold">ประวัติโค้ด</h3>
+                )}
+                <span className="flex-1" />
+                {diff && (
+                  <button onClick={() => restore(diff.versionId)} disabled={restoring !== null} className="btn btn-secondary btn-sm">
+                    <ArrowUturnLeftIcon className="h-4 w-4" />
+                    กู้คืนเวอร์ชันนี้
+                  </button>
+                )}
+                <button onClick={() => setOpen(false)} aria-label="ปิด" className="btn btn-ghost btn-sm btn-icon">
+                  <XMarkIcon className="h-4 w-4" />
                 </button>
-              )}
-              <button onClick={() => setOpen(false)} aria-label="ปิด" className="btn btn-ghost btn-sm btn-icon">
-                <XMarkIcon className="h-4 w-4" />
-              </button>
-            </div>
+              </div>
 
-            {diff ? (
-              <div className="flex min-h-[60vh] flex-1">
-                <ul className="w-36 shrink-0 overflow-y-auto border-r border-line p-2 text-sm md:w-56">
-                  {diffPaths.map((f) => (
-                    <li key={f.path}>
-                      <button
-                        onClick={() => setDiffFile(f.path)}
-                        className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left ${diffFile === f.path ? "bg-sunken font-medium" : "hover:bg-sunken"}`}
-                      >
-                        <span
-                          className={`h-2 w-2 shrink-0 rounded-full ${f.state === "same" ? "bg-line-strong" : f.state === "added" ? "bg-accent" : f.state === "removed" ? "bg-danger" : "bg-warn-text"}`}
-                          aria-hidden="true"
-                        />
-                        <span className="truncate font-mono text-xs">{f.path}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-                <div className="min-w-0 flex-1">
-                  {diffFile && (
-                    <DiffEditor
-                      key={diffFile}
-                      original={diff.version.find((f) => f.path === diffFile)?.content ?? ""}
-                      modified={diff.current.find((f) => f.path === diffFile)?.content ?? ""}
-                      language={langOf(diffFile)}
-                      theme={egsTheme(dark)}
-                      beforeMount={defineEgsThemes}
-                      options={{ readOnly: true, renderSideBySide: true, minimap: { enabled: false }, fontSize: 12, automaticLayout: true, scrollbar: EGS_SCROLLBAR }}
-                    />
+              {diff ? (
+                <div className="flex min-h-[60vh] flex-1">
+                  <ul className="w-36 shrink-0 overflow-y-auto border-r border-line p-2 text-sm md:w-56">
+                    {diffPaths.map((f) => (
+                      <li key={f.path}>
+                        <button
+                          onClick={() => setDiffFile(f.path)}
+                          className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left ${diffFile === f.path ? "bg-sunken font-medium" : "hover:bg-sunken"}`}
+                        >
+                          <span
+                            className={`h-2 w-2 shrink-0 rounded-full ${f.state === "same" ? "bg-line-strong" : f.state === "added" ? "bg-accent" : f.state === "removed" ? "bg-danger" : "bg-warn-text"}`}
+                            aria-hidden="true"
+                          />
+                          <span className="truncate font-mono text-xs">{f.path}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="min-w-0 flex-1">
+                    {diffFile && (
+                      <DiffEditor
+                        key={diffFile}
+                        original={diff.version.find((f) => f.path === diffFile)?.content ?? ""}
+                        modified={diff.current.find((f) => f.path === diffFile)?.content ?? ""}
+                        language={langOf(diffFile)}
+                        theme={egsTheme(dark)}
+                        beforeMount={defineEgsThemes}
+                        options={{ readOnly: true, renderSideBySide: true, minimap: { enabled: false }, fontSize: 12, automaticLayout: true, scrollbar: EGS_SCROLLBAR }}
+                      />
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="min-h-0 flex-1 overflow-y-auto p-2">
+                  {versions === null ? (
+                    <p className="hint py-10 text-center">กำลังโหลด…</p>
+                  ) : versions.length === 0 ? (
+                    <p className="hint px-4 py-10 text-center">ยังไม่มีประวัติ แอปจะเก็บเวอร์ชันไว้ให้ทุกครั้งที่ AI สร้าง คุณแก้เอง หรือเผยแพร่</p>
+                  ) : (
+                    <ul className="flex flex-col gap-1">
+                      {versions.map((v) => {
+                        const s = SOURCE[v.source] ?? SOURCE.manual;
+                        return (
+                          <li key={v.id} className="flex items-center gap-3 rounded-md px-3 py-2 transition hover:bg-sunken">
+                            <s.Icon className={`h-5 w-5 shrink-0 ${s.cls}`} />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 text-sm font-medium text-fg">
+                                {v.label ?? s.label}
+                                {v.source === "import" && <span className="badge tone-info">ต้นฉบับ</span>}
+                              </div>
+                              <div className="text-xs text-muted">
+                                {timeAgo(v.created_at)} · {v.source === "import" ? `${v.fileCount} ไฟล์` : changeLine(v.changes)}
+                              </div>
+                            </div>
+                            <button onClick={() => showDiff(v)} className="btn btn-ghost btn-sm shrink-0" title="ดูความต่างกับโค้ดตอนนี้">
+                              <ArrowsRightLeftIcon className="h-4 w-4" />
+                              <span className="sr-only">ดูความต่าง</span>
+                            </button>
+                            <button onClick={() => restore(v.id)} disabled={restoring !== null} className="btn btn-secondary btn-sm shrink-0">
+                              <ArrowUturnLeftIcon className="h-4 w-4" />
+                              {restoring === v.id ? "กำลังกู้คืน…" : "กู้คืน"}
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
                   )}
                 </div>
-              </div>
-            ) : (
-              <div className="min-h-0 flex-1 overflow-y-auto p-2">
-                {versions === null ? (
-                  <p className="hint py-10 text-center">กำลังโหลด…</p>
-                ) : versions.length === 0 ? (
-                  <p className="hint px-4 py-10 text-center">ยังไม่มีประวัติ แอปจะเก็บเวอร์ชันไว้ให้ทุกครั้งที่ AI สร้าง คุณแก้เอง หรือเผยแพร่</p>
-                ) : (
-                  <ul className="flex flex-col gap-1">
-                    {versions.map((v) => {
-                      const s = SOURCE[v.source] ?? SOURCE.manual;
-                      return (
-                        <li key={v.id} className="flex items-center gap-3 rounded-md px-3 py-2 transition hover:bg-sunken">
-                          <s.Icon className={`h-5 w-5 shrink-0 ${s.cls}`} />
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1.5 text-sm font-medium text-fg">
-                              {v.label ?? s.label}
-                              {v.source === "import" && <span className="badge tone-info">ต้นฉบับ</span>}
-                            </div>
-                            <div className="text-xs text-muted">
-                              {timeAgo(v.created_at)} · {v.source === "import" ? `${v.fileCount} ไฟล์` : changeLine(v.changes)}
-                            </div>
-                          </div>
-                          <button onClick={() => showDiff(v)} className="btn btn-ghost btn-sm shrink-0" title="ดูความต่างกับโค้ดตอนนี้">
-                            <ArrowsRightLeftIcon className="h-4 w-4" />
-                            <span className="sr-only">ดูความต่าง</span>
-                          </button>
-                          <button onClick={() => restore(v.id)} disabled={restoring !== null} className="btn btn-secondary btn-sm shrink-0">
-                            <ArrowUturnLeftIcon className="h-4 w-4" />
-                            {restoring === v.id ? "กำลังกู้คืน…" : "กู้คืน"}
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
-            )}
+              )}
+            </div>
           </div>
-        </div>
+        </Portal>
       )}
     </>
   );

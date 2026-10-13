@@ -1,5 +1,6 @@
 "use client";
 
+import { Portal } from "@/components/ui/Portal";
 import { useEffect, useState } from "react";
 import { ExclamationTriangleIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { uninstallAppAction } from "@/app/settings/actions";
@@ -75,54 +76,56 @@ export function UninstallApp({ available }: { available: boolean }) {
       )}
 
       {open && (
-        <div className="dialog-backdrop" onClick={() => !busy && setOpen(false)}>
-          <div role="dialog" aria-modal="true" aria-labelledby="uninstall-dialog-title" className="dialog max-w-md p-5" onClick={(e) => e.stopPropagation()}>
-            <h3 id="uninstall-dialog-title" className="text-[15px] font-semibold">
-              ถอนการติดตั้ง EasyGAS IDE?
-            </h3>
-            <p className="hint mt-1">เลือกว่าจะทำอย่างไรกับโปรเจกต์และการตั้งค่าที่อยู่ในเครื่องนี้</p>
+        <Portal>
+          <div className="dialog-backdrop" onClick={() => !busy && setOpen(false)}>
+            <div role="dialog" aria-modal="true" aria-labelledby="uninstall-dialog-title" className="dialog max-w-md p-5" onClick={(e) => e.stopPropagation()}>
+              <h3 id="uninstall-dialog-title" className="text-[15px] font-semibold">
+                ถอนการติดตั้ง EasyGAS IDE?
+              </h3>
+              <p className="hint mt-1">เลือกว่าจะทำอย่างไรกับโปรเจกต์และการตั้งค่าที่อยู่ในเครื่องนี้</p>
 
-            <div role="radiogroup" aria-label="ข้อมูลในเครื่อง" className="mt-3 space-y-2">
-              <label className={`card flex cursor-pointer items-start gap-3 px-3 py-2.5 ${!deleteData ? "border-accent bg-accent-soft" : "hover:bg-sunken"}`}>
-                <input type="radio" name="uninstall-data" className="mt-1 h-4 w-4 shrink-0 accent-accent" checked={!deleteData} onChange={() => setDeleteData(false)} />
-                <span className="min-w-0">
-                  <span className="block text-sm font-semibold">เก็บโปรเจกต์และการตั้งค่าไว้</span>
-                  <span className="hint block">
-                    ติดตั้งใหม่ภายหลังแล้วใช้ต่อได้ทันที API key และการเชื่อมบัญชี Google ที่บันทึกไว้จะยังอยู่ในเครื่องนี้ด้วย
+              <div role="radiogroup" aria-label="ข้อมูลในเครื่อง" className="mt-3 space-y-2">
+                <label className={`card flex cursor-pointer items-start gap-3 px-3 py-2.5 ${!deleteData ? "border-accent bg-accent-soft" : "hover:bg-sunken"}`}>
+                  <input type="radio" name="uninstall-data" className="mt-1 h-4 w-4 shrink-0 accent-accent" checked={!deleteData} onChange={() => setDeleteData(false)} />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold">เก็บโปรเจกต์และการตั้งค่าไว้</span>
+                    <span className="hint block">
+                      ติดตั้งใหม่ภายหลังแล้วใช้ต่อได้ทันที API key และการเชื่อมบัญชี Google ที่บันทึกไว้จะยังอยู่ในเครื่องนี้ด้วย
+                    </span>
                   </span>
-                </span>
-              </label>
-              <label className={`card flex cursor-pointer items-start gap-3 px-3 py-2.5 ${deleteData ? "border-danger bg-danger-soft" : "hover:bg-sunken"}`}>
-                <input type="radio" name="uninstall-data" className="mt-1 h-4 w-4 shrink-0 accent-accent" checked={deleteData} onChange={() => setDeleteData(true)} />
-                <span className="min-w-0">
-                  <span className="block text-sm font-semibold">ลบทุกอย่างในเครื่องนี้</span>
-                  <span className="hint block">ลบโปรเจกต์ทั้งหมด ประวัติแชต การตั้งค่า API key และการเชื่อมบัญชี Google ออกจากเครื่องนี้</span>
-                </span>
-              </label>
-            </div>
+                </label>
+                <label className={`card flex cursor-pointer items-start gap-3 px-3 py-2.5 ${deleteData ? "border-danger bg-danger-soft" : "hover:bg-sunken"}`}>
+                  <input type="radio" name="uninstall-data" className="mt-1 h-4 w-4 shrink-0 accent-accent" checked={deleteData} onChange={() => setDeleteData(true)} />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold">ลบทุกอย่างในเครื่องนี้</span>
+                    <span className="hint block">ลบโปรเจกต์ทั้งหมด ประวัติแชต การตั้งค่า API key และการเชื่อมบัญชี Google ออกจากเครื่องนี้</span>
+                  </span>
+                </label>
+              </div>
 
-            {deleteData && (
-              <label className="callout callout-danger mt-3 cursor-pointer items-start">
-                <input type="checkbox" className="mt-1 h-4 w-4 shrink-0" checked={understood} onChange={(e) => setUnderstood(e.target.checked)} />
-                <span className="min-w-0">
-                  <ExclamationTriangleIcon className="mr-1 inline h-4 w-4 align-[-3px]" />
-                  ฉันเข้าใจว่าโปรเจกต์ที่ยังไม่ได้เผยแพร่จะหายไปและกู้คืนไม่ได้
-                </span>
-              </label>
-            )}
+              {deleteData && (
+                <label className="callout callout-danger mt-3 cursor-pointer items-start">
+                  <input type="checkbox" className="mt-1 h-4 w-4 shrink-0" checked={understood} onChange={(e) => setUnderstood(e.target.checked)} />
+                  <span className="min-w-0">
+                    <ExclamationTriangleIcon className="mr-1 inline h-4 w-4 align-[-3px]" />
+                    ฉันเข้าใจว่าโปรเจกต์ที่ยังไม่ได้เผยแพร่จะหายไปและกู้คืนไม่ได้
+                  </span>
+                </label>
+              )}
 
-            <p className="hint mt-3">กดถอนการติดตั้งแล้ว ตัวถอนของแอปจะเปิดขึ้นและถามยืนยันอีกครั้งก่อนเริ่มลบ</p>
-            <div className="mt-4 flex justify-end gap-2">
-              <button type="button" autoFocus onClick={() => setOpen(false)} disabled={busy} className="btn btn-secondary">
-                ยกเลิก
-              </button>
-              <button type="button" onClick={start} disabled={busy || (deleteData && !understood)} className="btn btn-danger">
-                <TrashIcon className="h-4 w-4" />
-                {busy ? "กำลังเปิด…" : "ถอนการติดตั้ง"}
-              </button>
+              <p className="hint mt-3">กดถอนการติดตั้งแล้ว ตัวถอนของแอปจะเปิดขึ้นและถามยืนยันอีกครั้งก่อนเริ่มลบ</p>
+              <div className="mt-4 flex justify-end gap-2">
+                <button type="button" autoFocus onClick={() => setOpen(false)} disabled={busy} className="btn btn-secondary">
+                  ยกเลิก
+                </button>
+                <button type="button" onClick={start} disabled={busy || (deleteData && !understood)} className="btn btn-danger">
+                  <TrashIcon className="h-4 w-4" />
+                  {busy ? "กำลังเปิด…" : "ถอนการติดตั้ง"}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </Portal>
       )}
     </section>
   );

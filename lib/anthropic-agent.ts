@@ -1,3 +1,4 @@
+import type { TurnOffer } from "@/lib/lessons-store";
 import Anthropic from "@anthropic-ai/sdk";
 import { isPlanOnly, PLAN_ONLY_REFUSAL } from "@/lib/build-gate";
 import { cameraAllowedFor } from "@/lib/premium/camera-gate";
@@ -78,7 +79,7 @@ export type AgentEvent =
   | { type: "file_mutation"; op: "write" | "edit" | "delete"; path: string; content?: string }
   | { type: "lint"; messages: string[] }
   // a lesson OFFERED to the user at the end of a turn (pending until they keep it — lib/lessons)
-  | { type: "lesson"; lesson: { id: string; rule: string; symptom: string; card: string; hits: number } }
+  | { type: "lesson"; lesson: TurnOffer }
   | { type: "spec"; spec: ProjectSpec }
   | { type: "generation"; id: string }
   | { type: "done"; tokens?: number } // tokens = this turn's input+output, for the energy bar
@@ -193,6 +194,7 @@ export const EGS_TOOLS: Anthropic.Tool[] = [
         symptom: { type: "string", description: "สิ่งที่ผิดพลาด สั้น ๆ" },
         card: { type: "string", description: "id ของ rule card ที่เกี่ยวข้อง หรือ general" },
         repeatOf: { type: "string", description: "id ของบทเรียนเดิม (เช่น L-0003) ถ้าเป็นการพลาดซ้ำข้อที่มีอยู่แล้ว" },
+        ruleOf: { type: "string", description: "ถ้าพลาดกฎที่ rule card มีอยู่แล้ว: \"<card id>#<เลขข้อ>\" เช่น data-integrity#1 (ไม่ต้องใส่ rule)" },
       },
     },
   },

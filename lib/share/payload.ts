@@ -6,6 +6,7 @@
 import { licenseOf, type ShareLicense } from "./license.ts";
 import type { ShareFile } from "./scan.ts";
 import { kindForExisting } from "../bound.ts";
+import { parseShareExtras, type ShareExtras } from "./v2.ts";
 
 export class ShareRefusal extends Error {}
 
@@ -77,7 +78,7 @@ export type SharePublic = {
   version: number;
   parent: string | null;
   cloneCount: number;
-  forks: { slug: string; title: string; author: string; cloneCount: number }[];
+  forks: { slug: string; title: string; author: string; cloneCount: number; changes: string }[];
   url: string;
   /** where the author's front page lives; a "github" share is Pro (the website refuses its files to Free) */
   hosting: "gas" | "github";
@@ -85,6 +86,8 @@ export type SharePublic = {
   license: ShareLicense;
   createdAt: string;
   updatedAt: string;
+  /** share system 1.2: versions, support, rating, issues, me … (neutral values from an older website) */
+  extra: ShareExtras;
 };
 
 const str = (v: unknown, max = 4000): string => (typeof v === "string" ? v.slice(0, max) : "");
@@ -108,7 +111,7 @@ export function parseSharePublic(raw: unknown): SharePublic {
   const forks = Array.isArray(s.forks)
     ? s.forks
         .filter((f): f is Record<string, unknown> => !!f && typeof f === "object" && /^[a-z0-9]{6,16}$/.test(str(f.slug, 16)))
-        .map((f) => ({ slug: str(f.slug, 16), title: str(f.title, 120), author: str(f.author, 40), cloneCount: Number(f.cloneCount) || 0 }))
+        .map((f) => ({ slug: str(f.slug, 16), title: str(f.title, 120), author: str(f.author, 40), cloneCount: Number(f.cloneCount) || 0, changes: str(f.changes, 2000) }))
         .slice(0, 20)
     : [];
   return {
@@ -123,7 +126,7 @@ export function parseSharePublic(raw: unknown): SharePublic {
     services: strs(s.services),
     warnings,
     version: Math.max(1, Number(s.version) || 1),
-    parent: /^[a-z0-9]{6,16}$/.test(str(s.parent, 16)) ? str(s.parent, 16) : null,
+    parent: parentSlug(s.parent) ?? parentSlug(s.parentShare),
     cloneCount: Number(s.cloneCount) || 0,
     forks,
     url: /^https:\/\/[a-z0-9.-]+\/s\/[a-z0-9]{6,16}$/.test(str(s.url, 200)) ? str(s.url, 200) : "",
@@ -131,5 +134,12 @@ export function parseSharePublic(raw: unknown): SharePublic {
     license: licenseOf(s.license),
     createdAt: str(s.createdAt, 40),
     updatedAt: str(s.updatedAt, 40),
+    extra: parseShareExtras(s),
   };
+}
+
+/** `parent` is the slug; share system 1.2 adds `parentShare: {slug, version, title}`. Either way, the slug. */
+function parentSlug(v: unknown): string | null {
+  const slug = typeof v === "string" ? v : v && typeof v === "object" ? (v as { slug?: unknown }).slug : null;
+  return typeof slug === "string" && /^[a-z0-9]{6,16}$/.test(slug) ? slug : null;
 }

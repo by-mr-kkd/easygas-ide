@@ -9,6 +9,7 @@ import { enforceBoundManifest, hasDoGet, manifestHasWebApp, parseBoundCreate, sh
 import { enforceWebAppManifest } from "@/lib/manifest";
 import { withBackendNotice } from "@/lib/pages/backend-page";
 import { withDispatcher, type SourceFile } from "@/lib/pages/dispatcher";
+import { hideInstallButtons } from "@/lib/share/install-hide";
 import { PagesRuntimeMissingError } from "@/lib/pages/runtime";
 import { ensurePagesRuntime } from "@/lib/premium/content";
 import { saveDeployment, updateProject } from "@/lib/projects";
@@ -32,7 +33,7 @@ const isPushed = (path: string): boolean => path === MANIFEST || /\.(gs|js|html)
  * the doPost dispatcher so the page outside GAS can call the script; everything else is unchanged.
  */
 async function filesToPush(project: EgsProject, files: SourceFile[], pagesUrl?: string | null): Promise<SourceFile[]> {
-  if (project.hosting !== "github") return files;
+  if (project.hosting !== "github") return googlePageFiles(project, files);
   // the dispatcher text is Pro content from the licence server (cached after the first online publish)
   const runtime = await ensurePagesRuntime();
   if (!runtime) throw new PagesRuntimeMissingError();
@@ -40,6 +41,13 @@ async function filesToPush(project: EgsProject, files: SourceFile[], pagesUrl?: 
   // once the page is on GitHub, the Google copy of it only points there (lib/pages/backend-page)
   return pagesUrl ? withBackendNotice(withRemote, pagesUrl, project.name) : withRemote;
 }
+
+/**
+ * On Google's own page the "install as an app" buttons (`data-egs-install`, GitHub Pages only) are hidden in the
+ * pushed copy (lib/share/install-hide.ts). An imported script is pushed as it is: its sync point compares the
+ * pushed files with Google's copy, and it never had the app's install button.
+ */
+const googlePageFiles = (project: EgsProject, files: SourceFile[]): SourceFile[] => (project.origin === "imported" ? files : hideInstallButtons(files));
 
 /**
  * Run `clasp push` with the app's changes (the dispatcher, the backend notice page) present in src/ only
@@ -360,5 +368,5 @@ export async function publishState(project: EgsProject): Promise<"none" | "curre
   if (!d?.exec_url) return "none";
   if (project.origin === "imported" || project.hosting === "github" || project.kind === "bound") return "changed";
   const own = (await getFiles(project.id)).filter((f) => isPushed(f.path));
-  return d.content_hash === hashFiles(own) ? "current" : "changed";
+  return d.content_hash === hashFiles(googlePageFiles(project, own)) ? "current" : "changed";
 }

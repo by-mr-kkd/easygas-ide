@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { claspAuthPath, getClaspAccount } from "@/lib/clasp";
 import { dataRoot, projectsRoot } from "@/lib/local/paths";
 import { ShareRefusal } from "./payload";
-import { ShareApiError, siteOrigin } from "./remote";
+import { ShareApiError, siteOrigin } from "./remote-core";
 
 /**
  * Who shares: the Google account the app is signed in with (EasyGAS-Site lib/authors.ts). To prove it, the app
@@ -117,6 +117,17 @@ export async function storedAuthor(): Promise<ShareAuthor | null> {
   if (!s) return null;
   const account = (await getClaspAccount()).email?.toLowerCase() ?? null;
   return !account || !s.account || s.account === account ? s.author : null;
+}
+
+/**
+ * The stored author key, no network and no sign-in: for reads that only get richer with it (my clone, my
+ * review, my issues). Null when none is stored or another Google account is signed in now.
+ */
+export async function storedAuthorKey(): Promise<string | null> {
+  const s = await readStored();
+  if (!s) return null;
+  const account = (await getClaspAccount()).email?.toLowerCase() ?? null;
+  return !account || !s.account || s.account === account ? s.key : null;
 }
 
 /**

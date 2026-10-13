@@ -13,7 +13,7 @@ export type ShareSummary = {
   author: { name: string; kind: "guest" | "pro" | "admin" };
   fileCount: number;
   services: string[];
-  /** its front page is on GitHub Pages: only Pro can clone it (the website checks at clone time) */
+  /** only Pro can clone it (the website checks at clone time) */
   proOnly: boolean;
   license: ShareLicense;
   cloneCount: number;
@@ -40,7 +40,8 @@ export function parseShareSummaries(raw: unknown): ShareSummary[] {
       author: { name: str(author.name, 40) || "ไม่ระบุชื่อ", kind: author.kind === "pro" || author.kind === "admin" ? author.kind : "guest" },
       fileCount: Math.max(0, Number(s.fileCount) || 0),
       services: Array.isArray(s.services) ? s.services.filter((x): x is string => typeof x === "string").slice(0, 12) : [],
-      proOnly: s.proOnly === true || s.hosting === "github",
+      // share system 1.2: Pro-only = GitHub Pages AND the camera (the website decides); an older website: every GitHub share
+      proOnly: typeof s.proOnly === "boolean" ? s.proOnly : s.hosting === "github",
       license: licenseOf(s.license),
       cloneCount: Math.max(0, Number(s.cloneCount) || 0),
       url: /^https:\/\/[a-z0-9.-]+\/s\/[a-z0-9]{6,16}$/.test(str(s.url, 200)) ? str(s.url, 200) : "",

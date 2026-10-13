@@ -26,10 +26,14 @@ import {
   TrashIcon,
 } from "@heroicons/react/24/outline";
 import { busyProjectsAction } from "@/app/projects/actions";
+import { dismissShareNoticesAction, shareNoticesAction } from "@/app/projects/share-source-actions";
+import type { ShareNotices } from "@/lib/share/source";
+import { issueStatusLabel } from "@/lib/share/v2";
 import { openProjectFolderAction } from "@/app/projects/import-actions";
 import { CreateProjectDialog } from "./CreateProjectDialog";
 import { DeleteProjectDialog } from "./DeleteProjectDialog";
 import { RenameDialog } from "./RenameDialog";
+import { AddToHubDialog } from "@/components/hub/AddToHubDialog";
 import type { EgsProject } from "@/types/db";
 import { USE_LIST, useOf } from "@/lib/project-use";
 
@@ -99,6 +103,7 @@ export function ProjectTable({
   // opened from an effect: the dialog portals into document.body, which the server render does not have
   const [creating, setCreating] = useState(false);
   const [renaming, setRenaming] = useState<EgsProject | null>(null);
+  const [toHub, setToHub] = useState<EgsProject | null>(null);
   const [deleting, setDeleting] = useState<EgsProject | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [layout, setLayout] = useState<Layout>("table");
@@ -118,6 +123,26 @@ export function ProjectTable({
     }
   };
   const searchRef = useRef<HTMLInputElement>(null);
+  // share system 1.2: cloned projects behind their source, followed shares, my reports that moved.
+  // A client effect → server action (cached there a few minutes); never at render.
+  const [notices, setNotices] = useState<ShareNotices | null>(null);
+  useEffect(() => {
+    if (mode !== "new") return;
+    let live = true;
+    shareNoticesAction()
+      .then((r) => live && r.ok && setNotices(r.data))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [mode]);
+  async function dismissNotices() {
+    if (!notices) return;
+    const issues = notices.issues.map((i) => ({ slug: i.slug, number: i.number, status: i.status }));
+    const follows = notices.followed.map((f) => ({ slug: f.slug, version: f.latest }));
+    setNotices({ ...notices, issues: [], followed: [] });
+    await dismissShareNoticesAction({ issues, follows }).catch(() => null);
+  }
 
   const liveCount = projects.filter((p) => deployed[p.id]).length;
   const googleCount = projects.filter((p) => p.origin === "imported").length;
@@ -293,6 +318,30 @@ export function ProjectTable({
         </p>
       )}
 
+      {notices && (notices.issues.length > 0 || notices.followed.length > 0) && (
+        <div className="callout flex-col items-start gap-1.5 text-sm" role="status">
+          {notices.issues.map((i) => (
+            <span key={`${i.slug}#${i.number}`}>
+              ปัญหาที่คุณแจ้ง <b>#{i.number} {i.title}</b> → {issueStatusLabel(i.status)}
+              {i.status === "fixed" && i.fixedIn ? ` ในเวอร์ชัน ${i.fixedIn}` : ""}
+              {i.ownerNote && <span className="text-muted"> · “{i.ownerNote}”</span>}
+            </span>
+          ))}
+          {notices.followed.map((f) => (
+            <span key={f.slug}>
+              ระบบที่ติดตาม <b>{f.title || f.slug}</b> มีเวอร์ชัน {f.latest}
+              {f.notes && <span className="text-muted"> · {f.notes}</span>}{" "}
+              <Link href={`/projects?mode=clone&clone=${f.slug}`} className="link">
+                ดู
+              </Link>
+            </span>
+          ))}
+          <button type="button" onClick={dismissNotices} className="btn btn-ghost btn-sm -ml-2">
+            รับทราบ
+          </button>
+        </div>
+      )}
+
       <section data-tour="projects" aria-label="รายการโปรเจกต์" className={layout === "cards" && shown.length > 0 ? "" : "card"}>
         {projects.length === 0 ? (
           <p className="hint px-4 py-6">ยังไม่มีโปรเจกต์ กด “สร้างโปรเจกต์ใหม่” ตั้งชื่อแล้วเข้าไปเล่าให้ AI ฟังได้เลย</p>
@@ -304,11 +353,13 @@ export function ProjectTable({
               <Card
                 key={p.id}
                 project={p}
+                sourceVersion={notices?.behind[p.id] ?? null}
                 url={deployed[p.id]}
                 exec={execs[p.id]}
                 busy={busy.includes(p.id)}
                 onRename={() => setRenaming(p)}
                 onFolder={() => void openFolder(p)}
+                onHub={p.deployment?.exec_url ? () => setToHub(p) : undefined}
                 onDelete={() => setDeleting(p)}
               />
             ))}
@@ -327,10 +378,12 @@ export function ProjectTable({
                 <Row
                   key={p.id}
                   project={p}
+                  sourceVersion={notices?.behind[p.id] ?? null}
                   live={!!deployed[p.id]}
                   busy={busy.includes(p.id)}
                   onRename={() => setRenaming(p)}
                   onFolder={() => void openFolder(p)}
+                  onHub={p.deployment?.exec_url ? () => setToHub(p) : undefined}
                   onDelete={() => setDeleting(p)}
                 />
               ))}
@@ -343,24 +396,35 @@ export function ProjectTable({
 
       {creating && <CreateProjectDialog existingNames={projects.map((p) => p.name)} pro={pro} githubConnected={githubConnected} onClose={() => setCreating(false)} />}
       {renaming && <RenameDialog project={renaming} onClose={() => setRenaming(null)} />}
+      {toHub && <AddToHubDialog project={toHub} onClose={() => setToHub(null)} />}
       {deleting && <DeleteProjectDialog project={deleting} onClose={() => setDeleting(null)} />}
     </div>
   );
 }
 
+/** "ต้นฉบับมี vN": a cloned project whose share has a newer version (the code screen's ต้นฉบับ takes it). */
+function SourceBadge({ v }: { v: number | null }) {
+  return v ? <span className="badge badge-warn shrink-0 !py-0 text-[11px]" title="ต้นฉบับที่โคลนมามีเวอร์ชันใหม่ เปิดโปรเจกต์แล้วกด ต้นฉบับ">ต้นฉบับมี v{v}</span> : null;
+}
+
 function Row({
   project: p,
+  sourceVersion = null,
   live,
   busy,
   onRename,
   onFolder,
+  onHub,
   onDelete,
 }: {
   project: EgsProject;
+  sourceVersion?: number | null;
   live: boolean;
   busy: boolean;
   onRename: () => void;
   onFolder: () => void;
+  /** published projects only: "เพิ่มไปยังฮับ" */
+  onHub?: () => void;
   onDelete: () => void;
 }) {
   const KindIcon = busy ? SparklesIcon : p.kind === "bound" ? TableCellsIcon : CodeBracketIcon;
@@ -372,7 +436,10 @@ function Row({
           <KindIcon className="h-4 w-4" aria-hidden />
         </span>
         <span className="min-w-0">
-          <span className="block truncate text-[14px] font-medium text-fg">{p.name}</span>
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-[14px] font-medium text-fg">{p.name}</span>
+            <SourceBadge v={sourceVersion} />
+          </span>
           <span className="block truncate text-xs text-muted">
             {busy ? (
               <span className="font-medium text-ai">AI กำลังทำงานอยู่ · กดเพื่อดู</span>
@@ -400,7 +467,7 @@ function Row({
         <Link href={`/projects/${p.id}`} className="btn btn-ghost btn-sm hidden sm:inline-flex">
           เปิด
         </Link>
-        <RowMenu name={p.name} onRename={onRename} onFolder={onFolder} onDelete={onDelete} />
+        <RowMenu name={p.name} onRename={onRename} onFolder={onFolder} onHub={onHub} onDelete={onDelete} />
       </span>
     </li>
   );
@@ -409,19 +476,24 @@ function Row({
 /** One project as a card: what it is, whether it is live, and the two ways in (the code screen, the live app). */
 function Card({
   project: p,
+  sourceVersion = null,
   url,
   exec,
   busy,
   onRename,
   onFolder,
+  onHub,
   onDelete,
 }: {
   project: EgsProject;
+  sourceVersion?: number | null;
   url?: string;
   exec?: string;
   busy: boolean;
   onRename: () => void;
   onFolder: () => void;
+  /** published projects only: "เพิ่มไปยังฮับ" */
+  onHub?: () => void;
   onDelete: () => void;
 }) {
   const live = !!url;
@@ -443,7 +515,7 @@ function Card({
             {busy ? <span className="font-medium text-ai">AI กำลังทำงานอยู่ · กดเพื่อดู</span> : `แก้ล่าสุด ${when(p.updated_at)}`}
           </span>
         </Link>
-        <RowMenu name={p.name} onRename={onRename} onFolder={onFolder} onDelete={onDelete} />
+        <RowMenu name={p.name} onRename={onRename} onFolder={onFolder} onHub={onHub} onDelete={onDelete} />
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
         <span className={`badge ${live ? "badge-ok" : ""}`}>
@@ -452,6 +524,7 @@ function Card({
         </span>
         <span className="badge">{kindLabel(p)}</span>
         {origin && <span className="badge">{origin}</span>}
+        <SourceBadge v={sourceVersion} />
       </div>
       {live && (
         <div className="flex flex-col gap-1.5">
@@ -500,7 +573,7 @@ function CopyLink({ label, hint, url }: { label: string; hint: string; url: stri
   );
 }
 
-function RowMenu({ name, onRename, onFolder, onDelete }: { name: string; onRename: () => void; onFolder: () => void; onDelete: () => void }) {
+function RowMenu({ name, onRename, onFolder, onHub, onDelete }: { name: string; onRename: () => void; onFolder: () => void; onHub?: () => void; onDelete: () => void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -545,6 +618,12 @@ function RowMenu({ name, onRename, onFolder, onDelete }: { name: string; onRenam
             <FolderOpenIcon className="h-4 w-4 text-muted" />
             เปิดโฟลเดอร์
           </button>
+          {onHub && (
+            <button type="button" role="menuitem" onClick={pick(onHub)} className={item}>
+              <GlobeAltIcon className="h-4 w-4 text-muted" />
+              เพิ่มไปยังฮับ
+            </button>
+          )}
           <button type="button" role="menuitem" onClick={pick(onDelete)} className={`${item} text-danger hover:bg-danger-soft`}>
             <TrashIcon className="h-4 w-4" />
             ลบ

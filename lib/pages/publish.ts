@@ -34,7 +34,8 @@ export { pagesUrlFor, repoNameFor, SHARE_PARAM, shareUrlFor };
 
 export interface PublishDeps {
   fetchImpl?: FetchLike;
-  onStep?: (step: PublishStep) => void;
+  /** progress for the dialog: the step, and a short Thai detail (files uploaded, the GitHub build state) */
+  onStep?: (step: PublishStep, detail?: string | null) => void;
   /** test seam: skip the real GAS deploy */
   deploy?: (project: EgsProject) => Promise<DeployResult>;
 }
@@ -76,17 +77,26 @@ export async function publishToPages(userId: string, project: EgsProject, deps: 
   // 4. upload (PUT needs the current sha to overwrite)
   step("upload");
   let lastCommit: string | null = null;
-  for (const f of staticFiles) {
+  let sent = 0;
+  for (const [i, f] of staticFiles.entries()) {
+    step("upload", `ตรวจไฟล์ ${i + 1}/${staticFiles.length}${sent ? ` · ส่งแล้ว ${sent} ไฟล์` : ""}`);
     const sha = await gh.getFileSha(owner, repo, f.path);
     if (sha && sha === gitBlobSha(f.content)) continue; // unchanged: no commit, no extra Pages build
     lastCommit = (await gh.putFile(owner, repo, f.path, f.content, `EasyGAS publish ${new Date().toISOString()}`, sha)) ?? lastCommit;
+    sent++;
   }
+  step("upload", sent ? `ส่งไฟล์ที่เปลี่ยน ${sent} จาก ${staticFiles.length} ไฟล์` : "หน้าเว็บไม่มีอะไรเปลี่ยน ไม่ต้องส่งใหม่");
 
   // 5. switch Pages on (idempotent) and 6. wait for the build
   step("pages");
   await gh.enablePages(owner, repo);
   step("wait");
-  const built = (await gh.waitForPagesBuild(owner, repo, { commit: lastCommit })) === "built";
+  const BUILD_TH: Record<string, string> = { queued: "GitHub รับงานแล้ว กำลังรอคิว", building: "GitHub กำลังสร้างหน้าเว็บ", built: "หน้าเว็บพร้อมแล้ว" };
+  const built =
+    (await gh.waitForPagesBuild(owner, repo, {
+      commit: lastCommit,
+      onPoll: (s) => step("wait", s ? (BUILD_TH[s] ?? `สถานะจาก GitHub: ${s}`) : "รอ GitHub เริ่มสร้างหน้าเว็บ"),
+    })) === "built";
 
   // 7. remember it on the project
   step("save");

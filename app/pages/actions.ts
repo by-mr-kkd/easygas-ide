@@ -1,5 +1,6 @@
 "use server";
-
+
+import { finishProgress, noteStep, startProgress } from "@/lib/pages/progress";
 import { revalidatePath } from "next/cache";
 import { acquireProjectRun, releaseProjectRun } from "@/lib/agent-lock";
 import {
@@ -18,6 +19,7 @@ import { getFile, getFiles } from "@/lib/files";
 import { openPrivateWindow } from "@/lib/private-window";
 import { runUrlFor } from "@/lib/run-link";
 import { probeExec } from "@/lib/gas-verify";
+import { reportClonePublished } from "@/lib/share/source";
 import { getCurrentUserId, getProject, updateProject } from "@/lib/projects";
 
 /**
@@ -180,12 +182,17 @@ export async function publishPagesAction(projectId: string): Promise<PublishPage
   if (project.hosting !== "github") return { ok: false, code: "UNKNOWN", error: "โปรเจกต์นี้ไม่ได้ตั้งค่าให้วางหน้าเว็บบน GitHub" };
   const lock = await acquireProjectRun(projectId);
   if (!lock) return { ok: false, code: "UNKNOWN", error: "โปรเจกต์กำลังทำงานอยู่ รอให้เสร็จก่อน" };
+  startProgress(projectId);
   try {
-    const r = await publishToPages(await getCurrentUserId(), project);
+    const r = await publishToPages(await getCurrentUserId(), project, { onStep: (s, d) => noteStep(projectId, s, d ?? null) });
+    finishProgress(projectId);
+    void reportClonePublished(projectId); // a clone in use: its share's reviews read "ใช้งานจริง" (best effort)
     revalidatePath(`/projects/${projectId}`);
     return { ok: true, url: r.url, shareUrl: r.shareUrl, repo: r.repo, built: r.built, execUrl: r.deploy.execUrl ?? "" };
   } catch (e) {
-    return fail(e);
+    const r = fail(e);
+    finishProgress(projectId, r.ok ? null : r.error);
+    return r;
   } finally {
     await releaseProjectRun(projectId, lock);
   }

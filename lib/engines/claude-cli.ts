@@ -50,7 +50,10 @@ import { lintScope } from "@/lib/import";
  *    pushed to Google, or read by the server apart from those two validated JSON files.
  */
 
-const TURN_TIMEOUT_MS = 15 * 60 * 1000;
+// A long build may run well past 15 minutes while it is still working; stop a turn only when the CLI has been
+// silent this long (stuck), or at the hard cap.
+const TURN_IDLE_MS = 5 * 60 * 1000;
+const TURN_MAX_MS = 30 * 60 * 1000;
 const TOOLS = "Read,Edit,Write,Glob,Grep";
 /** The build gate is shut (lib/build-gate): the CLI gets no tool that writes. */
 const PLAN_TOOLS = "Read,Glob,Grep";
@@ -95,9 +98,22 @@ class CliTurnError extends Error {
   constructor(
     message: string,
     readonly sessionId: string | null,
+    /** the app stopped the CLI: silent too long, or past the hard cap */
+    readonly stopped: "idle" | "max" | null = null,
   ) {
     super(message);
   }
+}
+
+/** the line kept in the chat when a turn ends early: the files it wrote stay, the next turn can carry on */
+function failureNote(e: unknown): string {
+  const why =
+    e instanceof CliTurnError && e.stopped === "idle"
+      ? "AI ไม่ตอบสนองนานเกิน 5 นาที แอปจึงหยุดไว้"
+      : e instanceof CliTurnError && e.stopped === "max"
+        ? "AI ทำงานนานเกิน 30 นาที แอปจึงหยุดไว้"
+        : "AI หยุดทำงานกลางทาง";
+  return `(หมายเหตุจากแอป: งานรอบนี้ไม่เสร็จ — ${why} ไฟล์ที่เขียนไปแล้วยังอยู่ ย้อนกลับได้ที่ประวัติเวอร์ชัน พิมพ์ "ทำต่อ" เพื่อให้ AI ตรวจและทำส่วนที่เหลือ)`;
 }
 
 /** Locate the native claude executable (spawned directly — never through a shell or .cmd shim). */
@@ -414,20 +430,40 @@ function runCliTurn(opts: {
     });
     child.stderr.on("data", (d: Buffer) => (stderr += d.toString("utf8")));
 
-    const timer = setTimeout(() => child.kill(), TURN_TIMEOUT_MS);
+    let stopped: "idle" | "max" | null = null;
+    const stop = (why: "idle" | "max") => {
+      stopped = why;
+      child.kill();
+    };
+    const maxTimer = setTimeout(() => stop("max"), TURN_MAX_MS);
+    let idleTimer = setTimeout(() => stop("idle"), TURN_IDLE_MS);
+    child.stdout.on("data", () => {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => stop("idle"), TURN_IDLE_MS);
+    });
+    const clearTimers = () => {
+      clearTimeout(maxTimer);
+      clearTimeout(idleTimer);
+    };
     child.on("error", (e) => {
-      clearTimeout(timer);
+      clearTimers();
       reject(new CliTurnError(e.message, sessionId));
     });
     child.on("close", async (code) => {
-      clearTimeout(timer);
+      clearTimers();
       parseLine(buf); // a final line without a trailing newline
       await Promise.all(pendingReads); // emit every file_mutation before the caller closes the stream
       const r = result as StreamJsonEvent | null;
       if (!r || r.is_error || code !== 0) {
         const detail = (r?.result || stderr || `exit ${code}`).trim().slice(0, 400);
-        console.error("[claude-cli] turn failed:", detail);
-        reject(new CliTurnError(`Claude Code: ${detail}`, r?.session_id ?? sessionId));
+        console.error("[claude-cli] turn failed:", stopped ? `stopped (${stopped})` : detail);
+        const said =
+          stopped === "idle"
+            ? "AI ไม่ตอบสนองนานเกิน 5 นาที แอปจึงหยุดไว้ ไฟล์ที่เขียนไปแล้วยังอยู่ พิมพ์ \"ทำต่อ\" เพื่อให้ทำส่วนที่เหลือ"
+            : stopped === "max"
+              ? "AI ทำงานนานเกิน 30 นาที แอปจึงหยุดไว้ ไฟล์ที่เขียนไปแล้วยังอยู่ พิมพ์ \"ทำต่อ\" เพื่อให้ทำส่วนที่เหลือ"
+              : `Claude Code: ${detail}`;
+        reject(new CliTurnError(said, r?.session_id ?? sessionId, stopped));
         return;
       }
       resolvePromise({
@@ -570,7 +606,11 @@ export async function runClaudeCliTurn(args: ClaudeCliArgs): Promise<AgentRunRes
     if (sessionId) {
       await saveEngineSession(args.projectId, ENGINE_ID, { id: sessionId, told: toldAfterFailure(plan, told, current.told) }).catch(() => {});
     }
-    await appendMessages(args.projectId, [{ role: "user", content: args.userMessage }]).catch(() => {});
+    // the error is also KEPT in the chat: a phone that was in the background, or a reloaded page, never saw the stream
+    await appendMessages(args.projectId, [
+      { role: "user", content: args.userMessage },
+      { role: "assistant", content: failureNote(e) },
+    ]).catch(() => {});
     throw e;
   } finally {
     if (imagePaths.length > 0) await rm(turnImagesDir(args.projectId), { recursive: true, force: true });

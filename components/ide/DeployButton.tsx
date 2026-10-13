@@ -1,5 +1,6 @@
 "use client";
 
+import { Portal } from "@/components/ui/Portal";
 import { useEffect, useState } from "react";
 import {
   ArrowTopRightOnSquareIcon,
@@ -14,6 +15,7 @@ import { Tooltip } from "@/components/ui/Tooltip";
 import { PagesPublishPanel } from "@/components/pages/PagesPublishPanel";
 import { pagesStateAction, setHostingAction, type PagesState } from "@/app/pages/actions";
 import { HostingChoiceDialog, type Hosting } from "@/components/pages/HostingChoiceDialog";
+import { UpgradeDialog } from "@/components/premium/UpgradeDialog";
 import { pullRemoteAction } from "@/app/projects/import-actions";
 import { useRouter } from "next/navigation";
 import { AuthOpenButton } from "./AuthOpenButton";
@@ -102,6 +104,8 @@ export function DeployButton({
   // Pro, first publish of a project that never asked for the camera: Google's page or GitHub Pages?
   const [chooserOpen, setChooserOpen] = useState(false);
   const [hostingError, setHostingError] = useState<string | null>(null);
+  // Free, from the chooser's greyed GitHub Pages card: "ดู Pro"
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
   const actionRequest = useProjectStore((s) => s.actionRequest);
   const clearActionRequest = useProjectStore((s) => s.clearActionRequest);
   const runAgent = useProjectStore((s) => s.runAgent);
@@ -124,6 +128,8 @@ export function DeployButton({
         setPagesState(s);
         if (s?.hosting === "github") setPagesOpen(true);
         else if (s && !s.chosen && s.premium && s.github.available) setChooserOpen(true);
+        // Free, a web app whose front page has no home yet (a clone): the same two cards, GitHub Pages greyed
+        else if (s && !s.chosen && !s.premium && !bound) setChooserOpen(true);
         else setConfirmOpen(true);
       })
       .catch(() => (githubHosting ? setPagesOpen(true) : setConfirmOpen(true)));
@@ -232,38 +238,58 @@ export function DeployButton({
       )}
 
       {chooserOpen && pagesState && (
-        <div className="dialog-backdrop" onClick={() => setChooserOpen(false)}>
-          <div role="dialog" aria-modal="true" className="dialog max-w-md p-5" onClick={(e) => e.stopPropagation()}>
-            <HostingChoiceDialog githubConnected={pagesState.github.connected} onPick={pickHosting} onClose={() => setChooserOpen(false)} />
-            {hostingError && <p className="mt-2 text-sm text-danger">{hostingError}</p>}
+        <Portal>
+          <div className="dialog-backdrop" onClick={() => setChooserOpen(false)}>
+            <div role="dialog" aria-modal="true" className="dialog max-w-md p-5" onClick={(e) => e.stopPropagation()}>
+              <HostingChoiceDialog
+                githubConnected={pagesState.github.connected}
+                pro={pagesState.premium}
+                onUpgrade={() => setUpgradeOpen(true)}
+                onPick={pickHosting}
+                onClose={() => setChooserOpen(false)}
+              />
+              {hostingError && <p className="mt-2 text-sm text-danger">{hostingError}</p>}
+            </div>
           </div>
-        </div>
+        </Portal>
       )}
 
+      <UpgradeDialog
+        open={upgradeOpen}
+        onClose={() => setUpgradeOpen(false)}
+        reason="pages"
+        onActivated={() => {
+          setUpgradeOpen(false);
+          void loadPagesState(); // Pro now: the chooser's GitHub card opens up
+        }}
+      />
+
       {pagesOpen && pagesState && (
-        <div className="dialog-backdrop">
-          <div role="dialog" aria-modal="true" className="dialog max-w-md p-5">
-            <PagesPublishPanel
-              projectId={projectId}
-              state={pagesState}
-              googleEmail={googleEmail}
-              onStateChange={loadPagesState}
-              onPublished={(o) => {
-                onDeployed?.(o.url);
-                void loadPagesState(); // the page is on GitHub now: the "Google instead" link below goes away
-              }}
-              onClose={() => setPagesOpen(false)}
-            />
-            {!pagesState.pages && (
-              <p className="mt-3 border-t border-line pt-3 text-xs">
-                <button type="button" onClick={() => pickHosting("gas")} className="link">
-                  เผยแพร่บนหน้าเว็บของ Google แทน (มีแถบของ Google ใช้กล้องไม่ได้)
-                </button>
-                {hostingError && <span className="ml-2 text-danger">{hostingError}</span>}
-              </p>
-            )}
+        <Portal>
+          <div className="dialog-backdrop">
+            <div role="dialog" aria-modal="true" className="dialog max-w-md p-5">
+              <PagesPublishPanel
+                projectId={projectId}
+                state={pagesState}
+                googleEmail={googleEmail}
+                onStateChange={loadPagesState}
+                onPublished={(o) => {
+                  onDeployed?.(o.url);
+                  void loadPagesState(); // the page is on GitHub now: the "Google instead" link below goes away
+                }}
+                onClose={() => setPagesOpen(false)}
+              />
+              {!pagesState.pages && (
+                <p className="mt-3 border-t border-line pt-3 text-xs">
+                  <button type="button" onClick={() => pickHosting("gas")} className="link">
+                    เผยแพร่บนหน้าเว็บของ Google แทน (มีแถบของ Google ใช้กล้องไม่ได้)
+                  </button>
+                  {hostingError && <span className="ml-2 text-danger">{hostingError}</span>}
+                </p>
+              )}
+            </div>
           </div>
-        </div>
+        </Portal>
       )}
 
       <ConfirmDialog
@@ -309,143 +335,145 @@ export function DeployButton({
       />
 
       {res.kind !== "idle" && res.kind !== "busy" && (
-        <div className="dialog-backdrop">
-          <div role="dialog" aria-modal="true" className="dialog max-w-md p-5">
-            {res.kind === "ok" && (
-              <div className="flex flex-col gap-3">
-                <h3 className="flex items-center gap-2 text-[15px] font-semibold">
-                  <CheckCircleIcon className="h-6 w-6 shrink-0 text-accent-text" />
-                  {res.sheetUrl && !res.execUrl ? "เผยแพร่สำเร็จ สคริปต์อยู่ใน Google Sheet ของคุณแล้ว" : "เผยแพร่สำเร็จ แอปอยู่ในบัญชี Google ของคุณแล้ว"}
-                </h3>
-                {res.sheetUrl && !res.execUrl && (
-                  <>
-                    <a href={res.sheetUrl} target="_blank" rel="noreferrer" className="btn btn-primary">
-                      เปิดชีตของคุณ <ArrowTopRightOnSquareIcon className="h-4 w-4" />
-                    </a>
-                    <p className="hint">
-                      เปิดชีตแล้วรอสักครู่ เมนูของระบบจะขึ้นที่แถบบน ครั้งแรกที่กดเมนู Google จะขอสิทธิ์ ให้กด{" "}
-                      <b>Continue → Advanced → Allow</b> ครั้งเดียว
-                    </p>
-                  </>
-                )}
-                {res.execUrl && res.probe?.authRequired && (
-                  <div className="callout callout-warn flex-col items-start gap-2">
-                    <span>
-                      ขั้นสุดท้าย: อนุญาตระบบหลังบ้านครั้งเดียว ด้วยบัญชี Google ที่ใช้เผยแพร่ (Review permissions → Advanced → Allow)
-                    </span>
-                    <AuthOpenButton projectId={projectId} execUrl={res.execUrl} />
-                  </div>
-                )}
-                {res.execUrl && (
-                  <>
-                    {!res.probe?.authRequired && (
-                      <a href={res.runUrl ?? res.execUrl} target="_blank" rel="noreferrer" className="btn btn-primary">
-                        เปิดแอปของคุณ <ArrowTopRightOnSquareIcon className="h-4 w-4" />
+        <Portal>
+          <div className="dialog-backdrop">
+            <div role="dialog" aria-modal="true" className="dialog max-w-md p-5">
+              {res.kind === "ok" && (
+                <div className="flex flex-col gap-3">
+                  <h3 className="flex items-center gap-2 text-[15px] font-semibold">
+                    <CheckCircleIcon className="h-6 w-6 shrink-0 text-accent-text" />
+                    {res.sheetUrl && !res.execUrl ? "เผยแพร่สำเร็จ สคริปต์อยู่ใน Google Sheet ของคุณแล้ว" : "เผยแพร่สำเร็จ แอปอยู่ในบัญชี Google ของคุณแล้ว"}
+                  </h3>
+                  {res.sheetUrl && !res.execUrl && (
+                    <>
+                      <a href={res.sheetUrl} target="_blank" rel="noreferrer" className="btn btn-primary">
+                        เปิดชีตของคุณ <ArrowTopRightOnSquareIcon className="h-4 w-4" />
                       </a>
-                    )}
-                    <AppLinks runUrl={res.runUrl ?? null} execUrl={res.execUrl} authorized={!res.probe?.authRequired} />
-                    {res.sheetUrl && (
-                      <a href={res.sheetUrl} target="_blank" rel="noreferrer" className="btn btn-secondary">
-                        เปิดชีตที่เก็บข้อมูล <ArrowTopRightOnSquareIcon className="h-4 w-4" />
-                      </a>
-                    )}
-                  </>
-                )}
-                {res.probe &&
-                  !res.probe.authRequired &&
-                  (res.probe.ok ? (
-                    <p className="hint">ลองเปิดหน้าแอปให้แล้ว เปิดได้ปกติ ยังไม่ได้ลองกดปุ่มหรือบันทึกข้อมูล</p>
-                  ) : res.probe.infraError ? (
-                    <p className="hint">หน้าแอปยังเปิดไม่ขึ้น อาจต้องรอสักครู่ ลองเปิดลิงก์เอง หรือกด “ทดสอบรันจริง” อีกครั้ง</p>
-                  ) : (
-                    <div className="callout callout-warn flex-col">
-                      <span>เปิดแล้วเจอปัญหาตอนรัน: {res.probe.error}</span>
-                      <button
-                        onClick={() => {
-                          setRes({ kind: "idle" });
-                          runAgent("verify");
-                        }}
-                        className="btn btn-secondary btn-sm"
-                      >
-                        ให้ AI ทดสอบรันจริงและซ่อมให้
-                      </button>
+                      <p className="hint">
+                        เปิดชีตแล้วรอสักครู่ เมนูของระบบจะขึ้นที่แถบบน ครั้งแรกที่กดเมนู Google จะขอสิทธิ์ ให้กด{" "}
+                        <b>Continue → Advanced → Allow</b> ครั้งเดียว
+                      </p>
+                    </>
+                  )}
+                  {res.execUrl && res.probe?.authRequired && (
+                    <div className="callout callout-warn flex-col items-start gap-2">
+                      <span>
+                        ขั้นสุดท้าย: อนุญาตระบบหลังบ้านครั้งเดียว ด้วยบัญชี Google ที่ใช้เผยแพร่ (Review permissions → Advanced → Allow)
+                      </span>
+                      <AuthOpenButton projectId={projectId} execUrl={res.execUrl} />
                     </div>
-                  ))}
-                {res.execUrl && (
-                  <p className="hint">
-                    ครั้งแรกที่เปิด Google จะขอสิทธิ์เข้าถึง เช่น Sheets หรือ Gmail ให้เจ้าของแอปกด{" "}
-                    <b>Review permissions → Advanced → Allow</b> ครั้งเดียวพอ คนอื่นที่เปิดลิงก์ไม่ต้องกดอีก
-                  </p>
-                )}
-                {res.needsTriggerSetup && (
-                  <div className="callout callout-warn">
-                    <ClockIcon className="mt-0.5 h-4 w-4 shrink-0" />
-                    <span>
-                      ระบบนี้มีการแจ้งเตือนหรือตั้งเวลา เปิดสคริปต์แล้วรันฟังก์ชัน <code className="font-mono">installTriggers()</code> ครั้งเดียวเพื่อเปิดใช้{" "}
-                      <a href={res.scriptEditorUrl} target="_blank" rel="noreferrer" className="link">
-                        เปิดสคริปต์
-                      </a>
-                    </span>
-                  </div>
-                )}
-                {res.scopesAdded.length > 0 && (
-                  <div className="callout callout-warn">
-                    <ExclamationTriangleIcon className="mt-0.5 h-4 w-4 shrink-0" />
-                    <span>
-                      ฟีเจอร์ใหม่ต้องการสิทธิ์เพิ่ม: <b>{res.scopesAdded.map(scopeLabel).join(", ")}</b> เปิดแอปของคุณหลังอัปเดตนี้ ถ้าแอปขึ้นปุ่ม “กดอนุญาตสิทธิ์”
-                      ให้กดครั้งเดียว (Advanced → Allow) แล้วใช้ได้เลย
-                    </span>
-                  </div>
-                )}
-                <button onClick={() => setRes({ kind: "idle" })} className="btn btn-secondary">
-                  ปิด
-                </button>
-              </div>
-            )}
-
-            {res.kind === "enable_api" && (
-              <div className="flex flex-col gap-3">
-                <h3 className="text-[15px] font-semibold">ต้องเปิด Apps Script API ก่อน (ทำครั้งเดียว)</h3>
-                <p className="hint">{res.message}</p>
-                <a href={res.enableUrl} target="_blank" rel="noreferrer" className="btn btn-secondary">
-                  เปิดหน้าตั้งค่าของ Google <ArrowTopRightOnSquareIcon className="h-4 w-4" />
-                </a>
-                <button onClick={deploy} className="btn btn-primary">
-                  เปิดแล้ว ลองเผยแพร่อีกครั้ง
-                </button>
-                <button onClick={() => setRes({ kind: "idle" })} className="btn btn-ghost">
-                  ปิด
-                </button>
-              </div>
-            )}
-
-            {res.kind === "error" && (
-              <div className="flex flex-col gap-3">
-                <h3 className="text-[15px] font-semibold text-danger">เผยแพร่ไม่สำเร็จ</h3>
-                <p className="hint">{res.message}</p>
-                {errCode === "REMOTE_CHANGED" && (
-                  <button onClick={pullLatest} disabled={pulling} className="btn btn-primary">
-                    {pulling ? "กำลังดึง…" : "ดึงของล่าสุดจาก Google"}
+                  )}
+                  {res.execUrl && (
+                    <>
+                      {!res.probe?.authRequired && (
+                        <a href={res.runUrl ?? res.execUrl} target="_blank" rel="noreferrer" className="btn btn-primary">
+                          เปิดแอปของคุณ <ArrowTopRightOnSquareIcon className="h-4 w-4" />
+                        </a>
+                      )}
+                      <AppLinks runUrl={res.runUrl ?? null} execUrl={res.execUrl} authorized={!res.probe?.authRequired} />
+                      {res.sheetUrl && (
+                        <a href={res.sheetUrl} target="_blank" rel="noreferrer" className="btn btn-secondary">
+                          เปิดชีตที่เก็บข้อมูล <ArrowTopRightOnSquareIcon className="h-4 w-4" />
+                        </a>
+                      )}
+                    </>
+                  )}
+                  {res.probe &&
+                    !res.probe.authRequired &&
+                    (res.probe.ok ? (
+                      <p className="hint">ลองเปิดหน้าแอปให้แล้ว เปิดได้ปกติ ยังไม่ได้ลองกดปุ่มหรือบันทึกข้อมูล</p>
+                    ) : res.probe.infraError ? (
+                      <p className="hint">หน้าแอปยังเปิดไม่ขึ้น อาจต้องรอสักครู่ ลองเปิดลิงก์เอง หรือกด “ทดสอบรันจริง” อีกครั้ง</p>
+                    ) : (
+                      <div className="callout callout-warn flex-col">
+                        <span>เปิดแล้วเจอปัญหาตอนรัน: {res.probe.error}</span>
+                        <button
+                          onClick={() => {
+                            setRes({ kind: "idle" });
+                            runAgent("verify");
+                          }}
+                          className="btn btn-secondary btn-sm"
+                        >
+                          ให้ AI ทดสอบรันจริงและซ่อมให้
+                        </button>
+                      </div>
+                    ))}
+                  {res.execUrl && (
+                    <p className="hint">
+                      ครั้งแรกที่เปิด Google จะขอสิทธิ์เข้าถึง เช่น Sheets หรือ Gmail ให้เจ้าของแอปกด{" "}
+                      <b>Review permissions → Advanced → Allow</b> ครั้งเดียวพอ คนอื่นที่เปิดลิงก์ไม่ต้องกดอีก
+                    </p>
+                  )}
+                  {res.needsTriggerSetup && (
+                    <div className="callout callout-warn">
+                      <ClockIcon className="mt-0.5 h-4 w-4 shrink-0" />
+                      <span>
+                        ระบบนี้มีการแจ้งเตือนหรือตั้งเวลา เปิดสคริปต์แล้วรันฟังก์ชัน <code className="font-mono">installTriggers()</code> ครั้งเดียวเพื่อเปิดใช้{" "}
+                        <a href={res.scriptEditorUrl} target="_blank" rel="noreferrer" className="link">
+                          เปิดสคริปต์
+                        </a>
+                      </span>
+                    </div>
+                  )}
+                  {res.scopesAdded.length > 0 && (
+                    <div className="callout callout-warn">
+                      <ExclamationTriangleIcon className="mt-0.5 h-4 w-4 shrink-0" />
+                      <span>
+                        ฟีเจอร์ใหม่ต้องการสิทธิ์เพิ่ม: <b>{res.scopesAdded.map(scopeLabel).join(", ")}</b> เปิดแอปของคุณหลังอัปเดตนี้ ถ้าแอปขึ้นปุ่ม “กดอนุญาตสิทธิ์”
+                        ให้กดครั้งเดียว (Advanced → Allow) แล้วใช้ได้เลย
+                      </span>
+                    </div>
+                  )}
+                  <button onClick={() => setRes({ kind: "idle" })} className="btn btn-secondary">
+                    ปิด
                   </button>
-                )}
-                {needsGoogle && onConnectGoogle && (
-                  <button
-                    onClick={() => {
-                      setRes({ kind: "idle" });
-                      onConnectGoogle();
-                    }}
-                    className="btn btn-primary"
-                  >
-                    เชื่อมบัญชี Google
+                </div>
+              )}
+
+              {res.kind === "enable_api" && (
+                <div className="flex flex-col gap-3">
+                  <h3 className="text-[15px] font-semibold">ต้องเปิด Apps Script API ก่อน (ทำครั้งเดียว)</h3>
+                  <p className="hint">{res.message}</p>
+                  <a href={res.enableUrl} target="_blank" rel="noreferrer" className="btn btn-secondary">
+                    เปิดหน้าตั้งค่าของ Google <ArrowTopRightOnSquareIcon className="h-4 w-4" />
+                  </a>
+                  <button onClick={deploy} className="btn btn-primary">
+                    เปิดแล้ว ลองเผยแพร่อีกครั้ง
                   </button>
-                )}
-                <button onClick={() => setRes({ kind: "idle" })} className="btn btn-secondary">
-                  ปิด
-                </button>
-              </div>
-            )}
+                  <button onClick={() => setRes({ kind: "idle" })} className="btn btn-ghost">
+                    ปิด
+                  </button>
+                </div>
+              )}
+
+              {res.kind === "error" && (
+                <div className="flex flex-col gap-3">
+                  <h3 className="text-[15px] font-semibold text-danger">เผยแพร่ไม่สำเร็จ</h3>
+                  <p className="hint">{res.message}</p>
+                  {errCode === "REMOTE_CHANGED" && (
+                    <button onClick={pullLatest} disabled={pulling} className="btn btn-primary">
+                      {pulling ? "กำลังดึง…" : "ดึงของล่าสุดจาก Google"}
+                    </button>
+                  )}
+                  {needsGoogle && onConnectGoogle && (
+                    <button
+                      onClick={() => {
+                        setRes({ kind: "idle" });
+                        onConnectGoogle();
+                      }}
+                      className="btn btn-primary"
+                    >
+                      เชื่อมบัญชี Google
+                    </button>
+                  )}
+                  <button onClick={() => setRes({ kind: "idle" })} className="btn btn-secondary">
+                    ปิด
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        </Portal>
       )}
     </>
   );

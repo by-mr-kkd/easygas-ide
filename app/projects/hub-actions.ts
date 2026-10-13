@@ -5,6 +5,7 @@ import { ShareApiError } from "@/lib/share/remote";
 import { premiumStatus } from "@/lib/premium/status";
 import { type HubDoc, type HubVisibility } from "@/lib/hub/doc";
 import { listHubProjects } from "@/lib/hub/projects";
+import { addProjectItem } from "@/lib/hub/add-project";
 import {
   createHub,
   deleteHub,
@@ -113,3 +114,40 @@ export async function hubProjectsAction() {
   return listHubProjects();
 }
 
+
+/**
+ * "เพิ่มไปยังฮับ" (projects list ⋯): link one published project into a hub's first section. `hubId` null = make a
+ * new hub first (the user had none). Saves with the hub's updatedAt, so an edit made meanwhile is never overwritten.
+ */
+export async function hubAddProjectAction(hubId: string | null, projectId: string): Promise<Result<{ hubId: string; title: string; already: boolean }>> {
+  return run(async () => {
+    const project = (await listHubProjects()).find((p) => p.id === projectId);
+    if (!project) throw new HubApiError("โปรเจกต์นี้ยังไม่ได้เผยแพร่ เผยแพร่ก่อนแล้วค่อยเพิ่มลงฮับ");
+    const id = hubId ?? (await createHub("หน้ารวมลิงก์ของฉัน")).id;
+    const hub = await getHub(id);
+    let added: ReturnType<typeof addProjectItem>;
+    try {
+      added = addProjectItem(hub.doc, project);
+    } catch (e) {
+      throw new HubApiError(e instanceof Error ? e.message : "เพิ่มไม่สำเร็จ");
+    }
+    const { doc, already } = added;
+    if (!already) await saveHub(id, { doc, updatedAt: hub.updatedAt });
+    return { hubId: id, title: doc.title, already };
+  });
+}
+
+/** My hubs for "เพิ่มไปยังฮับ", each marked when the project's link is already in it (reads every hub once). */
+export async function hubListForProjectAction(projectId: string): Promise<Result<{ hubs: (HubSummary & { url: string; has: boolean })[] }>> {
+  return run(async () => {
+    const [{ hubs }, project] = await Promise.all([listHubs(), listHubProjects().then((ps) => ps.find((p) => p.id === projectId) ?? null)]);
+    const same = (u: string) => !!project && u.replace(/\/+$/, "") === project.url.replace(/\/+$/, "");
+    const marked = await Promise.all(
+      hubs.map(async (h) => {
+        const doc = project ? await getHub(h.id).then((v) => v.doc).catch(() => null) : null;
+        return { ...h, url: hubPublicUrl(h.slug), has: !!doc && doc.sections.some((s) => s.items.some((i) => same(i.url))) };
+      }),
+    );
+    return { hubs: marked };
+  });
+}

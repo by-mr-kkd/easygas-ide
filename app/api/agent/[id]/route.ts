@@ -218,7 +218,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         await snapshotProject(id, "ai"); // version the AI's output (dedupes when nothing changed)
         // lessons to OFFER the user: nothing is in use until they press "เก็บไว้"
         for (const l of await finishTurnLessons(id, project)) {
-          emit({ type: "lesson", lesson: { id: l.id, rule: l.rule, symptom: l.symptom, card: l.card, hits: l.hits } });
+          emit({ type: "lesson", lesson: l });
         }
         emit({ type: "done", tokens: r.inputTokens + r.outputTokens });
       } catch (e) {

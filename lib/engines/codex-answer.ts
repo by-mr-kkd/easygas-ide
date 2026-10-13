@@ -32,7 +32,7 @@ export interface CodexAnswer {
   /** Look & feel the user asked to keep; "" = unchanged. */
   preference: { dialog: string; css: string; icons: string; font: string; nav: string };
   /** A lesson proposal; empty rule and repeatOf = none. */
-  lesson: { rule: string; symptom: string; card: string; repeatOf: string };
+  lesson: { rule: string; symptom: string; card: string; repeatOf: string; ruleOf: string };
 }
 
 const str = { type: "string" };
@@ -53,7 +53,7 @@ export const CODEX_ANSWER_SCHEMA = strict({
   },
   spec: strict({ title: str, summary: str, features: strList, dataModel: strList, storage: str, outputs: strList }),
   preference: strict({ dialog: str, css: str, icons: str, font: str, nav: str }),
-  lesson: strict({ rule: str, symptom: str, card: str, repeatOf: str }),
+  lesson: strict({ rule: str, symptom: str, card: str, repeatOf: str, ruleOf: str }),
 });
 
 const MAX_OPS = 40;
@@ -113,7 +113,7 @@ export function parseCodexAnswer(raw: string): CodexAnswer {
       font: text(p.font, 40),
       nav: text(p.nav, 40),
     },
-    lesson: { rule: text(l.rule, 400), symptom: text(l.symptom, 300), card: text(l.card, 60), repeatOf: text(l.repeatOf, 20) },
+    lesson: { rule: text(l.rule, 400), symptom: text(l.symptom, 300), card: text(l.card, 60), repeatOf: text(l.repeatOf, 20), ruleOf: text(l.ruleOf, 50) },
   };
 }
 
@@ -129,9 +129,10 @@ export function answerToToolCalls(a: CodexAnswer): { name: string; input: Record
   if (a.spec.title.trim()) calls.push({ name: "propose_spec", input: { ...a.spec } });
   const pref = Object.fromEntries(Object.entries(a.preference).filter(([, v]) => v.trim() !== ""));
   if (Object.keys(pref).length > 0) calls.push({ name: "save_preference", input: pref });
-  if (a.lesson.rule.trim() || a.lesson.repeatOf.trim()) {
+  if (a.lesson.rule.trim() || a.lesson.repeatOf.trim() || a.lesson.ruleOf.trim()) {
     const lesson: Record<string, unknown> = { rule: a.lesson.rule, symptom: a.lesson.symptom, card: a.lesson.card };
     if (a.lesson.repeatOf.trim()) lesson.repeatOf = a.lesson.repeatOf.trim();
+    if (a.lesson.ruleOf.trim()) lesson.ruleOf = a.lesson.ruleOf.trim();
     calls.push({ name: "propose_lesson", input: lesson });
   }
   return calls;

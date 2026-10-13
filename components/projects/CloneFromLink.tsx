@@ -8,8 +8,9 @@ import { ArrowTopRightOnSquareIcon, ClipboardDocumentIcon, DocumentDuplicateIcon
 import { cloneShareAction, previewShareAction } from "@/app/projects/share-actions";
 import type { SharePublic } from "@/lib/share/payload";
 import { scopeLabel } from "@/lib/share/scan";
+import { supportLabel } from "@/lib/share/v2";
 
-type Preview = { share: SharePublic; existing: { id: string; name: string }[] };
+type Preview = { share: SharePublic; existing: { id: string; name: string }[]; pro: boolean };
 
 const kb = (n: number): string => (n < 1000 ? `${n} B` : `${Math.round(n / 100) / 10} KB`);
 
@@ -150,6 +151,26 @@ export function CloneFromLink({ initialLink = "" }: { initialLink?: string }) {
           </div>
 
           {s.description && <p className="whitespace-pre-wrap border-b border-line p-4 text-sm leading-relaxed">{s.description}</p>}
+
+          {/* share system 1.2: how the owner looks after it, and what others thought (nothing from an older website) */}
+          {(s.extra.v2 || (s.hosting === "github" && !s.extra.proOnly && !preview?.pro)) && (
+            <div className="flex flex-wrap items-center gap-1.5 border-b border-line p-4 text-xs">
+              {s.extra.v2 && <span className="badge">{supportLabel(s.extra.support.mode)}</span>}
+              {s.extra.rating.count > 0 && (
+                <span className="badge">
+                  ★ {s.extra.rating.avg} ({s.extra.rating.count} รีวิว)
+                </span>
+              )}
+              {s.extra.followers > 0 && <span className="badge">ผู้ติดตาม {s.extra.followers}</span>}
+              {s.extra.issues.open > 0 && <span className="badge">ปัญหาที่เปิดอยู่ {s.extra.issues.open}</span>}
+              {s.extra.parentInfo && <span className="hint">ต่อยอดจาก {s.extra.parentInfo.title || s.extra.parentInfo.slug}</span>}
+              {s.hosting === "github" && !s.extra.proOnly && !preview?.pro && (
+                // a GitHub Pages share without the camera: anyone may clone it; on Free it becomes a Google project
+                <span className="hint basis-full">ต้นฉบับใช้ GitHub Pages · เผยแพร่บน Google ได้ฟรี</span>
+              )}
+            </div>
+          )}
+          {s.extra.changes && <p className="whitespace-pre-wrap border-b border-line p-4 text-[13px] text-muted">เปลี่ยนจากต้นฉบับ: {s.extra.changes}</p>}
 
           {/* the sharer's terms, before anyone clones (lib/share/license.ts) */}
           <div className="border-b border-line p-4">

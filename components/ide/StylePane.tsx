@@ -1,5 +1,6 @@
 "use client";
 
+import { Portal } from "@/components/ui/Portal";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
@@ -411,32 +412,34 @@ ${text}`);
       </section>
 
       {expanded && (
-        <div className="dialog-backdrop" onMouseDown={() => setExpanded(false)}>
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="ตัวอย่างสไตล์ เต็มจอ"
-            className="dialog flex h-[calc(100vh-2rem)] max-w-[1400px] flex-col overflow-hidden"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-2 border-b border-line px-3 py-2">
-              <span className="text-sm font-semibold">ตัวอย่างสไตล์</span>
-              <span className="flex-1" />
-              <div className="seg" role="group" aria-label="ขนาดจอ">
-                <button type="button" aria-pressed={device === "desktop"} onClick={() => setDevice("desktop")} className="seg-item h-7 text-xs">
-                  จอใหญ่
-                </button>
-                <button type="button" aria-pressed={device === "mobile"} onClick={() => setDevice("mobile")} className="seg-item h-7 text-xs">
-                  มือถือ
+        <Portal>
+          <div className="dialog-backdrop" onMouseDown={() => setExpanded(false)}>
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="ตัวอย่างสไตล์ เต็มจอ"
+              className="dialog flex h-[calc(100vh-2rem)] max-w-[1400px] flex-col overflow-hidden"
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-2 border-b border-line px-3 py-2">
+                <span className="text-sm font-semibold">ตัวอย่างสไตล์</span>
+                <span className="flex-1" />
+                <div className="seg" role="group" aria-label="ขนาดจอ">
+                  <button type="button" aria-pressed={device === "desktop"} onClick={() => setDevice("desktop")} className="seg-item h-7 text-xs">
+                    จอใหญ่
+                  </button>
+                  <button type="button" aria-pressed={device === "mobile"} onClick={() => setDevice("mobile")} className="seg-item h-7 text-xs">
+                    มือถือ
+                  </button>
+                </div>
+                <button type="button" onClick={() => setExpanded(false)} aria-label="ปิด" className="btn btn-ghost btn-sm btn-icon">
+                  <XMarkIcon className="h-4 w-4" />
                 </button>
               </div>
-              <button type="button" onClick={() => setExpanded(false)} aria-label="ปิด" className="btn btn-ghost btn-sm btn-icon">
-                <XMarkIcon className="h-4 w-4" />
-              </button>
+              <iframe title="ตัวอย่างสไตล์ เต็มจอ" sandbox="" srcDoc={html} className="min-h-0 w-full flex-1 border-0 bg-sunken" />
             </div>
-            <iframe title="ตัวอย่างสไตล์ เต็มจอ" sandbox="" srcDoc={html} className="min-h-0 w-full flex-1 border-0 bg-sunken" />
           </div>
-        </div>
+        </Portal>
       )}
 
       <UpgradeDialog

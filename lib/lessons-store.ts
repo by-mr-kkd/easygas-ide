@@ -11,6 +11,7 @@ import {
   countableLintRules,
   EMPTY_BOOK,
   GENERAL_CARD,
+  MIN_RULE_LENGTH,
   parseBook,
   removeLesson,
   sanitizeProposal,
@@ -19,6 +20,7 @@ import {
   type LessonBook,
   type LintNote,
 } from "@/lib/lessons";
+import { findRuleRef, rulesOfPack, similarRule, type KnownRule } from "@/lib/lessons-rulebook";
 import { getActivePack } from "@/lib/rulebook/store";
 import type { EgsProject } from "@/types/db";
 
@@ -37,8 +39,15 @@ interface TurnState {
   lint: LintNote[];
   /** New proposals to show the user when the turn ends. */
   offered: Lesson[];
+  /** a rule the offered lesson closely restates (shown on the offer; the user decides) */
+  like: Map<string, KnownRule>;
+  /** rules the AI said it missed (ruleOf): shown to the user, nothing stored */
+  missed: { rule: KnownRule; symptom: string }[];
   aiProposals: number;
 }
+
+/** what a turn offers the user: a lesson to keep or not, or a rule from the rulebook the AI missed */
+export type TurnOffer = { id: string; rule: string; symptom: string; card: string; hits: number; like?: KnownRule; known?: KnownRule };
 
 const g = globalThis as unknown as {
   __egsLessonsWrite?: Promise<unknown>;
@@ -96,7 +105,7 @@ async function validCards(): Promise<string[]> {
 
 function turnOf(projectId: string): TurnState {
   let t = turns.get(projectId);
-  if (!t) turns.set(projectId, (t = { written: new Set(), lint: [], offered: [], aiProposals: 0 }));
+  if (!t) turns.set(projectId, (t = { written: new Set(), lint: [], offered: [], like: new Map(), missed: [], aiProposals: 0 }));
   return t;
 }
 
@@ -146,6 +155,18 @@ export async function proposeLesson(projectId: string, input: unknown): Promise<
   if (t.aiProposals >= MAX_AI_PROPOSALS_PER_TURN) {
     return { isError: true, content: "รอบนี้เสนอบทเรียนไปแล้ว — เสนอได้รอบละหนึ่งข้อ" };
   }
+  const rules = rulesOfPack((await getActivePack()).pack);
+  if (proposal.ruleOf) {
+    const known = findRuleRef(proposal.ruleOf, rules);
+    if (known) {
+      t.aiProposals++;
+      t.missed.push({ rule: known, symptom: proposal.symptom });
+      return { isError: false, content: `กฎ ${known.card} ข้อ ${known.n} มีอยู่แล้ว — ไม่ต้องเสนอเป็นบทเรียน แอปแจ้งผู้ใช้แล้ว ตรวจให้โค้ดทำตามกฎนั้นครบ` };
+    }
+    if (proposal.rule.length < MIN_RULE_LENGTH && !proposal.repeatOf) {
+      return { isError: true, content: `ไม่พบกฎ ${proposal.ruleOf} ในคู่มือ — ใช้ "<card id>#<เลขข้อ>" ตามหัวข้อ "## Rule #N" ของการ์ด` };
+    }
+  }
   const now = new Date().toISOString();
   const outcome = await mutate((book) => {
     const r = applyProposal(book, proposal, now);
@@ -162,7 +183,18 @@ export async function proposeLesson(projectId: string, input: unknown): Promise<
     };
   }
   t.offered.push(outcome.lesson);
+  const like = similarRule(outcome.lesson.rule, outcome.lesson.card, rules);
+  if (like) t.like.set(outcome.lesson.id, like);
   return { isError: false, content: `เสนอบทเรียน ${outcome.lesson.id} แล้ว — ผู้ใช้จะเป็นคนตัดสินว่าจะเก็บไว้หรือไม่ (อย่าบอกว่าบันทึกแล้ว)` };
+}
+
+const offerOf = (l: Lesson, like?: KnownRule): TurnOffer => ({ id: l.id, rule: l.rule, symptom: l.symptom, card: l.card, hits: l.hits, like });
+
+function offersOf(t: TurnState): TurnOffer[] {
+  return [
+    ...t.missed.map(({ rule, symptom }) => ({ id: `R-${rule.card}#${rule.n}`, rule: rule.text, symptom, card: rule.card, hits: 0, known: rule })),
+    ...t.offered.map((l) => offerOf(l, t.like.get(l.id))),
+  ];
 }
 
 /**
@@ -171,7 +203,7 @@ export async function proposeLesson(projectId: string, input: unknown): Promise<
  * AI's new proposal, plus app-counted ones that just reached the repeat threshold. Never throws.
  * `project` adds a final lint of the files as the turn leaves them.
  */
-export async function finishTurnLessons(projectId: string, project?: EgsProject): Promise<Lesson[]> {
+export async function finishTurnLessons(projectId: string, project?: EgsProject): Promise<TurnOffer[]> {
   try {
     if (project && turns.get(projectId)?.written.size) await noteFinalLint(project);
   } catch (e) {
@@ -189,10 +221,10 @@ export async function finishTurnLessons(projectId: string, project?: EgsProject)
           return { book: r.book, result: r.offered };
         })
       : [];
-    return [...t.offered, ...promoted];
+    return [...offersOf(t), ...promoted.map((l) => offerOf(l))];
   } catch (e) {
     console.error("[lessons] could not close the turn (non-fatal):", e);
-    return t.offered;
+    return offersOf(t);
   }
 }
 

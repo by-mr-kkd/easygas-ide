@@ -82,6 +82,7 @@ export default async function ProjectBuilderPage({ params }: { params: Promise<{
       }
       support={premium.active ? { machineInfo: await machineInfo(), unread: await unreadAnswers().catch(() => 0) } : null}
       imported={project.origin === "imported"}
+      cloned={!!project.cloned_from?.slug}
       tourSeen={settings.app[tourSeenKey("ide")] === "1"}
       claudeQuotaAllowed={isOn(settings.app[CLAUDE_QUOTA_SETTING])}
       initialFiles={files.map((f) => ({ path: f.path, content: f.content }))}
