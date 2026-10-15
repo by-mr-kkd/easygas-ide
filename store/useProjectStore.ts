@@ -1,11 +1,17 @@
 import { create } from "zustand";
 import type { AiChoice } from "@/lib/ai-choice";
 import type { MockLook } from "@/lib/style-mockup";
+import type { KitPicture } from "@/lib/client/share-pictures";
 
 export interface FileEntry {
   content: string;
+  /** differs from `saved` (line endings aside) — a tap that changes nothing never counts */
   dirty: boolean;
+  /** the text as last saved (or as the AI wrote it): what "ยกเลิกการแก้ไข" goes back to */
+  saved: string;
 }
+
+const same = (a: string, b: string): boolean => a.replace(/\r\n?/g, "\n") === b.replace(/\r\n?/g, "\n");
 
 export interface FileMutation {
   op: "write" | "edit" | "delete";
@@ -38,6 +44,8 @@ interface ProjectState {
   setWorking: (path: string | null) => void;
   updateActiveContent: (content: string) => void;
   markSaved: (path: string) => void;
+  /** throw away every unsaved manual edit: each dirty file goes back to its saved text */
+  discardChanges: () => void;
   setIssues: (list: EditorIssue[]) => void;
   clearIssues: () => void;
   /** cross-pane trigger: the editor toolbar / issues panel ask ChatPanel to run the agent
@@ -86,6 +94,16 @@ interface ProjectState {
   /** The look picked for a demo (colour · font · tone) — the style tab's mock-up follows it. */
   look: MockLook | null;
   setLook: (look: MockLook | null) => void;
+  /** "ให้ AI สร้างรูป" (ShareKit): the pictures made this session, and what the user picked from them for the share page
+   *  (ShareButton takes them when it opens and clears them once the website has them). */
+  shots: KitPicture[];
+  addShot: (shot: KitPicture) => void;
+  removeShot: (id: string) => void;
+  sharePics: { cover: string | null; photos: string[] };
+  setSharePics: (pics: { cover: string | null; photos: string[] }) => void;
+  /** an AI-written description for the share page (ShareKit), taken by ShareButton when its box is empty */
+  shareDraft: string | null;
+  setShareDraft: (text: string | null) => void;
 }
 
 /**
@@ -112,13 +130,16 @@ export const useProjectStore = create<ProjectState>((set) => ({
   draft: null,
   stylePicks: [],
   look: null,
+  shots: [],
+  sharePics: { cover: null, photos: [] },
+  shareDraft: null,
 
   setInitial: (list) =>
     set(() => {
       const files: Record<string, FileEntry> = {};
       const order: string[] = [];
       for (const f of list) {
-        files[f.path] = { content: f.content, dirty: false };
+        files[f.path] = { content: f.content, dirty: false, saved: f.content };
         order.push(f.path);
       }
       return { files, order, activePath: order[0] ?? null, issues: {} };
@@ -140,7 +161,7 @@ export const useProjectStore = create<ProjectState>((set) => ({
           workingPath: s.workingPath === m.path ? null : s.workingPath,
         };
       }
-      const files = { ...s.files, [m.path]: { content: m.content ?? "", dirty: false } };
+      const files = { ...s.files, [m.path]: { content: m.content ?? "", dirty: false, saved: m.content ?? "" } };
       const order = s.order.includes(m.path) ? s.order : [...s.order, m.path];
       const issues = { ...s.issues };
       delete issues[m.path]; // content changed → old findings are stale
@@ -156,14 +177,25 @@ export const useProjectStore = create<ProjectState>((set) => ({
       if (!s.activePath) return {};
       const issues = { ...s.issues };
       delete issues[s.activePath]; // editing invalidates this file's findings
-      return { files: { ...s.files, [s.activePath]: { content, dirty: true } }, issues };
+      const saved = s.files[s.activePath]?.saved ?? "";
+      return { files: { ...s.files, [s.activePath]: { content, dirty: !same(content, saved), saved } }, issues };
     }),
 
   markSaved: (path) =>
     set((s) => {
       const f = s.files[path];
       if (!f || !f.dirty) return {};
-      return { files: { ...s.files, [path]: { ...f, dirty: false } } };
+      return { files: { ...s.files, [path]: { ...f, dirty: false, saved: f.content } } };
+    }),
+
+  discardChanges: () =>
+    set((s) => {
+      const files = { ...s.files };
+      for (const p of s.order) {
+        const f = files[p];
+        if (f?.dirty) files[p] = { ...f, content: f.saved, dirty: false };
+      }
+      return { files };
     }),
 
   setIssues: (list) =>
@@ -194,4 +226,15 @@ export const useProjectStore = create<ProjectState>((set) => ({
   setDraft: (draft) => set({ draft }),
   setStylePicks: (ids) => set({ stylePicks: ids }),
   setLook: (look) => set({ look }),
+  addShot: (shot) => set((s) => ({ shots: [...s.shots.slice(-11), shot] })),
+  removeShot: (id) =>
+    set((s) => {
+      const gone = s.shots.find((x) => x.id === id);
+      const pics = gone
+        ? { cover: s.sharePics.cover === gone.dataUrl ? null : s.sharePics.cover, photos: s.sharePics.photos.filter((p) => p !== gone.dataUrl) }
+        : s.sharePics;
+      return { shots: s.shots.filter((x) => x.id !== id), sharePics: pics };
+    }),
+  setSharePics: (pics) => set({ sharePics: pics }),
+  setShareDraft: (text) => set({ shareDraft: text }),
 }));

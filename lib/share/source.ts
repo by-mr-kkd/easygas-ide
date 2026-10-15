@@ -156,7 +156,7 @@ export async function takeFiles(
   input: { base: CodeFile[] | null; latest: CodeFile[]; kind: "update" | "proposal"; title: string; from: number | null; to: number | null; label: string },
   after?: () => Promise<void>,
 ): Promise<Omit<TakeResult, "version">> {
-  const lock = await acquireProjectRun(projectId);
+  const lock = await acquireProjectRun(projectId, "sync");
   if (!lock) throw new ShareRefusal("โปรเจกต์นี้กำลังทำงานอยู่ (AI หรือการเผยแพร่) รอให้เสร็จก่อนแล้วลองใหม่");
   try {
     const mine = await mineOf(projectId);

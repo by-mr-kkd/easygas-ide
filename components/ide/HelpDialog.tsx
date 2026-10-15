@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { BoltIcon, InboxIcon, LifebuoyIcon, XMarkIcon } from "@heroicons/react/24/outline";
+import { BoltIcon, ChatBubbleOvalLeftEllipsisIcon, InboxIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import { FastTrackForm } from "@/components/support/FastTrackForm";
 import { FastTrackInbox } from "@/components/support/FastTrackInbox";
 
@@ -32,11 +32,12 @@ export function HelpButton({ project, machineInfo, unread = 0 }: { project: { id
       <button
         type="button"
         onClick={() => setOpen(true)}
-        title="ช่วยเหลือ · ถามแอดมิน (Fast Track)"
-        aria-label="ช่วยเหลือ ถามแอดมิน"
-        className="btn btn-ghost btn-sm btn-icon relative"
+        title="ถามปัญหากับแอดมิน (Fast Track)"
+        aria-label="ถามปัญหากับแอดมิน"
+        className="btn btn-ghost btn-sm relative max-md:gap-1.5"
       >
-        <LifebuoyIcon className="h-[18px] w-[18px] text-warn-text" />
+        <ChatBubbleOvalLeftEllipsisIcon className="h-[18px] w-[18px] text-warn-text" />
+        <span className="text-[13px] md:hidden">ถามปัญหา</span>
         {unread > 0 && <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-danger" aria-hidden />}
       </button>
       {open &&

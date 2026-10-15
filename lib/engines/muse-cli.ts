@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import { getFiles, hashFiles } from "@/lib/files";
+import { runCliCriticGate } from "@/lib/engines/cli-critic";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { mkdir, rm, writeFile as fsWriteFile } from "node:fs/promises";
@@ -338,6 +340,8 @@ export async function museOneShot(projectId: string, prompt: string, model?: str
 
 /** One chat turn on the Muse Code engine, plus one bounded repair when changes failed or the lint finds errors. */
 export async function runMuseCliTurn(args: MuseCliArgs): Promise<AgentRunResult> {
+  // what the project looked like before the turn: the rulebook re-check (Gate 1) only runs when files changed
+  const beforeHash = hashFiles(await getFiles(args.projectId));
   const exe = await usableMuse(args.executable);
   const files = await prepareFiles(args.project);
 
@@ -411,16 +415,19 @@ export async function runMuseCliTurn(args: MuseCliArgs): Promise<AgentRunResult>
   await markSessionCaughtUp(args.projectId, ENGINE_ID);
 
   const fresh = (await getProject(args.projectId)) ?? args.project;
+  /** one repair turn in the same session: the request goes in as a turn, the answer's ops are applied */
+  const repairWith = async (request: string): Promise<void> => {
+    const prompt = await buildTurnPrompt(fresh, request, "", [], "Muse Code");
+    const repair = await runMuse({ exe, files, prompt, sessionId, model: args.model, images: [], emit: args.emit });
+    const fixed = await applyAnswer(args.projectId, repair, args.emit);
+    if (fixed.reply.trim()) args.emit({ type: "text", delta: `\n\n${fixed.reply}` });
+  };
   const problems = [...applied.problems, ...(await projectLintErrors(fresh))];
   if (problems.length > 0) {
     args.emit({ type: "lint", messages: problems });
     args.emit({ type: "status", text: "พบจุดที่ต้องแก้ กำลังให้ AI แก้อัตโนมัติ…" });
     try {
-      const request = `ตรวจทั้งโปรเจกต์แล้วพบปัญหาที่ต้องแก้:\n${problems.map((m) => `- ${m}`).join("\n")}\nแก้ให้ครบผ่าน ops แล้วสรุปสั้น ๆ ใน reply`;
-      const prompt = await buildTurnPrompt(fresh, request, "", [], "Muse Code");
-      const repair = await runMuse({ exe, files, prompt, sessionId, model: args.model, images: [], emit: args.emit });
-      const fixed = await applyAnswer(args.projectId, repair, args.emit);
-      if (fixed.reply.trim()) args.emit({ type: "text", delta: `\n\n${fixed.reply}` });
+      await repairWith(`ตรวจทั้งโปรเจกต์แล้วพบปัญหาที่ต้องแก้:\n${problems.map((m) => `- ${m}`).join("\n")}\nแก้ให้ครบผ่าน ops แล้วสรุปสั้น ๆ ใน reply`);
     } catch (e) {
       // the main turn already landed; a failed repair only leaves the problems listed above
       console.error("[muse-cli] repair turn failed (non-fatal):", e);
@@ -428,6 +435,17 @@ export async function runMuseCliTurn(args: MuseCliArgs): Promise<AgentRunResult>
     }
   }
 
+  // Gate 1 — the rulebook re-check + one repair turn (lib/engines/cli-critic); only when the turn changed files
+  const gate = await runCliCriticGate({
+    projectId: args.projectId,
+    project: fresh,
+    engine: "muse-cli",
+    model: args.model,
+    emit: args.emit,
+    mutated: hashFiles(await getFiles(args.projectId)) !== beforeHash,
+    repair: (request) => repairWith(`${request}\nแก้ให้ครบผ่าน ops แล้วสรุปสั้น ๆ ใน reply`),
+  });
+
   // `muse exec --json` reports no token counts; usage shows in the user's own Meta account
-  return { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, criticIssues: 0, criticStatus: null };
+  return { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, criticIssues: gate.criticIssues, criticStatus: gate.criticStatus };
 }

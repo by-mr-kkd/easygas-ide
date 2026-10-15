@@ -17,6 +17,7 @@ export function hideInstallInHtml(html: string): string {
   return INSTALL_HIDE_STYLE + "\n" + html;
 }
 
-export function hideInstallButtons<T extends { path: string; content: string }>(files: T[]): T[] {
-  return files.map((f) => (/\.html$/i.test(f.path) && HAS_INSTALL.test(f.content) ? { ...f, content: hideInstallInHtml(f.content) } : f));
+export function hideInstallButtons<T extends { path: string; content: string; content_hash?: string }>(files: T[]): T[] {
+  // a rewritten copy hashes by its content, never by the source file's stored hash (see lib/run-bridge bridgeFiles)
+  return files.map((f) => (/\.html$/i.test(f.path) && HAS_INSTALL.test(f.content) ? { ...f, content: hideInstallInHtml(f.content), content_hash: undefined } : f));
 }

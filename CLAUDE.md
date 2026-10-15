@@ -75,6 +75,11 @@ npm run desktop:build   # Windows installer → dist/desktop/out
   over the raw bytes BEFORE parsing, strictly newer version). The signing key never enters this repo. The
   AI gets the index, not the whole rulebook; per-turn card text rides on the user message and is never
   stored in history or put in the cached system block.
+- **Gate 1 runs for the CLI engines too** (`lib/engines/cli-critic.ts`): after a turn that CHANGED files, the picked CLI
+  reviews the project against the rulebook (`cli-review`), one repair turn in the same session, one re-review that
+  reports what got fixed; the outcome lines are appended to the chat history. Settings → AI switch `auto_critic`
+  (`AUTO_CRITIC_KEY`, default on) turns it off; the manual ตรวจหาบั๊ก / ให้ AI ตรวจซ้ำ stay. The API loops keep their
+  own `runCriticGate`. The website's /how step 3 describes exactly this — keep them in step.
 - **Lessons** (`lib/lessons.ts`, docs/RULEBOOK.md): the AI may only PROPOSE. Model-written lesson text
   reaches a prompt only after the user approved that exact text (status `active`); never widen that, and
   never let a proposal rewrite an approved lesson. Lessons ride on the turn's user message like rule cards. A mistake that
@@ -242,6 +247,22 @@ npm run desktop:build   # Windows installer → dist/desktop/out
   thread). The share dialog never asks for a name. It asks for the LICENSE (`lib/share/license.ts`, vendored from
   the site's `lib/share-license.ts` — change both): egs (default, no resale) / mit / personal; a fork may not be
   looser than its parent (the site refuses). A paid kind is planned: add it to both files + the site's check.
+- **"เตรียมแชร์" (`components/ide/ShareKit.tsx`, under the chat's next steps):** the share page's pictures and words are made
+  in the chat and handed to the share dialog through the store (`sharePics` / `shareDraft`; `ShareButton` takes them when it
+  opens — the draft fills an EMPTY description box, the pictures take the free slots — and clears them once the website has
+  them). Nothing leaves the computer before the dialog sends it. Two buttons only (a preview screenshot button was tried
+  and taken out on 2026-10-15: the user wants the kit small, and html-to-image failed on real pages). (1) ให้ AI สร้างรูป: the app
+  writes a PROMPT from the user's picks (`lib/share/picture-prompt.ts`, pure, tested: size / use — cover 16:9, photo 4:3,
+  square, OG 1200×630, Facebook 4:5 —, the language of text in the picture, font feel, picture style, extra words), shows
+  it in a box they edit, and only "สร้างรูปตามนี้" sends it (`lib/share/picture.ts`); the browser centre-crops every result
+  to the picked box (`cropDataUrl`). The AI picked in the chat — ChatGPT (gpt-image-1) / Gemini (gemini-2.5-flash-image) make a real
+  picture on the user's key, Codex through its own image tool (`codexImage`: `--enable image_generation` is the ONE feature
+  switched on, shell still off, `-s workspace-write` on an empty folder of ours that the prompt names as the save path — the
+  only run that is not read-only; a Codex without the feature falls back to the drawing); every other pick (Claude Code,
+  Muse Code, Anthropic / DeepSeek / Z.ai / Meta keys) DRAWS an SVG that
+  `lib/share/svg-picture.ts` (pure, tested) must pass — no script/style/image/foreignObject/animation, no outside href or
+  url(), size capped, our width/height/viewBox forced — before `lib/client/svg-raster.ts` turns it into a JPEG in the browser.
+  Never render a model's SVG without that check. (2) ให้ AI เขียนคำอธิบาย = the dialog's "ให้ AI สรุป".
   **Share system 1.2** (`lib/share/v2.ts` parsers, `merge.ts` 3-way, `source.ts` clone side, `owner.ts` owner side,
   `remote.ts` endpoints over `remote-core.ts`): Pro-only = GitHub Pages AND camera (site's `proOnly`; an older site: every
   GitHub share). Every new endpoint degrades quietly on 404 (an older site). Reads send the STORED author key only
@@ -269,6 +290,26 @@ npm run desktop:build   # Windows installer → dist/desktop/out
   so it sits outside every installed EasyGAS app; the Pro phone app's scope is /app only); others keep /exec. The owner's Allow cannot happen there:
   `AuthOpenButton` opens /exec in a private window on the computer (`lib/private-window.ts`, Chrome --incognito / Edge
   --inprivate, the project's own URL only) and, on a phone, copies the link with the incognito-tab steps.
+  A credentialless frame also gets an EPHEMERAL storage partition (the app's localStorage was wiped on every refresh
+  there), so the PUSHED copy of every html file of a Google-hosted project carries the storage bridge
+  (`lib/run-bridge.ts`, pure, tested; not for imported scripts): a first `<script>` shim + every classic script held as
+  `type="text/egs-wait"` and replayed in order once the run page answered `storage-get` (the site's `app/run/[id]`
+  keeps the values per deployment id and takes `storage-set/-remove/-clear`; messages only from Google's frames). Off
+  the run page the shim replays at once. src/ is never rewritten; change the message names in both repos together.
+- **Gate 2 runs the app's functions too** (`lib/smoke-test.ts`, pure half `lib/smoke-plan.ts`, tested): after the live page
+  opens, the picked AI names up to 6 SAFE server functions with arguments (`parseSmokePlan` refuses unsafe / reserved
+  names), the app calls each through the self-diagnostics runner (`__egsRun_` in SELF_DIAG: `__egsdiag=egsverify&__egsfn=&__egsargs=`,
+  Logger captured, `EGS_RESULT:` / `EGS_ERROR:` + `EGS_LOGS:`) and feeds failures with their logs to the repair turn —
+  the way a CLI engine, which has no tools, gets to run code and read its error log. Verify publishes first when the
+  code changed. An app published without the runner answers HTML → `unsupported`, never a failure.
+- **Where the live test is offered** (never run by itself — it spends AI quota and not everyone wants an AI testing):
+  the chat's next steps after a publish ("ทดสอบรันจริง", or "เผยแพร่แล้วทดสอบรันจริง" when the code is newer than the
+  published app), the publish result dialog, and the code tab's toolbar for power users. "ตรวจหาบั๊ก" stays the static
+  read of the code.
+- **Run status for other screens** (`lib/agent-lock.ts` carries kind + last status line, `GET /api/run-status/<id>`):
+  the chat polls it while idle and on focus, shows a run it did not start (phone, other tab) with its live line, and
+  reloads when it ends (a typed draft survives through `egs:kickoff`). A Google publish records its steps in
+  `lib/deploy-progress.ts` (`GET /api/deploy-progress/<id>`) for the busy dialog, like the GitHub Pages one.
 - **Hubs ("ฮับ" · หน้ารวมลิงก์, home `?mode=hub`, `components/hub/*`, `lib/hub/*`, site `lib/hubs.ts`):** link pages at
   easygaside.tech/hub/<name>, edited here, stored on the site as ONE JSON document. `lib/hub/doc.ts` is vendored from the
   site's `lib/hub-doc.ts` — change both (the site's `cleanHubDoc` is the final gate). Who = the share author key; Pro = this
@@ -277,7 +318,9 @@ npm run desktop:build   # Windows installer → dist/desktop/out
   unless the item's `deployment` is "" (an app that needs a Google sign-in). The hub actions may run from a phone.
   Link icons are line icons from `HUB_ICONS` ("i:<id>", `components/hub/hub-icon-map.tsx`, same map on the site).
   The Pro phone app edits hubs at easygaside.tech/app/hubs with the SAME editor components (copied into the site's
-  `components/hub-app/` — change both); it syncs the author key, Pro token and published projects from a paired
+  `components/hub-app/` — change both); the "เทมเพลต" tab's ready-made hubs live in `lib/hub/templates.ts` (pure, tested;
+  vendored to the site's `lib/hub-templates.ts`) and `components/hub/HubTemplates.tsx` (copied to `hub-app/`) — every
+  sample link carries `TEMPLATE_URL` (example.com) so the auto-saved document stays valid until the owner edits it; it syncs the author key, Pro token and published projects from a paired
   computer through the gateway's `/__egs/api/hub-sync` (Bearer device token; `lib/hub/sync.ts`), quietly on each visit.
 - **No work at render time that touches the network or writes settings** — `next build` renders pages
   (the rulebook check once ran during a build). Trigger such work from a client effect → server action.
@@ -294,13 +337,17 @@ npm run desktop:build   # Windows installer → dist/desktop/out
   amber = needs attention. `.icon-chip` marks what a panel or row is about. Warn colours never as decoration.
 - "PRO" is always `.pro-badge` (solid yellow #F5B301 on #3D2A00) — the top bar, choices, shares; never a green or tinted badge.
 - Code screen hierarchy: the chat box (`.composer`, AI-violet frame, "สั่งงาน AI ตรงนี้") is the most visible thing. After an
-  answer the chat shows the APP's next steps (`nextSteps`: ดูพรีวิว · อธิบายโค้ด · ตรวจหาบั๊ก · เผยแพร่ → `view:preview` /
-  `publish` action requests). First open of an empty project lights the box once (`spot`, "เริ่มไอเดียของคุณที่นี่"); it waits
+  answer the chat shows the APP's next steps (`components/ide/NextSteps.tsx`, redesign 2026-10-15): a muted one-line
+  overview strip (สร้าง → ตรวจ → เผยแพร่ → แชร์; `publishStateAction` also says `shared`), ONE recommended action as the
+  green card with its reason (leftover findings → fix · not published → เผยแพร่ · code newer → เผยแพร่อัปเดต · up to date →
+  เปิดแอป) and every other action as a small pill in the row under it; green stays on that card and the kit's ribbon only. First open of an empty project lights the box once (`spot`, "เริ่มไอเดียของคุณที่นี่"); it waits
   for the guided tour through `components/tour/tour-phase.ts` (GuidedTour is the only writer) and never dims the page.
   The rail's top button is a show/hide switch (ซ่อนแชต / แชต), never a selected view. The style tab collapses
   "ใช้งานผ่านอะไร" to one line once the project has code, labels its mock-up "ตัวอย่างสไตล์ · ยังไม่ใช่แอปของคุณ", and its
   one action sits under the picks ("ให้ AI ปรับตามนี้" sends `RESTYLE_LEAD` + picks; an empty project puts them in the box).
-  The toolbar's look dialog is "ไลบรารีและฟอนต์" (not สไตล์, which is the rail tab).
+  The toolbar's look dialog is "ไลบรารีและฟอนต์"; below md its button reads "สไตล์" (the user's word for it, 2026-10-15) even
+  though the rail tab is สไตล์ too. The narrow top bar's account initial opens `AccountPopover` (email · light/dark · settings
+  link), never Settings directly; ถามแอดมิน is a speech-bubble icon with the word "ถามปัญหา" below md.
 - Every screen uses `AppTopBar` (h-12). In the desktop app it is the window title bar (`.titlebar` drag region,
   `TITLEBAR_HEIGHT` in electron/main.js) — keep the two heights equal.
 - The launcher screen (home `/projects`) is an app shell: `AppRail` (left icon rail, md+) · a panel

@@ -3,6 +3,7 @@ import { acquireProjectRun, releaseProjectRun } from "@/lib/agent-lock";
 import { mapGoogleError } from "@/lib/api-helpers";
 import { getClaspAccount } from "@/lib/clasp";
 import { deployProject } from "@/lib/deploy";
+import { finishDeployProgress, noteDeployStep, startDeployProgress } from "@/lib/deploy-progress";
 import { probeExec } from "@/lib/gas-verify";
 import { getCurrentUser, getProject } from "@/lib/projects";
 import { snapshotProject } from "@/lib/versions";
@@ -22,20 +23,23 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
   // Shared per-project lock with agent/verify: a double-click (or a deploy overlapping a generation)
   // must not create two scripts or push a half-written file set.
-  const lock = await acquireProjectRun(id);
+  const lock = await acquireProjectRun(id, "deploy");
   if (!lock)
     return NextResponse.json(
       { error: "already_running", message: "โปรเจกต์นี้กำลังประมวลผลอยู่ รอให้เสร็จก่อนแล้วลองใหม่นะครับ" },
       { status: 409 },
     );
 
+  // the publish dialog follows the steps through GET /api/deploy-progress/<id>
+  startDeployProgress(id);
   try {
-    const result = await deployProject(user.id, project);
+    const result = await deployProject(user.id, project, { onStep: (s, d) => noteDeployStep(id, s, d ?? null) });
     if (!result.unchanged) await snapshotProject(id, "deploy");
     void reportClonePublished(id); // a clone in use: its share's reviews read "ใช้งานจริง" (best effort, once)
     // Auto-probe the live /exec for an immediate "opened OK / has a problem" verdict. Best-effort.
     let probe: Awaited<ReturnType<typeof probeExec>> | undefined;
     if (result.execUrl) {
+      noteDeployStep(id, "probe", "เปิดลิงก์ของแอปดูว่าโหลดได้");
       try {
         probe = await probeExec(result.execUrl);
       } catch {
@@ -44,8 +48,10 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     }
     // a public app opens through run.easygaside.tech (lib/run-link.ts); the /exec link stays for the owner's Allow
     const runUrl = runUrlFor(result.execUrl, (await getFile(id, "appsscript.json").catch(() => null))?.content);
+    finishDeployProgress(id);
     return NextResponse.json({ ok: true, ...result, runUrl, probe });
   } catch (e) {
+    finishDeployProgress(id, "เผยแพร่ไม่สำเร็จ");
     return mapGoogleError(e, (await getClaspAccount().catch(() => null))?.email);
   } finally {
     await releaseProjectRun(id, lock);

@@ -13,6 +13,16 @@ import { CLI_INSTALL, type InstallableCli } from "./cli-install.ts";
 
 export type TerminalKind = "install" | "login";
 
+/**
+ * Installers written for PowerShell 7: OpenAI's install.ps1 sets strict mode and reads
+ * `[RuntimeInformation]::OSArchitecture`, which Windows PowerShell 5.1 could not find on a user's machine
+ * (2026-10-15: "The property 'OSArchitecture' cannot be found on this object"). When pwsh is on the machine the
+ * same vendor command runs in it; otherwise Windows PowerShell gets a try and the window says what to do if it fails.
+ */
+const PREFER_PWSH: InstallableCli[] = ["codex"];
+/** where OpenAI's installer puts codex.exe (cli-install.ts): the window checks it, since its own PATH is stale */
+const CODEX_EXE = "Programs\\OpenAI\\Codex\\bin\\codex.exe";
+
 /** Windows PowerShell by absolute path, so nothing on PATH can stand in for it. */
 export function powershellPath(env: Record<string, string | undefined>): string {
   return join(env.SystemRoot?.trim() || env.windir?.trim() || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
@@ -25,12 +35,25 @@ export function terminalScript(tool: InstallableCli, kind: TerminalKind, exe: st
   const info = CLI_INSTALL[tool];
   const title = `$Host.UI.RawUI.WindowTitle = ${psQuote(`EasyGAS IDE - ${kind === "install" ? "install" : "sign in to"} ${info.name}`)}`;
   if (kind === "install") {
+    // Codex: run in pwsh when present; under Windows PowerShell a failure is caught (the installer's own `exit`/throw would
+    // otherwise end the script before any advice), a diagnostic line is printed, and the window offers to install
+    // PowerShell 7 with winget (the user answers y) and rerun the same vendor command there.
+    const pwshFind = `$egsPwsh = (Get-Command pwsh -ErrorAction SilentlyContinue).Source; if (-not $egsPwsh -and (Test-Path (Join-Path $env:ProgramFiles 'PowerShell\\7\\pwsh.exe'))) { $egsPwsh = Join-Path $env:ProgramFiles 'PowerShell\\7\\pwsh.exe' }`;
+    const inPwsh = `Write-Host 'Running it in PowerShell 7 (pwsh), which this installer is written for.'; & $egsPwsh -NoProfile -Command ${psQuote(info.command)}`;
+    const run = PREFER_PWSH.includes(tool)
+      ? [
+          pwshFind,
+          `if ($egsPwsh) { ${inPwsh} } else { try { ${info.command} } catch { Write-Host ''; Write-Host ('Installer stopped: ' + $_.Exception.Message) -ForegroundColor Red; Set-StrictMode -Off; Write-Host ('Diagnostics: PowerShell ' + $PSVersionTable.PSVersion + ', CLR ' + [Environment]::Version + ', OSArchitecture=' + [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) } }`,
+          `$ErrorActionPreference = 'Continue'`,
+          `if (-not (Test-Path (Join-Path $env:LOCALAPPDATA ${psQuote(CODEX_EXE)})) -and -not $egsPwsh) { Write-Host ''; Write-Host 'This installer is written for PowerShell 7. EasyGAS IDE can install PowerShell 7 with winget (Microsoft package, may ask for administrator approval) and run the Codex installer there.' -ForegroundColor Yellow; if ((Read-Host 'Install PowerShell 7 now? (y/n)') -match '^[yY]') { winget install --id Microsoft.PowerShell -e --source winget --accept-source-agreements --accept-package-agreements; ${pwshFind}; if ($egsPwsh) { ${inPwsh} } else { Write-Host 'PowerShell 7 was not found after winget. Restart EasyGAS IDE and press the install button again.' -ForegroundColor Yellow } } else { Write-Host 'Other way, if Node.js is installed:  npm install -g @openai/codex' -ForegroundColor Yellow } }`,
+        ]
+      : [info.command];
     return [
       title,
       `Write-Host ${psQuote(`EasyGAS IDE: installing ${info.name} with ${info.vendor}'s official installer:`)}`,
       `Write-Host ${psQuote(`  ${info.command}`)} -ForegroundColor Cyan`,
       `Write-Host ''`,
-      info.command,
+      ...run,
       `Write-Host ''`,
       `Write-Host 'Done. Go back to EasyGAS IDE and press the sign-in button, then "check again".' -ForegroundColor Green`,
     ].join("; ");

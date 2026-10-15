@@ -100,7 +100,7 @@ export async function pullRemoteAction(projectId: string): Promise<Result<null>>
   const project = await getProject(String(projectId ?? "")).catch(() => null);
   if (!project?.script_id) return { ok: false, error: "โปรเจกต์นี้ยังไม่ได้อยู่บน Google" };
   if (project.origin !== "imported" && project.hosting === "github") return { ok: false, error: "โปรเจกต์ที่วางหน้าเว็บบน GitHub ดึงจาก Google ไม่ได้" };
-  const lock = await acquireProjectRun(projectId);
+  const lock = await acquireProjectRun(projectId, "sync");
   if (!lock) return { ok: false, error: "โปรเจกต์นี้กำลังทำงานอยู่ รอให้เสร็จก่อนแล้วลองใหม่" };
   try {
     await pullRemote(project);

@@ -5,6 +5,8 @@ import { AppUpdateCard } from "@/components/settings/AppUpdateCard";
 import { DataFolder } from "@/components/settings/DataFolder";
 import { autoUpdateEnabled, readUpdateState } from "@/lib/app-update";
 import { EngineForm } from "@/components/settings/EngineForm";
+import { AutoCriticCard } from "@/components/settings/AutoCriticCard";
+import { autoCriticEnabled } from "@/lib/engines/cli-critic";
 import { PremiumSection } from "@/components/premium/PremiumSection";
 import { GoogleConnect } from "@/components/settings/GoogleConnect";
 import { ShareAuthorCard } from "@/components/settings/ShareAuthorCard";
@@ -123,6 +125,7 @@ export default async function SettingsPage({
   return (
     <SettingsShell current={section} from={pickFrom(sp)} status={status} title={HEAD[section].title} hint={HEAD[section].hint}>
       {ai && (
+        <>
         <EngineForm
           engine={ai.settings.engine}
           provider={ai.settings.provider}
@@ -134,6 +137,8 @@ export default async function SettingsPage({
           codexFound={findCodexExecutable() !== null}
           museFound={findMuseExecutable() !== null}
         />
+        <AutoCriticCard enabled={await autoCriticEnabled()} />
+        </>
       )}
 
       {section === "google" && (

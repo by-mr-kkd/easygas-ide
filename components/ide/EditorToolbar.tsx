@@ -30,6 +30,7 @@ export function EditorToolbar({
   const setIssues = useProjectStore((s) => s.setIssues);
   const runAgent = useProjectStore((s) => s.runAgent);
   const addEnergy = useProjectStore((s) => s.addEnergy);
+  const discardChanges = useProjectStore((s) => s.discardChanges);
   const actionRequest = useProjectStore((s) => s.actionRequest);
   const clearActionRequest = useProjectStore((s) => s.clearActionRequest);
   const [checking, setChecking] = useState(false);
@@ -119,28 +120,34 @@ export function EditorToolbar({
       className={
         inToolbar
           ? "flex min-w-0 items-center gap-1.5"
-          : "flex flex-none flex-wrap items-center gap-1.5 border-b border-line px-2 py-1.5"
+          : // one row that scrolls sideways on a phone instead of wrapping into two
+            "no-scrollbar flex flex-none items-center gap-1.5 overflow-x-auto border-b border-line px-2 py-1.5"
       }
     >
-      {/* a real button only while there is something to save; otherwise a plain status line */}
+      {/* edits in hand: save or throw them away; otherwise a plain status line (a tap that changed nothing stays "saved") */}
       {dirty || saving ? (
-        <button onClick={save} disabled={saving} className="btn btn-warn btn-sm">
-          {saving ? (
-            <>
-              <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
-              กำลังบันทึก…
-            </>
-          ) : (
-            "บันทึกการแก้ไข"
-          )}
-        </button>
+        <>
+          <button onClick={save} disabled={saving} className="btn btn-warn btn-sm shrink-0">
+            {saving ? (
+              <>
+                <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                กำลังบันทึก…
+              </>
+            ) : (
+              "บันทึก"
+            )}
+          </button>
+          <button onClick={discardChanges} disabled={saving} title="ทิ้งการแก้ไขที่ยังไม่ได้บันทึก กลับไปเป็นโค้ดที่บันทึกไว้ล่าสุด" className="btn btn-ghost btn-sm shrink-0">
+            ยกเลิก
+          </button>
+        </>
       ) : (
-        <span className="flex items-center gap-1 px-1 text-xs text-faint">
+        <span className="flex shrink-0 items-center gap-1 px-1 text-xs text-faint">
           <CheckCircleIcon className="h-4 w-4" /> {inToolbar ? "" : "บันทึกแล้ว"}
         </span>
       )}
-      {!inToolbar && <span className="min-w-0 flex-1" />}
-      {note && <span className={`truncate text-xs text-muted ${inToolbar ? "max-w-[220px]" : ""}`}>{note}</span>}
+      {!inToolbar && <span className="min-w-2 flex-1" />}
+      {note && <span className={`truncate text-xs text-muted ${inToolbar ? "max-w-[220px]" : "max-w-[40vw]"}`}>{note}</span>}
 
       <VersionHistory projectId={projectId} />
       {canVerify && (

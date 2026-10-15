@@ -16,7 +16,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   if (!project.script_id)
     return NextResponse.json({ error: "NOT_DEPLOYED", message: "เผยแพร่ครั้งแรกก่อน แล้วค่อยเปิด /dev" }, { status: 400 });
 
-  const lock = await acquireProjectRun(id);
+  const lock = await acquireProjectRun(id, "deploy");
   if (!lock)
     return NextResponse.json(
       { error: "already_running", message: "โปรเจกต์นี้กำลังประมวลผลอยู่ รอให้เสร็จก่อนนะครับ" },

@@ -8,7 +8,8 @@ import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import type { AgentEvent, AgentRunResult, Emit } from "@/lib/anthropic-agent";
 import type { AttachedImage } from "@/lib/chat-images";
 import { childEnv } from "@/lib/child-env";
-import { getFiles } from "@/lib/files";
+import { getFiles, hashFiles } from "@/lib/files";
+import { runCliCriticGate } from "@/lib/engines/cli-critic";
 import { validateGasFiles } from "@/lib/gas-codegen";
 import { engineDir, imagesDir, srcDir } from "@/lib/local/paths";
 import { parseClaudeAuthStatus } from "@/lib/engines/claude-auth-status";
@@ -525,6 +526,8 @@ export async function runClaudeCliTurn(args: ClaudeCliArgs): Promise<AgentRunRes
   await mkdir(srcDir(args.projectId), { recursive: true });
   const cwd = realpathSync.native(srcDir(args.projectId));
   const hasFiles = (await getFiles(args.projectId)).length > 0;
+  // what the project looked like before the turn: the rulebook re-check (Gate 1) only runs when files changed
+  const beforeHash = hashFiles(await getFiles(args.projectId));
   const engine = await prepareEngineFiles(args.project);
   const engineDirs = [engine.rulesDir, engine.ioDir];
   // Name the rule cards the app matched to this request; the CLI opens them itself (its session keeps
@@ -626,6 +629,7 @@ export async function runClaudeCliTurn(args: ClaudeCliArgs): Promise<AgentRunRes
   await markSessionCaughtUp(args.projectId, ENGINE_ID);
 
   let total = { ...main };
+  let sessionId = main.sessionId;
   const errors = await projectLintErrors(args.project);
   if (errors.length > 0 && main.sessionId) {
     args.emit({ type: "lint", messages: errors });
@@ -642,7 +646,8 @@ export async function runClaudeCliTurn(args: ClaudeCliArgs): Promise<AgentRunRes
       emit: args.emit,
       silent: true,
     }).finally(applyPreferenceRequest);
-    await saveEngineSession(args.projectId, ENGINE_ID, { id: repair.sessionId ?? main.sessionId });
+    sessionId = repair.sessionId ?? main.sessionId;
+    await saveEngineSession(args.projectId, ENGINE_ID, { id: sessionId });
     total = {
       ...total,
       inputTokens: total.inputTokens + repair.inputTokens,
@@ -652,13 +657,48 @@ export async function runClaudeCliTurn(args: ClaudeCliArgs): Promise<AgentRunRes
     };
   }
 
+  // Gate 1 — the rulebook re-check + one repair turn in the same session (lib/engines/cli-critic), as the API
+  // loops do inside every build turn; only when the turn changed files
+  const gate = await runCliCriticGate({
+    projectId: args.projectId,
+    project: args.project,
+    engine: "claude-cli",
+    model: args.model,
+    emit: args.emit,
+    mutated: hashFiles(await getFiles(args.projectId)) !== beforeHash,
+    repair: async (request) => {
+      if (!sessionId) return;
+      const fix = await runCliTurnWithRecovery({
+        exe,
+        cwd,
+        prompt: `${request}\nแก้ให้ครบด้วย Edit/Write แล้วสรุปสั้น ๆ`,
+        project: args.project,
+        engine,
+        resumeId: sessionId,
+        model: args.model,
+        extraDirs: engineDirs,
+        emit: args.emit,
+        silent: true,
+      }).finally(applyPreferenceRequest);
+      sessionId = fix.sessionId ?? sessionId;
+      await saveEngineSession(args.projectId, ENGINE_ID, { id: sessionId });
+      total = {
+        ...total,
+        inputTokens: total.inputTokens + fix.inputTokens,
+        outputTokens: total.outputTokens + fix.outputTokens,
+        cacheReadTokens: total.cacheReadTokens + fix.cacheReadTokens,
+        cacheCreationTokens: total.cacheCreationTokens + fix.cacheCreationTokens,
+      };
+    },
+  });
+
   return {
     inputTokens: total.inputTokens,
     outputTokens: total.outputTokens,
     cacheReadTokens: total.cacheReadTokens,
     cacheCreationTokens: total.cacheCreationTokens,
-    criticIssues: 0,
-    criticStatus: null,
+    criticIssues: gate.criticIssues,
+    criticStatus: gate.criticStatus,
   };
 }
 

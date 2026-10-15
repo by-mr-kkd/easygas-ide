@@ -180,7 +180,7 @@ export async function publishPagesAction(projectId: string): Promise<PublishPage
   const project = await getProject(projectId);
   if (!project) return { ok: false, code: "UNKNOWN", error: "ไม่พบโปรเจกต์" };
   if (project.hosting !== "github") return { ok: false, code: "UNKNOWN", error: "โปรเจกต์นี้ไม่ได้ตั้งค่าให้วางหน้าเว็บบน GitHub" };
-  const lock = await acquireProjectRun(projectId);
+  const lock = await acquireProjectRun(projectId, "deploy");
   if (!lock) return { ok: false, code: "UNKNOWN", error: "โปรเจกต์กำลังทำงานอยู่ รอให้เสร็จก่อน" };
   startProgress(projectId);
   try {

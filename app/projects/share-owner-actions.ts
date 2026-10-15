@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { describeChanges } from "@/lib/share/describe";
-import { compareProposal, forkChangesPrefill, ownerInfo, proposeToParent, setIssueStatus, setProposal, takeProposal, type OwnerInfo } from "@/lib/share/owner";
+import { boardLink, compareProposal, forkChangesPrefill, ownerInfo, proposeToParent, setIssueStatus, setProposal, takeProposal, type OwnerInfo } from "@/lib/share/owner";
 import { ShareRefusal } from "@/lib/share/payload";
 import { ShareApiError } from "@/lib/share/remote";
 import { saveShareSupport } from "@/lib/share/service";
@@ -96,4 +96,10 @@ export async function describeChangesAction(projectId: string, ai: unknown): Pro
 export async function proposeToParentAction(projectId: string, title: string, summary: string): Promise<Result<{ id: string }>> {
   if (!PROJECT_ID.test(projectId)) return bad;
   return wrap(() => proposeToParent(projectId, String(title ?? ""), String(summary ?? "")));
+}
+
+/** The owner link to the share's thread (lib/share/owner.ts boardLink). */
+export async function boardLinkAction(projectId: string): Promise<Result<string>> {
+  if (!PROJECT_ID.test(projectId)) return bad;
+  return wrap(() => boardLink(projectId));
 }

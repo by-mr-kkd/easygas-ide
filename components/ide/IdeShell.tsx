@@ -26,6 +26,7 @@ import { hasDoGet } from "@/lib/bound";
 import { GuidedTour } from "@/components/tour/GuidedTour";
 import { QuotaStatus } from "./QuotaStatus";
 import { ThemeSwitch } from "@/components/ui/ThemeToggle";
+import { AccountPopover } from "./AccountPopover";
 import { useMediaQuery } from "@/components/ui/useIsDark";
 import type { AiChoice } from "@/lib/ai-choice";
 import type { AiOption } from "@/lib/ai-options";
@@ -381,12 +382,18 @@ export function IdeShell({
                   <span className="h-[18px] w-px bg-line" aria-hidden />
                 </>
               )}
+              {google.connected && (
+                // a phone: the initial opens the account sheet (email, light/dark, settings link) instead of jumping to Settings
+                <span className="contents md:hidden">
+                  <AccountPopover email={google.email ?? null} settingsHref={settingsHref("google")} />
+                </span>
+              )}
               {google.connected ? (
                 <Link
                   href={settingsHref("google")}
                   title="บัญชี Google ที่ใช้เผยแพร่ กดเพื่อเปลี่ยน"
                   aria-label={`บัญชี Google: ${google.email ?? "เชื่อมแล้ว"} กดเพื่อเปลี่ยน`}
-                  className="btn btn-ghost btn-sm gap-2 pl-1.5 pr-2.5 font-normal text-fg"
+                  className="btn btn-ghost btn-sm gap-2 pl-1.5 pr-2.5 font-normal text-fg max-md:hidden"
                 >
                   <span className="grid h-[22px] w-[22px] place-items-center rounded-full bg-accent-soft text-[11px] font-bold text-accent-text">
                     {(google.email?.[0] ?? "G").toUpperCase()}
@@ -444,7 +451,7 @@ export function IdeShell({
               >
                 <SwatchIcon className="h-4 w-4 text-info" />
                 <span className="hidden md:inline">ไลบรารีและฟอนต์</span>
-                <span className="md:hidden">ฟอนต์</span>
+                <span className="md:hidden">สไตล์</span>
               </button>
               <GuidedTour tour="ide" seen={tourSeen} className="btn-sm max-sm:hidden" />
               {pro && support && <HelpButton project={{ id: projectId, name: projectName }} machineInfo={support.machineInfo} unread={support.unread} />}
@@ -556,6 +563,7 @@ export function IdeShell({
             {pushNudge && <AppNudge strip />}
             <ChatPanel
               projectId={projectId}
+              projectName={projectName}
               demo={demo}
               initialImages={initialImages}
               initialMessages={initialMessages}

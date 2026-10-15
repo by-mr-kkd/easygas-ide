@@ -39,6 +39,61 @@ function stripToSnippet(html: string, match: string): string {
     .slice(0, 200);
 }
 
+/** What one function call through the self-diagnostics runner came back with (lib/smoke-test). */
+export interface FunctionProbeResult {
+  ok: boolean;
+  /** JSON of the return value (cut), when ok */
+  result?: string;
+  /** the error message + first stack line, when not ok */
+  error?: string;
+  /** Logger.log lines the app wrote during the call */
+  logs: string[];
+  /** the deployed code has no runner (an app published before the rule, or doGet lost the hook) */
+  unsupported?: boolean;
+}
+
+const SELF_RESULT = /EGS_RESULT:\s*([\s\S]*?)(?:\nEGS_LOGS:|$)/;
+
+/** The runner's text answer, parsed (pure). HTML or anything without the markers = no runner. */
+export function parseFunctionOutput(text: string): FunctionProbeResult {
+  let logs: string[] = [];
+  const lm = text.match(SELF_LOGS);
+  if (lm) {
+    try {
+      const arr = JSON.parse(lm[1]) as unknown[];
+      if (Array.isArray(arr)) logs = arr.map(String).slice(-20);
+    } catch {
+      /* logs not valid json — ignore */
+    }
+  }
+  if (/^\s*EGS_RESULT:/.test(text)) return { ok: true, result: (text.match(SELF_RESULT)?.[1] ?? "").trim().slice(0, 600), logs };
+  if (/EGS_ERROR:/.test(text)) {
+    const err = (text.match(SELF_ERROR)?.[1] ?? "").split("\n").slice(0, 2).join(" ").replace(/\s+/g, " ").trim().slice(0, 400);
+    return { ok: false, error: err || "แอปรายงานข้อผิดพลาดตอนเรียกฟังก์ชัน", logs };
+  }
+  return { ok: false, unsupported: true, error: "แอปนี้ยังไม่มีตัวรันฟังก์ชันทดสอบ", logs };
+}
+
+/** Call one server function on the live app (self-diagnostics runner) and read its result, error and logs. Never throws. */
+export async function runFunctionProbe(execUrl: string, fn: string, args: unknown[]): Promise<FunctionProbeResult> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 40_000); // a real function may read a Sheet or two
+  try {
+    const sep = execUrl.includes("?") ? "&" : "?";
+    const url = execUrl + sep + DIAG_PARAM + "=" + DIAG_TOKEN + "&__egsfn=" + encodeURIComponent(fn) + "&__egsargs=" + encodeURIComponent(JSON.stringify(args));
+    const res = await fetch(url, { redirect: "follow", signal: ctrl.signal });
+    const text = await res.text();
+    if (NEEDS_AUTH.test(text) || LOGIN_WALL.test(res.url || "") || LOGIN_WALL.test(text)) return { ok: false, error: "แอปยังไม่ได้รับอนุญาตให้รัน (เจ้าของต้องกด Allow ครั้งแรก)", logs: [] };
+    if (res.status >= 400) return { ok: false, error: "เรียกไม่สำเร็จ (HTTP " + res.status + ")", logs: [] };
+    return parseFunctionOutput(text);
+  } catch (e) {
+    const aborted = e instanceof Error && e.name === "AbortError";
+    return { ok: false, error: aborted ? "เรียกแล้วไม่ตอบใน 40 วินาที (ฟังก์ชันช้าเกินหรือค้าง)" : "เรียกไม่ได้ (เครือข่าย)", logs: [] };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export interface ProbeResult {
   ok: boolean;
   error?: string; // human-readable error when ok=false

@@ -3,6 +3,7 @@
 import { forgetAuthor } from "@/lib/share/author";
 import { assertLocalRequest } from "@/lib/remote/request";
 import { AUTO_UPDATE_KEY } from "@/lib/app-update";
+import { AUTO_CRITIC_KEY } from "@/lib/engines/cli-critic";
 import { MODEL_ID } from "@/lib/ai-choice";
 import { revalidatePath } from "next/cache";
 import { claspLogout, getClaspAccount, startClaspLogin, type ClaspAccount } from "@/lib/clasp";
@@ -101,6 +102,12 @@ export async function savePrefsAction(input: unknown): Promise<{ ok: boolean; er
 export async function setAutoUpdateAction(on: boolean): Promise<void> {
   await assertLocalRequest();
   await updateAppSettings({ [AUTO_UPDATE_KEY]: on === true ? "on" : "off" });
+  revalidatePath("/settings");
+}
+
+/** "ตรวจซ้ำตามกฎอัตโนมัติ" after a turn that changed files (default on; lib/engines/cli-critic AUTO_CRITIC_KEY). */
+export async function setAutoCriticAction(on: boolean): Promise<void> {
+  await updateAppSettings({ [AUTO_CRITIC_KEY]: on === true ? "on" : "off" });
   revalidatePath("/settings");
 }
 

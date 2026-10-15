@@ -4,8 +4,10 @@ import { revalidatePath } from "next/cache";
 import { getProject } from "@/lib/projects";
 import { ShareRefusal, type SharePublic } from "@/lib/share/payload";
 import { ShareApiError } from "@/lib/share/remote";
-import { cloneShare, previewShare, projectsClonedFrom, scanProject, shareProject, shareState, unshareProject, type ScanResult, type ShareInput } from "@/lib/share/service";
+import { cloneShare, previewShare, projectsClonedFrom, scanProject, setShareImages, shareProject, shareState, unshareProject, type ScanResult, type ShareInput, type SharePictureInput } from "@/lib/share/service";
 import { describeProject } from "@/lib/share/describe";
+import { makeSharePicture, type SharePicture } from "@/lib/share/picture";
+import type { PictureSize } from "@/lib/share/picture-prompt";
 import { premiumStatus } from "@/lib/premium/status";
 import { supportMode } from "@/lib/share/v2";
 import { ensureAuthor, renameAuthor, storedAuthor, type ShareAuthor } from "@/lib/share/author";
@@ -51,6 +53,19 @@ export async function describeShareAction(projectId: string, ai: unknown): Promi
   }
 }
 
+/** "ให้ AI สร้างรูป" (ShareKit): a picture from the prompt the user reviewed, by the AI picked in the chat — a real picture from
+ *  an image model when the pick has one, otherwise an SVG drawing the browser turns into a JPEG (lib/share/picture.ts). */
+export async function sharePictureAction(projectId: string, ai: unknown, input: { prompt: string; size: PictureSize; useCode?: boolean }): Promise<Result<SharePicture>> {
+  if (!PROJECT_ID.test(projectId)) return { ok: false, error: "ไม่พบโปรเจกต์" };
+  try {
+    return { ok: true, data: await makeSharePicture(projectId, ai, { prompt: input?.prompt, size: input?.size, useCode: input?.useCode === true }) };
+  } catch (e) {
+    if (e instanceof ShareRefusal) return { ok: false, error: e.message };
+    console.error("[share] picture", e);
+    return { ok: false, error: "AI สร้างรูปไม่สำเร็จ ลองใหม่อีกครั้ง หรือถ่ายรูปหน้าจอแทน" };
+  }
+}
+
 /** Who shares (the Google account signed in here): made / refreshed on the website. */
 export async function shareAuthorAction(): Promise<Result<ShareAuthor>> {
   try {
@@ -84,6 +99,25 @@ export async function shareProjectAction(projectId: string, input: ShareInput): 
       changes: typeof input?.changes === "string" ? input.changes : undefined,
     });
     return { ok: true, data: { slug: share.slug, url: share.url, version: share.version } };
+  } catch (e) {
+    return failFrom(e);
+  }
+}
+
+/** The pictures on the share page: a cover and up to 4 photos, each an existing website URL or a new base64 picture. */
+export async function shareImagesAction(projectId: string, input: { cover: SharePictureInput | null; images: SharePictureInput[] }): Promise<Result<{ cover: string; images: string[] }>> {
+  if (!PROJECT_ID.test(projectId)) return { ok: false, error: "ไม่พบโปรเจกต์" };
+  const pic = (v: unknown): SharePictureInput | null => {
+    if (!v || typeof v !== "object") return null;
+    const o = v as { url?: unknown; data?: unknown };
+    if (typeof o.url === "string" && o.url) return { url: o.url };
+    if (typeof o.data === "string" && o.data) return { data: o.data };
+    return null;
+  };
+  try {
+    const cover = pic(input?.cover);
+    const images = (Array.isArray(input?.images) ? input.images : []).map(pic).filter((p): p is SharePictureInput => !!p);
+    return { ok: true, data: await setShareImages(projectId, { cover, images }) };
   } catch (e) {
     return failFrom(e);
   }

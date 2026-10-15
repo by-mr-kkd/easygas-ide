@@ -17,7 +17,7 @@ import { snapshotProject } from "@/lib/versions";
 import type { EgsProject } from "@/types/db";
 import { parseShareLink } from "./link";
 import { fromShareFiles, kindOf, SHARE_LIMITS, ShareRefusal, toShareFiles, type SharePublic } from "./payload";
-import { countCloneRemote, createShareRemote, deleteShareRemote, fetchShare, postVersionRemote, shareSettingsRemote, siteOrigin } from "./remote";
+import { countCloneRemote, createShareRemote, deleteShareRemote, fetchShare, postVersionRemote, setShareImagesRemote, shareSettingsRemote, siteOrigin, uploadShareImageRemote } from "./remote";
 import { scanShare, type Finding } from "./scan";
 import { saveShareBase } from "./source";
 import { supportMode, SUPPORT_NOTE_MAX, type SupportMode } from "./v2";
@@ -129,11 +129,47 @@ export async function unshareProject(projectId: string): Promise<void> {
 }
 
 /** The link only (never the token) plus what the dialog needs to show. */
-export async function shareState(projectId: string): Promise<{ share: { slug: string; url: string; title: string; version: number; updated_at: string; license: ShareLicense } | null; clonedFrom: EgsProject["cloned_from"] | null; name: string }> {
+export async function shareState(projectId: string): Promise<{
+  share: { slug: string; url: string; title: string; version: number; updated_at: string; license: ShareLicense; cover: string; images: string[] } | null;
+  clonedFrom: EgsProject["cloned_from"] | null;
+  name: string;
+}> {
   const project = await getProject(projectId);
   if (!project) return { share: null, clonedFrom: null, name: "" };
   const s = project.share;
-  return { share: s ? { slug: s.slug, url: s.url, title: s.title, version: s.version, updated_at: s.updated_at, license: licenseOf(s.license) } : null, clonedFrom: project.cloned_from ?? null, name: project.name };
+  return {
+    share: s ? { slug: s.slug, url: s.url, title: s.title, version: s.version, updated_at: s.updated_at, license: licenseOf(s.license), cover: s.cover ?? "", images: s.images ?? [] } : null,
+    clonedFrom: project.cloned_from ?? null,
+    name: project.name,
+  };
+}
+
+/** A picture for the share page: one the website already holds (url), or a new one from the browser (base64). */
+export type SharePictureInput = { url: string } | { data: string };
+export const SHARE_PHOTOS_MAX = 4;
+/** base64 of a browser-shrunk JPEG (lib/client/image-compress): well under the website's 3 MB cap */
+const PICTURE_BASE64_MAX = 2_800_000;
+
+/**
+ * The pictures of a project's share: new ones are uploaded (the website re-encodes them), then the list is set —
+ * the website drops anything that is not this share's own upload and removes what is no longer listed.
+ */
+export async function setShareImages(projectId: string, input: { cover: SharePictureInput | null; images: SharePictureInput[] }): Promise<{ cover: string; images: string[] }> {
+  const project = await getProject(projectId);
+  if (!project?.share?.slug || !project.share.token) throw new ShareRefusal("สร้างลิงก์แชร์ก่อน แล้วค่อยใส่รูป");
+  const { slug, token } = project.share;
+  const place = async (p: SharePictureInput, kind: "cover" | "photo"): Promise<string> => {
+    if ("url" in p) return typeof p.url === "string" ? p.url : "";
+    if (typeof p.data !== "string" || !p.data) throw new ShareRefusal("รูปไม่ถูกต้อง");
+    if (p.data.length > PICTURE_BASE64_MAX) throw new ShareRefusal("รูปใหญ่เกินไป ลองเลือกรูปที่เล็กกว่านี้");
+    return uploadShareImageRemote(slug, token, kind, p.data);
+  };
+  const cover = input.cover ? await place(input.cover, "cover") : "";
+  const images: string[] = [];
+  for (const p of input.images.slice(0, SHARE_PHOTOS_MAX)) images.push(await place(p, "photo"));
+  const r = await setShareImagesRemote(slug, token, { cover, images: images.filter(Boolean) });
+  await updateProject(projectId, { share: { ...project.share, cover: r.cover, images: r.images } });
+  return r;
 }
 
 /** What a pasted link points at; the slug is resolved locally, the details come from the website. */

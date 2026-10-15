@@ -430,21 +430,24 @@ async function runOpenAiCriticGate(
     acc(repair);
 
     // P1-2: re-run the critic ONCE to report what actually got fixed — don't just assert "✓ แก้แล้ว".
-    let remaining = actionable.length;
+    // what is left is LISTED, so the user (and the next turn) know what "แก้ต่อ" means
+    let left: typeof actionable | null = null;
     try {
       const after = await reviewProject(project, projectId);
       acc(after);
-      if (!after.degraded) remaining = after.issues.filter((i) => i.severity !== "low").length;
+      if (!after.degraded) left = after.issues.filter((i) => i.severity !== "low");
     } catch (e) {
       console.error("[openai-agent] post-repair re-review failed (non-fatal):", e);
     }
-    const fixed = Math.max(0, actionable.length - remaining);
-    if (remaining === 0) {
+    if (left === null) {
+      emit({ type: "text", delta: `\n\n✓ แก้ตามผลตรวจคุณภาพแล้ว ${actionable.length} จุด (ตรวจซ้ำรอบสุดท้ายไม่สำเร็จ กด “ตรวจหาบั๊ก” ยืนยันได้)` });
+    } else if (left.length === 0) {
       emit({ type: "text", delta: "\n\n✓ แก้ตามผลตรวจคุณภาพแล้ว (ครบทุกจุด)" });
     } else {
+      const fixed = Math.max(0, actionable.length - left.length);
       emit({
         type: "text",
-        delta: `\n\n✓ แก้แล้ว ${fixed}/${actionable.length} จุด — เหลืออีก ${remaining} จุด พิมพ์ “แก้ต่อ” ได้ครับ`,
+        delta: `\n\n✓ แก้แล้ว ${fixed}/${actionable.length} จุด — ยังเหลือ ${left.length} จุด:\n${left.map((i) => `- ${i.file}: ${i.problem} → ${i.fix}`).join("\n")}\nพิมพ์ “แก้ต่อ” ให้แก้ข้อที่เหลือได้ครับ`,
       });
     }
     return totals(review.issues.length, "issues");

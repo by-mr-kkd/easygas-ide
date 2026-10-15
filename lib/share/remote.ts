@@ -154,6 +154,22 @@ export async function deleteShareRemote(slug: string, token: string): Promise<vo
   await call(`/api/share/${slugOrThrow(slug)}`, { method: "POST", body: { action: "delete", token } });
 }
 
+/** One picture for the share page (base64, shrunk by the browser first); the website re-encodes and answers its URL. */
+export async function uploadShareImageRemote(slug: string, token: string, kind: "cover" | "photo", dataBase64: string): Promise<string> {
+  const r = (await call(`/api/share/${slugOrThrow(slug)}`, { method: "POST", body: { action: "image", token, kind, data: dataBase64 }, timeoutMs: 60_000 })) as Record<string, unknown>;
+  if (typeof r.url !== "string" || !/^https:\/\/[^\s"'<>]+$/.test(r.url)) throw new ShareApiError("เว็บไซต์ตอบกลับไม่ครบ ลองใหม่อีกครั้ง");
+  return r.url;
+}
+
+/** Which pictures the share page shows (`action:"images"`): the website keeps only URLs this share uploaded. */
+export async function setShareImagesRemote(slug: string, token: string, input: { cover: string; images: string[] }): Promise<{ cover: string; images: string[] }> {
+  const r = (await call(`/api/share/${slugOrThrow(slug)}`, { method: "POST", body: { action: "images", token, ...input }, timeoutMs: 30_000 })) as Record<string, unknown>;
+  return {
+    cover: typeof r.cover === "string" ? r.cover : "",
+    images: Array.isArray(r.images) ? r.images.filter((u): u is string => typeof u === "string").slice(0, 4) : [],
+  };
+}
+
 /** Best effort: the website counts one more clone (and, with an author, records which version I took). */
 export async function countCloneRemote(slug: string, version?: number): Promise<void> {
   try {

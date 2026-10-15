@@ -4,6 +4,7 @@ import { Portal } from "@/components/ui/Portal";
 import { useEffect, useState } from "react";
 import {
   ArrowTopRightOnSquareIcon,
+  BeakerIcon,
   CheckCircleIcon,
   ClockIcon,
   ExclamationTriangleIcon,
@@ -13,6 +14,8 @@ import { useProjectStore } from "@/store/useProjectStore";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { PagesPublishPanel } from "@/components/pages/PagesPublishPanel";
+import { PublishProgress } from "@/components/pages/PublishProgress";
+import { DEPLOY_UI_STEPS, DEPLOY_WHILE_YOU_WAIT } from "@/lib/deploy-progress";
 import { pagesStateAction, setHostingAction, type PagesState } from "@/app/pages/actions";
 import { HostingChoiceDialog, type Hosting } from "@/components/pages/HostingChoiceDialog";
 import { UpgradeDialog } from "@/components/premium/UpgradeDialog";
@@ -33,9 +36,13 @@ type Result =
       /** a Sheet-bound project: the Sheet its script lives in */
       sheetUrl?: string;
       needsTriggerSetup: boolean;
+      /** the code sets its own triggers up on first use (no editor step) */
+      usesTriggers: boolean;
       scriptEditorUrl: string;
       scopesAdded: string[];
       probe?: { ok: boolean; error?: string; authRequired?: boolean; infraError?: boolean };
+      /** the push set was identical to the last publish: nothing was sent, the live app already runs this code */
+      unchanged: boolean;
     }
   | { kind: "enable_api"; enableUrl: string; message: string }
   | { kind: "error"; message: string };
@@ -152,11 +159,14 @@ export function DeployButton({
     else setConfirmOpen(true);
   }
 
-  // command palette / connect-Google dialog → "เผยแพร่" (only dispatched once Google is connected)
+  // command palette / connect-Google dialog → "เผยแพร่" (only dispatched once Google is connected);
+  // the app-link bar's confirmed "เผยแพร่ใหม่" → "deploy-now" (straight to the steps dialog)
   useEffect(() => {
-    if (actionRequest !== "deploy" || res.kind === "busy") return;
+    if ((actionRequest !== "deploy" && actionRequest !== "deploy-now") || res.kind === "busy") return;
+    const now = actionRequest === "deploy-now";
     clearActionRequest();
-    askToPublish(); // confirm first, then deploy
+    if (now) void deploy();
+    else askToPublish(); // confirm first, then deploy
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [actionRequest]);
 
@@ -173,9 +183,11 @@ export function DeployButton({
           runUrl: data.runUrl ?? null,
           sheetUrl: data.sheetUrl,
           needsTriggerSetup: !!data.needsTriggerSetup,
+          usesTriggers: !!data.usesTriggers,
           scriptEditorUrl: data.scriptEditorUrl,
           scopesAdded: Array.isArray(data.scopesAdded) ? data.scopesAdded : [],
           probe: data.probe,
+          unchanged: !!data.unchanged,
         });
         if (data.execUrl) onDeployed?.(data.execUrl); // surface the URL in the persistent bar
         window.dispatchEvent(new Event(PUBLISHED_EVENT)); // the chat's next steps re-read the publish state
@@ -334,6 +346,29 @@ export function DeployButton({
         onCancel={() => setConfirmOpen(false)}
       />
 
+      {/* the publish as it goes (lib/deploy-progress), like the GitHub Pages dialog — never a silent wait */}
+      {res.kind === "busy" && (
+        <Portal>
+          <div className="dialog-backdrop">
+            <div role="dialog" aria-modal="true" aria-busy="true" className="dialog max-w-md p-5">
+              <div className="flex flex-col gap-3">
+                <h3 className="text-[15px] font-semibold">{sheetOnly ? "กำลังส่งสคริปต์ขึ้น Google Sheet ของคุณ…" : "กำลังเผยแพร่ขึ้นบัญชี Google ของคุณ…"}</h3>
+                <p className="hint">ใช้เวลาประมาณครึ่งนาทีถึงหนึ่งนาที อย่าปิดหน้านี้ เสร็จแล้วจะแสดงลิงก์ให้</p>
+                <PublishProgress
+                  projectId={projectId}
+                  running
+                  endpoint="/api/deploy-progress"
+                  steps={DEPLOY_UI_STEPS}
+                  tips={DEPLOY_WHILE_YOU_WAIT}
+                  slowStep={1}
+                  firstDetail="ตรวจไฟล์ appsscript.json และสิทธิ์ที่แอปต้องใช้"
+                />
+              </div>
+            </div>
+          </div>
+        </Portal>
+      )}
+
       {res.kind !== "idle" && res.kind !== "busy" && (
         <Portal>
           <div className="dialog-backdrop">
@@ -342,7 +377,13 @@ export function DeployButton({
                 <div className="flex flex-col gap-3">
                   <h3 className="flex items-center gap-2 text-[15px] font-semibold">
                     <CheckCircleIcon className="h-6 w-6 shrink-0 text-accent-text" />
-                    {res.sheetUrl && !res.execUrl ? "เผยแพร่สำเร็จ สคริปต์อยู่ใน Google Sheet ของคุณแล้ว" : "เผยแพร่สำเร็จ แอปอยู่ในบัญชี Google ของคุณแล้ว"}
+                    {res.unchanged
+                      ? "ไม่มีอะไรเปลี่ยนจากที่เผยแพร่ไว้ แอปที่ใช้อยู่เป็นโค้ดล่าสุดแล้ว"
+                      : res.sheetUrl && !res.execUrl
+                        ? "เผยแพร่สำเร็จ สคริปต์อยู่ใน Google Sheet ของคุณแล้ว"
+                        : deployed
+                          ? "เผยแพร่อัปเดตแล้ว ลิงก์เดิมใช้ได้ต่อ"
+                          : "เผยแพร่สำเร็จ แอปอยู่ในบัญชี Google ของคุณแล้ว"}
                   </h3>
                   {res.sheetUrl && !res.execUrl && (
                     <>
@@ -404,17 +445,24 @@ export function DeployButton({
                       <b>Review permissions → Advanced → Allow</b> ครั้งเดียวพอ คนอื่นที่เปิดลิงก์ไม่ต้องกดอีก
                     </p>
                   )}
-                  {res.needsTriggerSetup && (
+                  {res.needsTriggerSetup ? (
+                    // older code: a setup function the owner runs in the editor (new code sets its triggers up by itself)
                     <div className="callout callout-warn">
                       <ClockIcon className="mt-0.5 h-4 w-4 shrink-0" />
                       <span>
-                        ระบบนี้มีการแจ้งเตือนหรือตั้งเวลา เปิดสคริปต์แล้วรันฟังก์ชัน <code className="font-mono">installTriggers()</code> ครั้งเดียวเพื่อเปิดใช้{" "}
+                        ระบบนี้มีการแจ้งเตือนหรือตั้งเวลา ถ้าเปิดแอปแล้วในหน้าตั้งค่ายังขึ้นว่าปิดอยู่ ให้กดเปิดตรงนั้น หรือเปิดสคริปต์แล้วรันฟังก์ชัน{" "}
+                        <code className="font-mono">installTriggers()</code> ครั้งเดียว{" "}
                         <a href={res.scriptEditorUrl} target="_blank" rel="noreferrer" className="link">
                           เปิดสคริปต์
                         </a>
                       </span>
                     </div>
-                  )}
+                  ) : res.usesTriggers ? (
+                    <div className="callout callout-info">
+                      <ClockIcon className="mt-0.5 h-4 w-4 shrink-0" />
+                      <span>ระบบนี้มีการแจ้งเตือนหรือตั้งเวลา แอปจะตั้งให้เองตอนที่เจ้าของเปิดแอปครั้งแรกและกดอนุญาต ไม่ต้องเข้า code editor</span>
+                    </div>
+                  ) : null}
                   {res.scopesAdded.length > 0 && (
                     <div className="callout callout-warn">
                       <ExclamationTriangleIcon className="mt-0.5 h-4 w-4 shrink-0" />
@@ -424,9 +472,25 @@ export function DeployButton({
                       </span>
                     </div>
                   )}
-                  <button onClick={() => setRes({ kind: "idle" })} className="btn btn-secondary">
-                    ปิด
-                  </button>
+                  <div className="flex flex-wrap justify-end gap-2">
+                    {res.execUrl && (
+                      // the live test as the next step after a publish — offered, never automatic (it spends AI quota)
+                      <button
+                        onClick={() => {
+                          setRes({ kind: "idle" });
+                          runAgent("verify");
+                        }}
+                        title="เปิดแอปจริง ให้ AI เลือกฟังก์ชันที่ปลอดภัยมาลองเรียกและอ่าน log ถ้าพังจะแก้และเผยแพร่ใหม่ให้เอง (ใช้โควตา AI)"
+                        className="btn btn-soft tone-ai"
+                      >
+                        <BeakerIcon className="h-4 w-4" />
+                        ทดสอบรันจริง
+                      </button>
+                    )}
+                    <button onClick={() => setRes({ kind: "idle" })} className="btn btn-secondary">
+                      ปิด
+                    </button>
+                  </div>
                 </div>
               )}
 

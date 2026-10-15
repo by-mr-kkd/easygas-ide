@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFile, rm, writeFile as fsWriteFile } from "node:fs/promises";
 import { join } from "node:path";
 import { claspError, claspOrThrow, runClasp } from "@/lib/clasp";
+import type { DeployStep } from "@/lib/deploy-progress";
 import { getFiles, hashFiles, writeFile } from "@/lib/files";
 import { srcDir } from "@/lib/local/paths";
 import { assertRemoteUnchanged, recordRemote } from "@/lib/import";
@@ -10,6 +11,7 @@ import { enforceWebAppManifest } from "@/lib/manifest";
 import { withBackendNotice } from "@/lib/pages/backend-page";
 import { withDispatcher, type SourceFile } from "@/lib/pages/dispatcher";
 import { hideInstallButtons } from "@/lib/share/install-hide";
+import { bridgeFiles } from "@/lib/run-bridge";
 import { PagesRuntimeMissingError } from "@/lib/pages/runtime";
 import { ensurePagesRuntime } from "@/lib/premium/content";
 import { saveDeployment, updateProject } from "@/lib/projects";
@@ -22,6 +24,26 @@ import type { EgsDeployment, EgsProject } from "@/types/db";
  */
 
 const INSTALL_TRIGGERS_RE = /\bfunction\s+installTriggers\s*\(/;
+/** the code installs triggers (time-driven / installable) — the rulebook has the app do it itself on first use */
+const NEW_TRIGGER_RE = /\bScriptApp\s*\.\s*newTrigger\s*\(/;
+
+/** installTriggers() called from somewhere other than its own definition (google.script.run in a page, another function) */
+const INSTALL_TRIGGERS_CALL_RE = /(?<!function\s+)\binstallTriggers\s*\(/;
+
+/**
+ * How the code sets its triggers up. `needsTriggerSetup` = an installTriggers() the OWNER has to run in the editor:
+ * defined, and nothing in the app calls it (older code). Code whose settings page calls it, or that installs its
+ * triggers on first run (the rulebook's way), only gets the "the app does it itself" note.
+ */
+function triggerSetup(files: SourceFile[]): { needsTriggerSetup: boolean; usesTriggers: boolean } {
+  const usesTriggers = files.some((f) => NEW_TRIGGER_RE.test(f.content));
+  const defined = files.some((f) => INSTALL_TRIGGERS_RE.test(f.content));
+  const calledInApp = files.some((f) => (/\.html$/i.test(f.path) ? /installTriggers/.test(f.content) : INSTALL_TRIGGERS_CALL_RE.test(f.content)));
+  return { usesTriggers, needsTriggerSetup: defined && !calledInApp };
+}
+
+/** Where the publish is (lib/deploy-progress): the route records it for the publish dialog. */
+export type DeployOnStep = (step: DeployStep, detail?: string) => void;
 const MANIFEST = "appsscript.json";
 
 /** Only Apps Script sources are pushed — anything else in src/ (README, notes) stays local. */
@@ -44,10 +66,11 @@ async function filesToPush(project: EgsProject, files: SourceFile[], pagesUrl?: 
 
 /**
  * On Google's own page the "install as an app" buttons (`data-egs-install`, GitHub Pages only) are hidden in the
- * pushed copy (lib/share/install-hide.ts). An imported script is pushed as it is: its sync point compares the
- * pushed files with Google's copy, and it never had the app's install button.
+ * pushed copy (lib/share/install-hide.ts), and every html file gets the run-page storage bridge (lib/run-bridge.ts:
+ * the app keeps its localStorage when opened through run.easygaside.tech). An imported script is pushed as it is:
+ * its sync point compares the pushed files with Google's copy, and it never had the app's install button.
  */
-const googlePageFiles = (project: EgsProject, files: SourceFile[]): SourceFile[] => (project.origin === "imported" ? files : hideInstallButtons(files));
+const googlePageFiles = (project: EgsProject, files: SourceFile[]): SourceFile[] => (project.origin === "imported" ? files : bridgeFiles(hideInstallButtons(files)));
 
 /**
  * Run `clasp push` with the app's changes (the dispatcher, the backend notice page) present in src/ only
@@ -84,7 +107,10 @@ function manifestScopes(manifest: string): string[] {
 export interface DeployResult {
   execUrl?: string;
   scriptId: string;
+  /** an installTriggers() the OWNER has to run in the editor (older code; new code installs its own triggers) */
   needsTriggerSetup: boolean;
+  /** the code creates triggers by itself (ScriptApp.newTrigger) — the app sets them up when the owner first uses it */
+  usesTriggers: boolean;
   scriptEditorUrl: string;
   /** true when the files were identical to the last deploy → nothing was pushed (URL reused as-is). */
   unchanged: boolean;
@@ -169,32 +195,36 @@ export async function pushHeadPreview(project: EgsProject): Promise<{ devUrl: st
  * deployment gets one only when it serves a page (doGet) and its manifest already has a web-app section;
  * otherwise (a Sheet's menus, triggers) only its code is updated.
  */
-async function deployImported(project: EgsProject, opts: { pagesUrl?: string }): Promise<DeployResult> {
+async function deployImported(project: EgsProject, opts: { pagesUrl?: string; onStep?: DeployOnStep }): Promise<DeployResult> {
   const scriptId = project.script_id;
   if (!scriptId) throw new Error("not_imported");
+  const step: DeployOnStep = (s, d) => opts.onStep?.(s, d);
   const dir = srcDir(project.id);
   const own = (await getFiles(project.id)).filter((f) => isPushed(f.path));
   if (own.length === 0) throw new Error("no_files");
   const files = await filesToPush(project, own, opts.pagesUrl ?? project.pages?.url);
   const deployHash = hashFiles(files);
-  const needsTriggerSetup = files.some((f) => INSTALL_TRIGGERS_RE.test(f.content));
+  const { needsTriggerSetup, usesTriggers } = triggerSetup(files);
   const existing = project.deployment;
   const scriptEditorUrl = `https://script.google.com/d/${scriptId}/edit`;
   // with a deployment, "unchanged" means the deployment already runs this code; without one, that it was pushed
   const current = existing?.deployment_id ? existing.content_hash : project.remote?.pushed;
   if (current === deployHash) {
-    return { execUrl: existing?.exec_url || undefined, scriptId, needsTriggerSetup, scriptEditorUrl, unchanged: true, scopesAdded: [] };
+    return { execUrl: existing?.exec_url || undefined, scriptId, needsTriggerSetup, usesTriggers, scriptEditorUrl, unchanged: true, scopesAdded: [] };
   }
 
+  step("prepare", "ตรวจว่าไม่มีใครแก้สคริปต์บน Google ไปก่อน");
   await assertRemoteUnchanged(project);
   await fsWriteFile(join(dir, ".claspignore"), CLASPIGNORE, "utf8");
   await writeClaspConfig(project.id, scriptId);
+  step("push", `ส่ง ${files.length} ไฟล์ขึ้น Google`);
   await pushWithExtras(project, files, own);
   // Google now holds our code: record the new sync point before anything else can fail, or the next
   // publish would take our own push for an outside edit
   await recordRemote(project, deployHash);
 
   if (existing?.deployment_id) {
+    step("version", "ออกเวอร์ชันใหม่ของสคริปต์");
     const versionOut = await claspOrThrow(["create-version", `EasyGAS ${new Date().toISOString()}`], dir);
     const versionNumber = Number(versionOut.match(/version\s+(\d+)/i)?.[1]);
     if (!Number.isFinite(versionNumber)) throw new Error("clasp_version_unparsed");
@@ -223,9 +253,9 @@ async function deployImported(project: EgsProject, opts: { pagesUrl?: string }):
       created_at: now,
       updated_at: now,
     });
-    return { execUrl, scriptId, needsTriggerSetup, scriptEditorUrl, unchanged: false, scopesAdded: [] };
+    return { execUrl, scriptId, needsTriggerSetup, usesTriggers, scriptEditorUrl, unchanged: false, scopesAdded: [] };
   }
-  return { execUrl: existing?.exec_url || undefined, scriptId, needsTriggerSetup, scriptEditorUrl, unchanged: false, scopesAdded: [] };
+  return { execUrl: existing?.exec_url || undefined, scriptId, needsTriggerSetup, usesTriggers, scriptEditorUrl, unchanged: false, scopesAdded: [] };
 }
 
 /**
@@ -251,8 +281,9 @@ async function createBoundScript(project: EgsProject, manifest: string): Promise
  * and stable /exec link as a web app. Without a page it is used from the Sheet (menus, sidebars, triggers).
  * `opts.pagesUrl`: where the GitHub copy of the front page lives (defaults to the last publish).
  */
-export async function deployProject(_userId: string, project: EgsProject, opts: { pagesUrl?: string } = {}): Promise<DeployResult> {
+export async function deployProject(_userId: string, project: EgsProject, opts: { pagesUrl?: string; onStep?: DeployOnStep } = {}): Promise<DeployResult> {
   if (project.origin === "imported") return deployImported(project, opts);
+  const step: DeployOnStep = (s, d) => opts.onStep?.(s, d);
   const dir = srcDir(project.id);
   const bound = project.kind === "bound";
   const before = await getFiles(project.id);
@@ -266,7 +297,7 @@ export async function deployProject(_userId: string, project: EgsProject, opts: 
   // throws before anything is pushed when a GitHub-hosted project defines its own doPost
   const files = await filesToPush(project, own, opts.pagesUrl ?? project.pages?.url);
   const deployHash = hashFiles(files);
-  const needsTriggerSetup = files.some((f) => INSTALL_TRIGGERS_RE.test(f.content));
+  const { needsTriggerSetup, usesTriggers } = triggerSetup(files);
   const existing = project.deployment;
   let sheetId = project.bound_sheet_id;
   const sheet = (): string | undefined => (bound && sheetId ? sheetUrl(sheetId) : undefined);
@@ -276,6 +307,7 @@ export async function deployProject(_userId: string, project: EgsProject, opts: 
     return {
       scriptId: project.script_id,
       needsTriggerSetup,
+      usesTriggers,
       scriptEditorUrl: `https://script.google.com/d/${project.script_id}/edit`,
       sheetUrl: sheet(),
       unchanged: true,
@@ -288,6 +320,7 @@ export async function deployProject(_userId: string, project: EgsProject, opts: 
       execUrl: existing.exec_url,
       scriptId: project.script_id,
       needsTriggerSetup,
+      usesTriggers,
       scriptEditorUrl: `https://script.google.com/d/${project.script_id}/edit`,
       sheetUrl: sheet(),
       unchanged: true,
@@ -305,22 +338,27 @@ export async function deployProject(_userId: string, project: EgsProject, opts: 
   if (scriptId) {
     await writeClaspConfig(project.id, scriptId);
   } else if (bound) {
+    step("create", "สร้าง Google Sheet พร้อมสคริปต์ในบัญชีของคุณ (ครั้งแรก)");
     ({ scriptId, sheetId } = await createBoundScript(project, manifest));
   } else {
+    step("create", "สร้างสคริปต์ในบัญชี Google ของคุณ (ครั้งแรก)");
     scriptId = await createScript(project, manifest);
     await updateProject(project.id, { script_id: scriptId });
   }
 
+  step("push", `ส่ง ${files.length} ไฟล์ขึ้น Google`);
   await pushWithExtras(project, files, own);
   if (bound) await updateProject(project.id, { bound_push: { hash: deployHash, at: new Date().toISOString() } });
   if (!web) {
-    return { scriptId, needsTriggerSetup, scriptEditorUrl: `https://script.google.com/d/${scriptId}/edit`, sheetUrl: sheet(), unchanged: false, scopesAdded: [] };
+    return { scriptId, needsTriggerSetup, usesTriggers, scriptEditorUrl: `https://script.google.com/d/${scriptId}/edit`, sheetUrl: sheet(), unchanged: false, scopesAdded: [] };
   }
+  step("version", "ออกเวอร์ชันใหม่ของสคริปต์");
   const versionOut = await claspOrThrow(["create-version", `deploy ${new Date().toISOString()}`], dir);
   const versionNumber = Number(versionOut.match(/version\s+(\d+)/i)?.[1]);
   if (!Number.isFinite(versionNumber)) throw new Error("clasp_version_unparsed");
 
   let deploymentId = existing?.deployment_id ?? null;
+  step("deploy", deploymentId ? "อัปเดตลิงก์เดิมให้ชี้เวอร์ชันใหม่" : "สร้างลิงก์ของแอป (ครั้งแรก)");
   if (deploymentId) {
     await claspOrThrow(["update-deployment", deploymentId, "-V", String(versionNumber), `--description=${project.name}`], dir);
   } else {
@@ -348,6 +386,7 @@ export async function deployProject(_userId: string, project: EgsProject, opts: 
   if (scopesAdded.length > 0 && project.backend_authorized_at) await updateProject(project.id, { backend_authorized_at: null });
 
   return {
+    usesTriggers,
     execUrl,
     scriptId,
     needsTriggerSetup,
@@ -366,7 +405,8 @@ export async function deployProject(_userId: string, project: EgsProject, opts: 
 export async function publishState(project: EgsProject): Promise<"none" | "current" | "changed"> {
   const d = project.deployment;
   if (!d?.exec_url) return "none";
-  if (project.origin === "imported" || project.hosting === "github" || project.kind === "bound") return "changed";
+  if (project.hosting === "github" || project.kind === "bound") return "changed";
   const own = (await getFiles(project.id)).filter((f) => isPushed(f.path));
+  // the same push set the publisher would send (an imported script goes as it is), hashed by content
   return d.content_hash === hashFiles(googlePageFiles(project, own)) ? "current" : "changed";
 }

@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import { getFiles, hashFiles } from "@/lib/files";
+import { runCliCriticGate } from "@/lib/engines/cli-critic";
 import { existsSync, realpathSync, statSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile as fsWriteFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -204,6 +206,8 @@ interface RunOpts {
   model?: string;
   images: string[];
   emit: Emit;
+  /** read-only for every chat / review turn; workspace-write ONLY for the picture run (an empty folder of its own) */
+  sandbox?: "read-only" | "workspace-write";
 }
 
 function runCodex(opts: RunOpts): Promise<CodexRun> {
@@ -228,7 +232,7 @@ function runCodex(opts: RunOpts): Promise<CodexRun> {
   if (opts.resumeId && !THREAD_ID.test(opts.resumeId)) return Promise.reject(new CodexTurnError("invalid session id", null));
   const args = opts.resumeId
     ? ["exec", "resume", ...common, "-c", 'sandbox_mode="read-only"', opts.resumeId, "-"]
-    : ["exec", ...common, "-C", opts.files.workDir, "-s", "read-only", "-"];
+    : ["exec", ...common, "-C", opts.files.workDir, "-s", opts.sandbox ?? "read-only", "-"];
 
   return new Promise((resolve, reject) => {
     const child = spawn(opts.exe, args, {
@@ -329,6 +333,8 @@ export interface CodexCliArgs {
 
 /** One chat turn on the Codex engine, plus one bounded repair when changes failed or the lint finds errors. */
 export async function runCodexCliTurn(args: CodexCliArgs): Promise<AgentRunResult> {
+  // what the project looked like before the turn: the rulebook re-check (Gate 1) only runs when files changed
+  const beforeHash = hashFiles(await getFiles(args.projectId));
   const exe = findCodexExecutable(args.executable);
   if (!exe) throw new CodexNotFoundError();
   const flags = await disableFlags(exe);
@@ -387,21 +393,27 @@ export async function runCodexCliTurn(args: CodexCliArgs): Promise<AgentRunResul
   let inputTokens = run.inputTokens;
   let outputTokens = run.outputTokens;
   let cachedTokens = run.cachedTokens;
+  let threadId = run.threadId;
   const fresh = (await getProject(args.projectId)) ?? args.project;
+  /** one repair turn in the same thread: the request goes in as a turn, the answer's ops are applied */
+  const repairWith = async (request: string): Promise<void> => {
+    if (!threadId) return;
+    const prompt = await buildTurnPrompt(fresh, request, "", [], "Codex");
+    const repair = await runWithRecovery({ exe, files, flags, prompt, resumeId: threadId, model: args.model, images: [], emit: args.emit }, () => prompt);
+    threadId = repair.threadId ?? threadId;
+    await saveEngineSession(args.projectId, ENGINE_ID, { id: threadId });
+    const fixed = await applyAnswer(args.projectId, repair.answerText, args.emit);
+    if (fixed.reply.trim()) args.emit({ type: "text", delta: `\n\n${fixed.reply}` });
+    inputTokens += repair.inputTokens;
+    outputTokens += repair.outputTokens;
+    cachedTokens += repair.cachedTokens;
+  };
   const problems = [...applied.problems, ...(await projectLintErrors(fresh))];
-  if (problems.length > 0 && run.threadId) {
+  if (problems.length > 0 && threadId) {
     args.emit({ type: "lint", messages: problems });
     args.emit({ type: "status", text: "พบจุดที่ต้องแก้ กำลังให้ AI แก้อัตโนมัติ…" });
     try {
-      const request = `ตรวจทั้งโปรเจกต์แล้วพบปัญหาที่ต้องแก้:\n${problems.map((m) => `- ${m}`).join("\n")}\nแก้ให้ครบผ่าน ops แล้วสรุปสั้น ๆ ใน reply`;
-      const prompt = await buildTurnPrompt(fresh, request, "", [], "Codex");
-      const repair = await runWithRecovery({ exe, files, flags, prompt, resumeId: run.threadId, model: args.model, images: [], emit: args.emit }, () => prompt);
-      await saveEngineSession(args.projectId, ENGINE_ID, { id: repair.threadId ?? run.threadId });
-      const fixed = await applyAnswer(args.projectId, repair.answerText, args.emit);
-      if (fixed.reply.trim()) args.emit({ type: "text", delta: `\n\n${fixed.reply}` });
-      inputTokens += repair.inputTokens;
-      outputTokens += repair.outputTokens;
-      cachedTokens += repair.cachedTokens;
+      await repairWith(`ตรวจทั้งโปรเจกต์แล้วพบปัญหาที่ต้องแก้:\n${problems.map((m) => `- ${m}`).join("\n")}\nแก้ให้ครบผ่าน ops แล้วสรุปสั้น ๆ ใน reply`);
     } catch (e) {
       // the main turn already landed; a failed repair only leaves the problems listed above
       console.error("[codex-cli] repair turn failed (non-fatal):", e);
@@ -409,7 +421,18 @@ export async function runCodexCliTurn(args: CodexCliArgs): Promise<AgentRunResul
     }
   }
 
-  return { inputTokens, outputTokens, cacheReadTokens: cachedTokens, cacheCreationTokens: 0, criticIssues: 0, criticStatus: null };
+  // Gate 1 — the rulebook re-check + one repair turn (lib/engines/cli-critic); only when the turn changed files
+  const gate = await runCliCriticGate({
+    projectId: args.projectId,
+    project: fresh,
+    engine: "codex-cli",
+    model: args.model,
+    emit: args.emit,
+    mutated: hashFiles(await getFiles(args.projectId)) !== beforeHash,
+    repair: (request) => repairWith(`${request}\nแก้ให้ครบผ่าน ops แล้วสรุปสั้น ๆ ใน reply`),
+  });
+
+  return { inputTokens, outputTokens, cacheReadTokens: cachedTokens, cacheCreationTokens: 0, criticIssues: gate.criticIssues, criticStatus: gate.criticStatus };
 }
 
 /**
@@ -417,6 +440,59 @@ export async function runCodexCliTurn(args: CodexCliArgs): Promise<AgentRunResul
  * user picked. Same lockdown as a chat turn (no tools, read-only sandbox, empty folder, the user's
  * config ignored); Codex keeps its own instructions, so the rubric travels in the prompt.
  */
+/** This Codex has no image tool (the `image_generation` feature is not in its list): the caller draws instead. */
+export class CodexImageUnsupported extends Error {
+  constructor() {
+    super("codex_image_unsupported");
+  }
+}
+
+const IMAGE_FEATURE = "image_generation";
+const IMAGE_FILE = "picture.png";
+
+/**
+ * A real picture from the user's Codex plan: Codex's own image tool (`--enable image_generation`, the only feature
+ * switched on; everything else stays disabled and the shell stays off) writes a PNG into an empty folder of ours, which
+ * is the one place it may write (`-s workspace-write` on that folder). The prompt names the file; the tool copies its
+ * result there (its own copy lives under Codex's home, which the app never reads). Returns the PNG as a data URL.
+ */
+export async function codexImage(projectId: string, prompt: string, model?: string): Promise<string> {
+  const exe = findCodexExecutable();
+  if (!exe) throw new CodexNotFoundError();
+  const flags = await disableFlags(exe);
+  if (!flags) throw new Error("Codex รุ่นที่ติดตั้งอยู่ปิดการรันคำสั่งไม่ได้ แอปจึงไม่ใช้");
+  const listed = await codexOutput(exe, ["features", "list"]);
+  if (!parseFeatureList(listed.out).some((f) => f.name === IMAGE_FEATURE && f.stage !== "removed")) throw new CodexImageUnsupported();
+  const imageFlags: string[] = [];
+  for (let i = 0; i < flags.length; i += 2) if (flags[i + 1] !== IMAGE_FEATURE) imageFlags.push(flags[i], flags[i + 1]);
+  imageFlags.push("--enable", IMAGE_FEATURE);
+  const dir = join(engineDir(projectId), "codex-image");
+  const work = join(dir, "work");
+  await rm(work, { recursive: true, force: true });
+  await mkdir(work, { recursive: true });
+  const files: CodexFiles = { lastMessageFile: join(dir, "last-message.txt"), workDir: realpathSync.native(work) };
+  await rm(files.lastMessageFile, { force: true });
+  const target = join(files.workDir, IMAGE_FILE);
+  const full = `$imagegen ${prompt}\n\nSave the finished image as a PNG file at exactly this path: ${target}\nDo nothing else; answer with one line when the file is saved.`;
+  try {
+    await runCodex({ exe, files, flags: imageFlags, prompt: full, resumeId: null, model, images: [], emit: () => {}, sandbox: "workspace-write" });
+  } catch (e) {
+    if (!existsSync(target)) throw e; // a non-zero exit with the file in place still counts
+  }
+  let file = existsSync(target) ? target : null;
+  if (!file) {
+    // the tool sometimes keeps its own name: any picture it put in the folder will do
+    const { readdir } = await import("node:fs/promises");
+    const pics = (await readdir(files.workDir)).filter((n) => /\.(png|jpe?g|webp)$/i.test(n));
+    file = pics.length ? join(files.workDir, pics[0]) : null;
+  }
+  if (!file) throw new Error("Codex ไม่ได้บันทึกรูปลงโฟลเดอร์ที่ให้ไว้");
+  const bytes = await readFile(file);
+  const mime = /\.jpe?g$/i.test(file) ? "image/jpeg" : /\.webp$/i.test(file) ? "image/webp" : "image/png";
+  await rm(work, { recursive: true, force: true });
+  return `data:${mime};base64,${bytes.toString("base64")}`;
+}
+
 export async function codexOneShot(projectId: string, prompt: string, model?: string): Promise<string> {
   const exe = findCodexExecutable();
   if (!exe) throw new CodexNotFoundError();

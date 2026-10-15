@@ -1,13 +1,15 @@
 "use client";
 
 import { DEFAULT_LICENSE, licensesAllowed, SHARE_LICENSES, type ShareLicense } from "@/lib/share/license";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { Portal } from "@/components/ui/Portal";
-import { ArrowTopRightOnSquareIcon, CheckCircleIcon, ClipboardDocumentIcon, ExclamationTriangleIcon, LinkIcon, SparklesIcon, TrashIcon, XMarkIcon } from "@heroicons/react/24/outline";
-import { describeShareAction, shareDialogAction, shareProjectAction, unshareProjectAction } from "@/app/projects/share-actions";
+import { ArrowTopRightOnSquareIcon, CheckCircleIcon, ClipboardDocumentIcon, ExclamationTriangleIcon, LinkIcon, ShareIcon, SparklesIcon, TrashIcon, XMarkIcon } from "@heroicons/react/24/outline";
+import { describeShareAction, shareDialogAction, shareImagesAction, shareProjectAction, unshareProjectAction } from "@/app/projects/share-actions";
+import { compressImage, splitDataUrl, type CompressedImage } from "@/lib/client/image-compress";
+import { PhotoIcon, PlusIcon } from "@heroicons/react/24/outline";
 import { useProjectStore } from "@/store/useProjectStore";
 import type { ScanResult } from "@/lib/share/service";
-import { describeChangesAction, forkChangesAction, ownerInfoAction, saveSupportAction } from "@/app/projects/share-owner-actions";
+import { boardLinkAction, describeChangesAction, forkChangesAction, ownerInfoAction, saveSupportAction } from "@/app/projects/share-owner-actions";
 import { IssuesTab, ProposalsTab, ProposeForm, SupportPicker } from "@/components/share/ShareOwnerPanels";
 import type { OwnerInfo } from "@/lib/share/owner";
 import type { SupportMode } from "@/lib/share/v2";
@@ -15,7 +17,33 @@ import type { SupportMode } from "@/lib/share/v2";
 type Loaded = Awaited<ReturnType<typeof shareDialogAction>>;
 type Data = Extract<Loaded, { ok: true }>["data"];
 
-const BOARD_NEW = "https://easygaside.tech/board/new?share=";
+/** a picture on the share page: already on the website (url) or picked here and not sent yet (data) */
+type Pic = { url: string } | { data: CompressedImage };
+const PHOTOS_MAX = 4;
+const picSrc = (p: Pic): string => ("url" in p ? p.url : p.data.dataUrl);
+const picInput = (p: Pic): { url: string } | { data: string } => ("url" in p ? { url: p.url } : { data: p.data.dataBase64 });
+
+/** One picture slot: the picture with a remove button, or an "add" button. */
+function PictureSlot({ pic, label, wide, disabled, onPick, onRemove }: { pic: Pic | null; label: string; wide?: boolean; disabled?: boolean; onPick: () => void; onRemove: () => void }) {
+  const box = wide ? "h-20 w-36" : "h-20 w-20";
+  if (!pic)
+    return (
+      <button type="button" onClick={onPick} disabled={disabled} className={`field flex ${box} flex-col items-center justify-center gap-1 text-xs text-muted`} title={label}>
+        <PlusIcon className="h-4 w-4" />
+        {label}
+      </button>
+    );
+  return (
+    <span className={`relative ${box} overflow-hidden rounded-lg border border-line`}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={picSrc(pic)} alt={label} className="h-full w-full object-cover" />
+      <button type="button" onClick={onRemove} disabled={disabled} aria-label={`เอา${label}ออก`} className="absolute right-1 top-1 rounded-full bg-black/60 p-0.5 text-white">
+        <XMarkIcon className="h-3.5 w-3.5" />
+      </button>
+    </span>
+  );
+}
+
 const kb = (n: number): string => (n < 1000 ? `${n} B` : `${Math.round(n / 100) / 10} KB`);
 
 function Findings({ scan }: { scan: ScanResult }) {
@@ -88,6 +116,57 @@ export function ShareButton({ projectId, projectName, className = "" }: { projec
   const [changes, setChanges] = useState("");
   const [changesBusy, setChangesBusy] = useState(false);
   const [proposeOpen, setProposeOpen] = useState(false);
+  // pictures for the share page: a cover and up to PHOTOS_MAX photos; sent after the link exists
+  const [cover, setCover] = useState<Pic | null>(null);
+  const [photos, setPhotos] = useState<Pic[]>([]);
+  const [savedPics, setSavedPics] = useState("");
+  const [picsBusy, setPicsBusy] = useState(false);
+  const [picsError, setPicsError] = useState("");
+  const picRef = useRef<HTMLInputElement>(null);
+  const picKindRef = useRef<"cover" | "photo">("photo");
+  const picsKey = (c: Pic | null, ps: Pic[]) => JSON.stringify([c ? picSrc(c).slice(0, 200) : "", ps.map((p) => picSrc(p).slice(0, 200))]);
+  const picsDirty = picsKey(cover, photos) !== savedPics;
+
+  function pickPicture(kind: "cover" | "photo") {
+    picKindRef.current = kind;
+    if (picRef.current) {
+      picRef.current.value = "";
+      picRef.current.click();
+    }
+  }
+  async function onPictureFiles(files: FileList | null) {
+    if (!files?.length) return;
+    setPicsError("");
+    try {
+      if (picKindRef.current === "cover") setCover({ data: await compressImage(files[0]) });
+      else {
+        const room = Math.max(0, PHOTOS_MAX - photos.length);
+        const added: Pic[] = [];
+        for (const f of Array.from(files).slice(0, room)) added.push({ data: await compressImage(f) });
+        setPhotos((cur) => [...cur, ...added].slice(0, PHOTOS_MAX));
+      }
+    } catch {
+      setPicsError("เปิดไฟล์รูปนี้ไม่ได้ ลองรูปอื่น (JPG, PNG, WebP)");
+    }
+  }
+  /** Send the pictures as they are now; true when the website took them. */
+  async function savePictures(): Promise<boolean> {
+    setPicsBusy(true);
+    setPicsError("");
+    const r = await shareImagesAction(projectId, { cover: cover ? picInput(cover) : null, images: photos.map(picInput) }).catch(() => null);
+    setPicsBusy(false);
+    if (!r || !r.ok) {
+      setPicsError(r && !r.ok ? r.error : "ส่งรูปไม่สำเร็จ ลองใหม่อีกครั้ง");
+      return false;
+    }
+    const c = r.data.cover ? { url: r.data.cover } : null;
+    const ps = r.data.images.map((url) => ({ url }));
+    setCover(c);
+    setPhotos(ps);
+    setSavedPics(picsKey(c, ps));
+    useProjectStore.getState().setSharePics({ cover: null, photos: [] }); // the chat's picks are on the website now
+    return true;
+  }
 
   // "ให้ AI สรุป" for a fork's "what changed": the same path as the description, given the diffs
   async function describeChanges() {
@@ -132,6 +211,18 @@ export function ShareButton({ projectId, projectName, className = "" }: { projec
     setDescription(r.data);
   }
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  // a successful share shows a full-dialog "done" card first (on a phone the line at the bottom sat under the fold);
+  // tapping it reveals the dialog scrolled to the top, where the link is
+  const [celebrate, setCelebrate] = useState<{ title: string; text: string } | null>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const msgRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (msg && !msg.ok) msgRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [msg]);
+  function closeCelebrate() {
+    setCelebrate(null);
+    bodyRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  }
   const [copied, setCopied] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
 
@@ -142,6 +233,16 @@ export function ShareButton({ projectId, projectName, className = "" }: { projec
     if (!r.ok) return setLoadError(r.error);
     setData(r.data);
     setTitle((t) => t || r.data.state.share?.title || projectName);
+    // what the chat's "เตรียมแชร์" made (ShareKit): the AI's description fills an empty box, its pictures take the free slots
+    const kit = useProjectStore.getState();
+    setDescription((d) => d || kit.shareDraft || "");
+    {
+      const c = r.data.state.share?.cover ? { url: r.data.state.share.cover } : null;
+      const ps = (r.data.state.share?.images ?? []).map((url) => ({ url }));
+      setSavedPics(picsKey(c, ps));
+      setCover(kit.sharePics.cover ? { data: splitDataUrl(kit.sharePics.cover) } : c);
+      setPhotos([...ps, ...kit.sharePics.photos.map((d) => ({ data: splitDataUrl(d) }))].slice(0, PHOTOS_MAX));
+    }
     if (r.data.state.share) void loadOwner();
     else if (r.data.state.clonedFrom)
       void forkChangesAction(projectId)
@@ -168,6 +269,7 @@ export function ShareButton({ projectId, projectName, className = "" }: { projec
     setFixes([]);
     setProposeOpen(false);
     setMsg(null); // the answer of the last publish stays until the dialog is opened again
+    setCelebrate(null);
     void load();
   }, [open, load]);
 
@@ -196,10 +298,18 @@ export function ShareButton({ projectId, projectName, className = "" }: { projec
     setBusy(false);
     if (!r) return setMsg({ ok: false, text: "ไม่สำเร็จ ลองใหม่อีกครั้ง" });
     if (!r.ok) return setMsg({ ok: false, text: r.error });
-    setMsg({ ok: true, text: r.data.version > 1 ? `แชร์เวอร์ชัน ${r.data.version} แล้ว ลิงก์เดิมใช้ได้ต่อ คนที่โคลนไปจะเห็นว่ามีของใหม่` : "สร้างลิงก์แล้ว คัดลอกไปแปะในกระทู้หรือส่งให้เพื่อนได้เลย" });
+    // the pictures ride after the link exists (the website keys them by the share)
+    const picsOk = picsDirty ? await savePictures() : true;
+    setCelebrate({
+      title: r.data.version > 1 ? `แชร์เวอร์ชัน ${r.data.version} แล้ว` : "แชร์สำเร็จ",
+      text:
+        (r.data.version > 1 ? "ลิงก์เดิมใช้ได้ต่อ คนที่โคลนไปจะเห็นว่ามีของใหม่" : "ขึ้นเป็นกระทู้ในห้อง แชร์ระบบที่สร้าง ให้เองแล้ว คัดลอกลิงก์ส่งให้เพื่อนได้เลย") +
+        (picsOk ? "" : " · รูปยังไม่ได้ส่ง กดบันทึกรูปอีกครั้ง"),
+    });
     setNotes("");
     setFixes([]);
     if (fork) setProposeOpen(true);
+    useProjectStore.getState().setShareDraft(null); // the description went with the share
     await load();
   }
 
@@ -224,24 +334,62 @@ export function ShareButton({ projectId, projectName, className = "" }: { projec
   }
 
   const share = data?.state.share ?? null;
+  // the thread link that opens it as its poster (edit the post, add pictures); fetched once the dialog shows a share
+  const [boardUrl, setBoardUrl] = useState<string | null>(null);
+  const shareSlug = share?.slug ?? null;
+  useEffect(() => {
+    setBoardUrl(null);
+    if (!open || !shareSlug) return;
+    let live = true;
+    void boardLinkAction(projectId)
+      .then((r) => live && r.ok && setBoardUrl(r.data))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [open, shareSlug, projectId]);
   const scan = data?.scan ?? null;
   const canPublish = !!scan && scan.blocked.length === 0 && title.trim().length >= 3 && !busy;
 
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} title="แชร์โปรเจกต์เป็นลิงก์ให้คนอื่นโคลน" className={`btn btn-soft tone-info btn-sm ${className}`}>
-        <LinkIcon className="h-4 w-4" />
+      {/* a share icon, not a link one: the app-link bar below the toolbar already shows a link icon for "copy the link" */}
+      <button type="button" onClick={() => setOpen(true)} title="แชร์โปรเจกต์เป็นลิงก์ให้คนอื่นโคลน" aria-label="แชร์โปรเจกต์" className={`btn btn-soft tone-info btn-sm ${className}`}>
+        <ShareIcon className="h-4 w-4" />
         <span className="hidden md:inline">{share ? "ลิงก์แชร์" : "แชร์"}</span>
       </button>
 
       {open && (
         <Portal>
           <div className="dialog-backdrop" onClick={() => !busy && setOpen(false)}>
-            <div role="dialog" aria-modal="true" aria-label="แชร์โปรเจกต์" className="dialog max-w-lg p-0" onClick={(e) => e.stopPropagation()}>
+            <div role="dialog" aria-modal="true" aria-label="แชร์โปรเจกต์" className="dialog relative max-w-lg overflow-hidden p-0" onClick={(e) => e.stopPropagation()}>
+              {celebrate && (
+                <button
+                  type="button"
+                  onClick={closeCelebrate}
+                  aria-live="polite"
+                  className="share-done absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-surface px-8 text-center"
+                >
+                  <span className="share-done-burst" aria-hidden="true">
+                    {Array.from({ length: 8 }, (_, i) => (
+                      <i key={i} style={{ "--a": `${i * 45}deg` } as CSSProperties} />
+                    ))}
+                  </span>
+                  <span className="share-done-check grid h-16 w-16 place-items-center rounded-full bg-accent text-on-accent">
+                    <CheckCircleIcon className="h-10 w-10" />
+                  </span>
+                  <span className="text-lg font-semibold">{celebrate.title}</span>
+                  <span className="max-w-xs text-sm text-muted">{celebrate.text}</span>
+                  <span className="btn btn-primary mt-2">
+                    <LinkIcon className="h-4 w-4" />
+                    ดูลิงก์และคัดลอก
+                  </span>
+                </button>
+              )}
               <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3.5">
                 <h3 className="flex items-center gap-2 text-[15px] font-semibold">
                   <span className="icon-chip tone-info">
-                    <LinkIcon className="h-4 w-4" />
+                    <ShareIcon className="h-4 w-4" />
                   </span>
                   {share ? "ลิงก์แชร์ของโปรเจกต์นี้" : "แชร์โปรเจกต์เป็นลิงก์"}
                 </h3>
@@ -279,7 +427,7 @@ export function ShareButton({ projectId, projectName, className = "" }: { projec
                   <ProposalsTab projectId={projectId} proposals={owner.proposals} onChanged={() => void loadOwner()} />
                 </div>
               ) : (
-              <div className="max-h-[70vh] space-y-4 overflow-y-auto px-5 py-4">
+              <div ref={bodyRef} className="max-h-[70vh] space-y-4 overflow-y-auto px-5 py-4">
                 {loadError && <p className="callout callout-warn text-sm">{loadError}</p>}
                 {!data && !loadError && <p className="hint">กำลังสแกนไฟล์…</p>}
                 {proposeOpen && data?.state.clonedFrom && (
@@ -301,9 +449,10 @@ export function ShareButton({ projectId, projectName, className = "" }: { projec
                         <ArrowTopRightOnSquareIcon className="h-4 w-4" />
                         เปิดหน้าแชร์
                       </a>
-                      <a href={`${BOARD_NEW}${share.slug}`} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm">
+                      {/* the website makes the share's thread in แชร์ระบบที่สร้าง by itself; /board opens it */}
+                      <a href={boardUrl ?? `${share.url.replace(/\/+$/, "")}/board`} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm" title="เปิดในฐานะเจ้าของ แก้ไขโพสต์และแนบรูปได้">
                         <ArrowTopRightOnSquareIcon className="h-4 w-4" />
-                        ตั้งกระทู้บนเว็บบอร์ด
+                        ดูกระทู้ในเว็บบอร์ด
                       </a>
                     </div>
                   </div>
@@ -336,6 +485,29 @@ export function ShareButton({ projectId, projectName, className = "" }: { projec
                       />
                       {describeError && <span className="mt-1 block text-xs font-semibold text-danger">{describeError}</span>}
                     </label>
+                    <div className="text-sm">
+                      <span className="mb-1 flex items-center justify-between gap-2">
+                        <span className="font-semibold">
+                          รูปปกและรูปประกอบ <span className="font-normal text-muted">(ไม่บังคับ · รูปประกอบไม่เกิน {PHOTOS_MAX} รูป)</span>
+                        </span>
+                        {share && picsDirty && (
+                          <button type="button" onClick={() => void savePictures()} disabled={picsBusy || busy} className="btn btn-secondary btn-sm">
+                            <PhotoIcon className="h-4 w-4" />
+                            {picsBusy ? "กำลังส่งรูป…" : "บันทึกรูป"}
+                          </button>
+                        )}
+                      </span>
+                      <div className="flex flex-wrap gap-2">
+                        <PictureSlot pic={cover} label="รูปปก" wide disabled={picsBusy || busy} onPick={() => pickPicture("cover")} onRemove={() => setCover(null)} />
+                        {photos.map((p, i) => (
+                          <PictureSlot key={picSrc(p).slice(-40) + i} pic={p} label={`รูปที่ ${i + 1}`} disabled={picsBusy || busy} onPick={() => {}} onRemove={() => setPhotos((cur) => cur.filter((_, j) => j !== i))} />
+                        ))}
+                        {photos.length < PHOTOS_MAX && <PictureSlot pic={null} label="เพิ่มรูป" disabled={picsBusy || busy} onPick={() => pickPicture("photo")} onRemove={() => {}} />}
+                      </div>
+                      <input ref={picRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => void onPictureFiles(e.target.files)} />
+                      {!share && picsDirty && <span className="hint mt-1 block text-xs">รูปจะถูกส่งขึ้นเว็บหลังสร้างลิงก์แชร์</span>}
+                      {picsError && <span className="mt-1 block text-xs font-semibold text-danger">{picsError}</span>}
+                    </div>
                     {!share && (
                       // the sharer is the Google account signed in here (lib/share/author.ts): one name everywhere,
                       // changed only in Settings, never typed per share
@@ -415,12 +587,16 @@ export function ShareButton({ projectId, projectName, className = "" }: { projec
                       </>
                     )}
                     <p className="hint">
-                      ทุกคนที่มีลิงก์อ่านโค้ดและโคลนลงเครื่องตัวเองได้ ลิงก์ขึ้นในห้อง แชร์ระบบที่สร้าง เมื่อคุณตั้งกระทู้ · คนที่โคลนไปต้องใช้ตามเงื่อนไขที่คุณเลือกข้างบน
+                      ทุกคนที่มีลิงก์อ่านโค้ดและโคลนลงเครื่องตัวเองได้ ระบบตั้งกระทู้ในห้อง แชร์ระบบที่สร้าง ให้เองตอนสร้างลิงก์ (คนอื่นถามตอบในกระทู้นั้นได้ กด "ดูกระทู้ในเว็บบอร์ด" เพื่อแก้โพสต์หรือแนบรูป) · คนที่โคลนไปต้องใช้ตามเงื่อนไขที่คุณเลือกข้างบน
                     </p>
                   </>
                 )}
 
-                {msg && <p className={`text-sm font-semibold ${msg.ok ? "text-accent-text" : "text-danger"}`}>{msg.text}</p>}
+                {msg && (
+                  <p ref={msgRef} className={`text-sm font-semibold ${msg.ok ? "text-accent-text" : "text-danger"}`}>
+                    {msg.text}
+                  </p>
+                )}
               </div>
               )}
 

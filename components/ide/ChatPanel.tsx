@@ -20,9 +20,10 @@ import {
   Squares2X2Icon,
   XMarkIcon,
   ArrowTopRightOnSquareIcon,
+  BeakerIcon,
 } from "@heroicons/react/24/outline";
 import { PUBLISHED_EVENT } from "./publish-event";
-import { getProjectPrefsAction, projectRunningAction, publishStateAction, saveProjectLookAction, setProjectDemoAction } from "@/app/projects/actions";
+import { getProjectPrefsAction, publishStateAction, saveProjectLookAction, setProjectDemoAction } from "@/app/projects/actions";
 import { STYLE_CATALOG, type StyleItem } from "@/lib/style-catalog";
 import { BUILD_FROM_DEMO, BUILD_NOW, DEFAULT_LOOK, LOOK_COLORS, LOOK_FONTS, demoMessage, mergeAppBlocks, stripAppBlocks, type MockLook } from "@/lib/style-mockup";
 import { useProjectStore } from "@/store/useProjectStore";
@@ -38,6 +39,8 @@ import { LessonOffers, type LessonOffer } from "./LessonOffers";
 import { UpgradeDialog } from "@/components/premium/UpgradeDialog";
 import { AuditCard } from "./AuditCard";
 import { ProjectStyleDialog } from "./ProjectStyleDialog";
+import { ShareKit } from "./ShareKit";
+import { NextSteps, type PublishedState } from "./NextSteps";
 import { AiMark, TypingDots } from "./AiMark";
 
 const MAX_IMAGES = 4;
@@ -68,8 +71,17 @@ type AgentEvent =
 
 type CameraGateState = "allowed" | "need-github" | "need-premium";
 
-const RUNNING_ELSEWHERE = "AI กำลังทำงานอยู่ (สั่งจากอีกหน้าจอ) เสร็จแล้วหน้านี้จะโหลดผลให้เอง…";
-const RUNNING_POLL_MS = 4000;
+/** A chat run this page did not start (lib/agent-lock readRunStatus): its own status line, or one per kind. */
+function elsewhereStatus(run: { kind: string; text: string | null } | null): string {
+  const doing = run?.text || (run?.kind === "verify" ? "กำลังทดสอบรันจริง…" : "AI กำลังทำงาน…");
+  return `${doing} · สั่งไว้ก่อนหน้านี้ เสร็จแล้วหน้านี้จะโหลดผลให้เอง`;
+}
+/** only runs that stream into the chat count: a publish / /dev push / restore from this page (or a phone) must never
+ * make the chat reload the page — that closed the publish result dialog under the user */
+const CHAT_RUN = new Set(["agent", "verify"]);
+/** how often the chat asks whether a run it did not start holds the project: while one runs / while idle */
+const ELSEWHERE_POLL_MS = 1500;
+const IDLE_POLL_MS = 8000;
 
 interface ChatMsg {
   role: "user" | "assistant";
@@ -123,6 +135,7 @@ function EnergyBar({ used, tank }: { used: number; tank: number }) {
 
 export function ChatPanel({
   projectId,
+  projectName = "",
   demo: initialDemo = false,
   initialImages,
   initialMessages = [],
@@ -137,6 +150,8 @@ export function ChatPanel({
   footnote,
 }: {
   projectId: string;
+  /** the project's name, for the share kit's picture prompt and file names */
+  projectName?: string;
   /** a script imported from the user's Google account: offer "วิเคราะห์โค้ด" */
   imported?: boolean;
   /** replaces the keyboard hint under the box (a phone: the AI quota — a phone has no Ctrl+Enter) */
@@ -173,7 +188,10 @@ export function ChatPanel({
   const [messages, setMessages] = useState<ChatMsg[]>(initialMessages);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(initialRunning);
-  const [status, setStatus] = useState(initialRunning ? RUNNING_ELSEWHERE : "");
+  const [status, setStatus] = useState(initialRunning ? elsewhereStatus(null) : "");
+  // true while this page's own send() / verify() streams — the elsewhere watcher below stays out of its way
+  const ownRunRef = useRef(false);
+  const draftRef = useRef("");
   // energy lives in the store so a manual "ตรวจซ้ำ" (EditorToolbar) deducts from the same bar
   const energy = useProjectStore((s) => s.energy);
   const initEnergy = useProjectStore((s) => s.initEnergy);
@@ -256,24 +274,76 @@ export function ChatPanel({
     bodyRef.current?.scrollTo(0, bodyRef.current.scrollHeight);
   }, [messages, status, images]);
 
-  // A turn this page did not start (another screen, or a reload cut its stream): its words and files
-  // are not streaming here, so wait for it to finish and reload the page to show what it did.
+  // A run this page did not start — the phone sent a message while this computer showed the project, another
+  // tab, or a reload cut its stream — is not streaming here. Watch for one (on arrival, whenever the window comes
+  // back, and every few seconds while idle), show the same status line its starting page sees, and when it ends
+  // reload the page so its answer and files appear. A typed draft survives the reload (egs:kickoff).
   useEffect(() => {
-    if (!initialRunning) return;
     let stop = false;
-    const tick = async () => {
-      if (stop) return;
-      const running = await projectRunningAction(projectId).catch(() => true);
-      if (stop) return;
-      if (running) setTimeout(tick, RUNNING_POLL_MS);
-      else window.location.reload();
+    // initialRunning = the lock was held at render time (busy + a waiting line already show): it may be a publish
+    // rather than a chat run, so the first poll decides, and clears the waiting state when it was not one
+    let elsewhere = false;
+    let initial = initialRunning;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const schedule = (ms: number) => {
+      clearTimeout(timer);
+      timer = setTimeout(check, ms);
     };
-    const first = setTimeout(tick, RUNNING_POLL_MS);
+    const check = async () => {
+      if (stop) return;
+      if (ownRunRef.current) return schedule(IDLE_POLL_MS);
+      let run: { kind: string; text: string | null } | null | undefined;
+      try {
+        const r = await fetch(`/api/run-status/${projectId}`, { cache: "no-store" });
+        if (r.ok) run = ((await r.json()) as { run: { kind: string; text: string | null } | null }).run;
+      } catch {
+        /* offline for a moment — ask again */
+      }
+      if (stop || ownRunRef.current) return schedule(IDLE_POLL_MS);
+      if (run === undefined) return schedule(elsewhere ? ELSEWHERE_POLL_MS : IDLE_POLL_MS);
+      if (run && !CHAT_RUN.has(run.kind)) run = null;
+      if (run) {
+        elsewhere = true;
+        initial = false;
+        setBusy(true);
+        setStatus(elsewhereStatus(run));
+        return schedule(ELSEWHERE_POLL_MS);
+      }
+      if (!elsewhere) {
+        if (initial) {
+          initial = false;
+          setBusy(false);
+          setStatus("");
+        }
+        return schedule(IDLE_POLL_MS);
+      }
+      // it ended: the page reloads with its result; what the user typed meanwhile comes back in the box
+      const draft = draftRef.current.trim();
+      if (draft) {
+        try {
+          sessionStorage.setItem("egs:kickoff", draft);
+        } catch {
+          /* storage blocked: the draft is lost with the reload */
+        }
+      }
+      window.location.reload();
+    };
+    const onBack = () => {
+      if (document.visibilityState === "visible") schedule(100);
+    };
+    document.addEventListener("visibilitychange", onBack);
+    window.addEventListener("focus", onBack);
+    schedule(initialRunning ? ELSEWHERE_POLL_MS : IDLE_POLL_MS);
     return () => {
       stop = true;
-      clearTimeout(first);
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onBack);
+      window.removeEventListener("focus", onBack);
     };
   }, [initialRunning, projectId]);
+  useEffect(() => {
+    draftRef.current = input;
+  }, [input]);
 
   // seed the energy bar from the server-computed usage (store is shared with the editor toolbar)
   useEffect(() => {
@@ -446,6 +516,7 @@ export function ChatPanel({
     goNextRef.current = false;
     if (text === undefined) setInput("");
     if (attached.length > 0) setImages([]);
+    ownRunRef.current = true;
     setBusy(true);
     setStatus("");
     setPendingSpec(null);
@@ -486,6 +557,7 @@ export function ChatPanel({
     } catch {
       appendAssistant("\n\n[เชื่อมต่อล้มเหลว ลองใหม่อีกครั้ง]");
     } finally {
+      ownRunRef.current = false;
       setBusy(false);
       setStatus("");
       setWorking(null);
@@ -495,6 +567,7 @@ export function ChatPanel({
   // Gate 2 — open the live app, and repair+redeploy if it failed at runtime. Streams into the chat.
   async function verify() {
     if (busy) return;
+    ownRunRef.current = true;
     setBusy(true);
     setStatus("");
     setVerdict(null);
@@ -518,6 +591,7 @@ export function ChatPanel({
     } catch {
       appendAssistant("\n\n[ทดสอบไม่สำเร็จ ลองใหม่อีกครั้ง]");
     } finally {
+      ownRunRef.current = false;
       setBusy(false);
       setStatus("");
       setWorking(null);
@@ -741,7 +815,7 @@ export function ChatPanel({
   );
 
   // published already? then the last button opens the app (up to date) or updates it (changed since)
-  const [published, setPublished] = useState<{ state: "none" | "current" | "changed"; url: string | null } | null>(null);
+  const [published, setPublished] = useState<PublishedState | null>(null);
   const showSteps = hasFiles && !busy && !demo && !pendingSpec;
   useEffect(() => {
     if (!showSteps) return;
@@ -761,51 +835,7 @@ export function ChatPanel({
 
   // after an answer on a project with code: what to do next, as the APP's buttons (never read from the AI's text)
   const nextSteps = hasFiles && !busy && !demo && !pendingSpec && (
-    <div className="space-y-1.5 pt-1">
-      <p className="text-xs font-semibold text-muted">ทำอะไรต่อดี</p>
-      <div className="flex flex-wrap items-center gap-1.5">
-        <button type="button" onClick={() => requestAction("view:preview")} className="btn btn-secondary btn-sm">
-          <EyeIcon className="h-4 w-4" />
-          ดูพรีวิว
-        </button>
-        <button
-          type="button"
-          onClick={() => send("อธิบายว่าโค้ดในโปรเจกต์นี้ทำงานยังไง แบบสรุปสั้น ๆ เป็นข้อ ๆ")}
-          disabled={!engineReady}
-          title="ให้ AI สรุปเป็นข้อ ๆ ว่าโค้ดในโปรเจกต์นี้ทำงานอย่างไร อ่านอย่างเดียว ไม่แก้ไฟล์"
-          className="btn btn-soft tone-info btn-sm"
-        >
-          <LightBulbIcon className="h-4 w-4" />
-          อธิบายโค้ด
-        </button>
-        <button
-          type="button"
-          onClick={() => send("ตรวจโค้ดทั้งหมดหาบั๊กและจุดที่ไม่ตรง best practice ของ Google Apps Script แล้วแก้ให้เรียบร้อย")}
-          disabled={!engineReady}
-          title="ให้ AI ตรวจโค้ดทั้งหมดหาบั๊กและจุดที่ผิดหลัก Apps Script แล้วแก้ให้เลย ของเดิมย้อนได้จากประวัติ"
-          className="btn btn-soft tone-warn btn-sm"
-        >
-          <BugAntIcon className="h-4 w-4" />
-          ตรวจหาบั๊ก
-        </button>
-        {published?.state === "current" && published.url ? (
-          <a href={published.url} target="_blank" rel="noreferrer" title="แอปที่เผยแพร่อยู่ใช้โค้ดล่าสุดแล้ว" className="btn btn-primary btn-sm">
-            <ArrowTopRightOnSquareIcon className="h-4 w-4" />
-            เปิดแอป
-          </a>
-        ) : (
-          <button
-            type="button"
-            onClick={() => requestAction("publish")}
-            title={published?.state === "changed" ? "อัปเดตแอปที่เผยแพร่อยู่ด้วยโค้ดล่าสุด ลิงก์เดิมใช้ได้ต่อ" : "เผยแพร่ให้คนอื่นเปิดใช้ได้"}
-            className="btn btn-primary btn-sm"
-          >
-            <RocketLaunchIcon className="h-4 w-4" />
-            {published?.state === "changed" ? "เผยแพร่อัปเดต" : "เผยแพร่"}
-          </button>
-        )}
-      </div>
-    </div>
+    <NextSteps published={published} engineReady={engineReady} onSend={(t) => void send(t)} onVerify={() => void verify()} />
   );
 
   // The one place the user types.
@@ -1080,6 +1110,8 @@ export function ChatPanel({
         {messages.length > 0 && !pendingSpec && startChips}
         {demoChips}
         {nextSteps}
+        {/* the share page's pictures and words, made here and handed to the share dialog */}
+        {hasFiles && !busy && !demo && !pendingSpec && <ShareKit projectId={projectId} projectName={projectName} engineReady={engineReady} aiLabel={pickedAi?.label ?? null} />}
       </div>
 
       <div className="relative flex-none border-t border-line p-3">

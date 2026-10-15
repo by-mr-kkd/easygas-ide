@@ -43,7 +43,7 @@ function request(name: string, files: { path: string; content: string }[]): stri
 }
 
 /** One question to the AI picked in the chat (a CLI pick through its CLI, no session; an API pick through its key). */
-async function askPicked(project: EgsProject, system: string, user: string, requested: unknown): Promise<string> {
+export async function askPicked(project: EgsProject, system: string, user: string, requested: unknown): Promise<string> {
   const choice = await resolveChoice(project, sanitizeChoice(requested));
   if (isCliEngine(choice.engine)) {
     const prompt = `${system}\n\n=====\nคุณไม่ต้องใช้เครื่องมือใด ๆ ทุกอย่างอยู่ในข้อความนี้แล้ว\n\n${user}`;

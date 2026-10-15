@@ -1,6 +1,6 @@
 import { apiProviderLock, resolveChoice } from "@/lib/ai-options";
 import { NextResponse, type NextRequest } from "next/server";
-import { acquireProjectRun, releaseProjectRun } from "@/lib/agent-lock";
+import { acquireProjectRun, noteRunStatus, releaseProjectRun } from "@/lib/agent-lock";
 import { runAgentLoop, type AgentEvent, type AgentRunResult, type RunAgentArgs } from "@/lib/anthropic-agent";
 import { deployProject } from "@/lib/deploy";
 import { runClaudeCliTurn } from "@/lib/engines/claude-cli";
@@ -8,6 +8,9 @@ import { runCodexCliTurn } from "@/lib/engines/codex-cli";
 import { runMuseCliTurn } from "@/lib/engines/muse-cli";
 import { NotConnectedError, UserSettingsDisabledError } from "@/lib/errors";
 import { probeExec } from "@/lib/gas-verify";
+import { planSmokeCalls, runSmokeCalls, smokeFailureText, smokeSummary, type SmokeCall } from "@/lib/smoke-test";
+import { getFiles } from "@/lib/files";
+import { publishState } from "@/lib/deploy";
 import { finishTurnLessons, noteWrittenFile } from "@/lib/lessons-store";
 import { resolveProjectProvider, resolveProvider, resolveRepairProvider } from "@/lib/llm/provider";
 import { runOpenAiAgentLoop } from "@/lib/openai-agent";
@@ -101,7 +104,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const project = await getProject(id);
   if (!project) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
-  const lock = await acquireProjectRun(id);
+  const lock = await acquireProjectRun(id, "verify");
   if (!lock)
     return NextResponse.json(
       { error: "already_running", message: "โปรเจกต์นี้กำลังประมวลผลอยู่ รอให้เสร็จก่อนนะครับ" },
@@ -131,6 +134,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const emit = (ev: AgentEvent) => {
         if (ev.type === "file_mutation" && ev.op !== "delete") noteWrittenFile(id, ev.path);
         if (ev.type === "verdict") verdict = ev.ok;
+        if (ev.type === "status") noteRunStatus(id, ev.text); // for a page that did not start it (/api/run-status)
         if (closed) return;
         try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(ev)}\n\n`));
@@ -151,16 +155,59 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           return;
         }
 
+        // the live app must run the code the user is looking at: publish first when it changed since the last publish
+        if ((await publishState((await getProject(id)) ?? project)) === "changed") {
+          emit({ type: "status", text: "กำลังเผยแพร่โค้ดล่าสุดก่อนทดสอบ (ลิงก์เดิม)…" });
+          const dep = await deployProject(user.id, (await getProject(id)) ?? project);
+          url = dep.execUrl ?? url;
+          if (!dep.unchanged) await snapshotProject(id, "deploy", { label: "verify" });
+        }
+
+        let plan: SmokeCall[] | null = null; // the functions to try, chosen once; failed ones are retried after a repair
         for (let i = 0; i <= MAX_REPAIRS; i++) {
           emit({ type: "status", text: "กำลังเปิดแอปเพื่อทดสอบการรันจริง…" });
           const probe = await probeExec(url);
           if (probe.ok) {
-            emit({
-              type: "verdict",
-              ok: true,
-              text: "หน้าแอปเปิดได้ ✓ (ทดสอบเฉพาะการเปิดหน้า ปุ่ม/การบันทึกข้อมูลยังไม่ได้ทดสอบ) ลองกดใช้งานจริงดูอีกที",
+            // part two: call the app's own functions and read their logs (lib/smoke-test)
+            if (plan === null) {
+              emit({ type: "status", text: "กำลังให้ AI เลือกฟังก์ชันที่ปลอดภัยพอจะลองเรียก…" });
+              const fresh = (await getProject(id)) ?? project;
+              plan = await planSmokeCalls(fresh, (await getFiles(id)).map((f) => ({ path: f.path, content: f.content })));
+            }
+            let failures = "";
+            let summary = "";
+            if (plan.length) {
+              emit({ type: "status", text: `กำลังลองเรียก ${plan.length} ฟังก์ชันบนแอปจริง…` });
+              const outcomes = await runSmokeCalls(url, plan);
+              summary = smokeSummary(outcomes);
+              failures = smokeFailureText(outcomes);
+              plan = outcomes.filter((o) => !o.result.ok && !o.result.unsupported).map((o) => o.call); // retry only what failed
+            }
+            if (!failures) {
+              emit({ type: "verdict", ok: true, text: summary ? `หน้าแอปเปิดได้ ✓ · ${summary}` : "หน้าแอปเปิดได้ ✓ (ไม่มีฟังก์ชันที่ปลอดภัยพอจะลองเรียกอัตโนมัติ)" });
+              break;
+            }
+            emit({ type: "text", delta: `\n\n🔧 ${summary}\n${failures}` });
+            if (i === MAX_REPAIRS) {
+              emit({ type: "text", delta: '\n\nยังแก้ไม่หมดในรอบนี้ กด "ทดสอบรันจริง" อีกครั้ง หรือพิมพ์บอกรายละเอียดเพิ่มได้ครับ' });
+              break;
+            }
+            emit({ type: "status", text: "กำลังแก้แล้วเผยแพร่ใหม่ (ลิงก์เดิม)…" });
+            const r = await repair({
+              projectId: id,
+              project,
+              userMessage: repairPrompt(`เรียกฟังก์ชันบนแอปที่เผยแพร่แล้ว (ผ่านตัวรันทดสอบ) แล้วพัง:\n${failures}`),
+              turn: "codegen",
+              internal: true,
+              skipCritic: true,
+              emit,
             });
-            break;
+            tokens += r.inputTokens + r.outputTokens;
+            const fresh2 = (await getProject(id)) ?? project;
+            const dep = await deployProject(user.id, fresh2);
+            url = dep.execUrl ?? url;
+            if (!dep.unchanged) await snapshotProject(id, "deploy", { label: "auto-repair" });
+            continue;
           }
           // infra failure (timeout / network / deleted deployment) is NOT a code bug — never repair it
           if (probe.infraError) {

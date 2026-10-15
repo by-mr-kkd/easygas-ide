@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { acquireProjectRun, releaseProjectRun } from "@/lib/agent-lock";
+import { acquireProjectRun, noteRunStatus, releaseProjectRun } from "@/lib/agent-lock";
 import { runAgentLoop, type AgentEvent, type AgentRunResult, type Emit } from "@/lib/anthropic-agent";
 import { sanitizeChoice, type AiChoice } from "@/lib/ai-choice";
 import { apiProviderLock, resolveChoice } from "@/lib/ai-options";
@@ -126,6 +126,22 @@ function prepareRun(
   }
 }
 
+/** One line for the status bar from a tool call, the same words the chat shows (ChatPanel TOOL_LABEL). */
+function toolStatus(name: string, input: unknown): string {
+  const path = input && typeof input === "object" ? (input as { path?: unknown }).path : undefined;
+  const label = TOOL_STATUS[name] ?? name;
+  return typeof path === "string" && path ? `${label} ${path}…` : `${label}…`;
+}
+const TOOL_STATUS: Record<string, string> = {
+  write_file: "กำลังเขียนไฟล์",
+  edit_file: "กำลังแก้ไฟล์",
+  delete_file: "กำลังลบไฟล์",
+  read_project: "กำลังอ่านโปรเจกต์",
+  read_rule: "กำลังอ่านกฎ",
+  save_preference: "กำลังบันทึกสิ่งที่คุณเลือก",
+  propose_lesson: "กำลังเสนอบทเรียน",
+};
+
 /**
  * POST /api/agent/[id]  body: { message: string, images?: [...], ai?: { engine, provider?, model? }, build?: true }
  * `build` = the user pressed an app button that starts the build (lib/build-gate): a project with no code
@@ -204,6 +220,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         // which files the AI touched this turn — lint is only "the AI's mistake" in those (lib/lessons)
         if (ev.type === "file_mutation" && ev.op !== "delete") noteWrittenFile(id, ev.path);
         if (phone && ev.type === "text" && said.length < 20_000) said += ev.delta;
+        // the same line for a page that did not start this turn (a phone, another tab — /api/run-status)
+        if (ev.type === "status") noteRunStatus(id, ev.text);
+        else if (ev.type === "tool_call") noteRunStatus(id, toolStatus(ev.name, ev.input));
+        else if (ev.type === "file_mutation") noteRunStatus(id, `${ev.op === "delete" ? "ลบไฟล์" : "บันทึกไฟล์"} ${ev.path}`);
         if (closed) return;
         try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(ev)}\n\n`));

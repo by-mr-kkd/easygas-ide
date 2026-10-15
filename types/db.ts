@@ -85,7 +85,19 @@ export interface EgsProject {
   } | null;
   /** This project is published as an EasyGAS share link (lib/share). The token proves ownership to the
    *  website (new version, take down) and never leaves this computer. */
-  share?: { slug: string; url: string; token: string; title: string; version: number; shared_at: string; updated_at: string; license?: "mit" | "egs" | "personal" } | null;
+  share?: {
+    slug: string;
+    url: string;
+    token: string;
+    title: string;
+    version: number;
+    shared_at: string;
+    updated_at: string;
+    license?: "mit" | "egs" | "personal";
+    /** pictures on the share page (website URLs): a cover and up to 4 photos */
+    cover?: string;
+    images?: string[];
+  } | null;
   /** Imported projects: what Google held at the last sync (import, pull, or our own push). */
   remote?: { hash: string; synced_at: string; title: string; /** local files last pushed */ pushed?: string } | null;
   created_at: string;

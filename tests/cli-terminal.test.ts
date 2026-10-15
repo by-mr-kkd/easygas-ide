@@ -12,8 +12,9 @@ test("PowerShell is taken from the Windows folder, never from PATH", () => {
 test("the install window runs exactly the vendor's documented command and shows it first", () => {
   for (const tool of ["claude", "codex", "muse"] as const) {
     const script = terminalScript(tool, "install", null);
-    assert.ok(script.includes(`; ${CLI_INSTALL[tool].command}; `), tool);
-    assert.ok(script.indexOf("Write-Host") < script.indexOf(`; ${CLI_INSTALL[tool].command}; `), "shown before it runs");
+    assert.ok(script.includes(`; ${CLI_INSTALL[tool].command}; `) || (tool === "codex" && script.includes(`try { ${CLI_INSTALL[tool].command} }`)), tool);
+    const shown = script.indexOf(`Write-Host '  ${CLI_INSTALL[tool].command}'`);
+    assert.ok(shown >= 0 && shown < script.lastIndexOf(`${CLI_INSTALL[tool].command}`), "shown before it runs");
   }
   assert.equal(CLI_INSTALL.codex.command, "irm https://chatgpt.com/codex/install.ps1 | iex");
   assert.equal(CLI_INSTALL.claude.command, "irm https://claude.ai/install.ps1 | iex");
@@ -57,6 +58,15 @@ test("a hidden launcher opens the visible window with Start-Process, everything 
   const args = launcherArgs(ps, "codex", "login", "C:\\Users\\o'brien\\codex.exe");
   assert.deepEqual(args.slice(0, 5), ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command"]);
   assert.match(args[5], /^Start-Process -FilePath 'C:\\Windows\\System32\\WindowsPowerShell\\v1\.0\\powershell\.exe' -ArgumentList '-NoExit','-NoProfile','-EncodedCommand','[A-Za-z0-9+/=]+'$/);
+});
+
+test("Codex's installer runs in PowerShell 7 when the machine has it, and the window says what to do when it fails without", () => {
+  const codex = terminalScript("codex", "install", null);
+  assert.ok(codex.includes("Get-Command pwsh"), "looks for pwsh");
+  assert.ok(codex.includes(`& $egsPwsh -NoProfile -Command 'irm https://chatgpt.com/codex/install.ps1 | iex'`), "the same vendor command in pwsh");
+  assert.ok(codex.includes("winget install --id Microsoft.PowerShell") && codex.includes("catch {") && codex.includes("Read-Host"), "catches the 5.1 failure and offers PowerShell 7");
+  assert.ok(codex.includes("Programs\\\\OpenAI\\\\Codex\\\\bin\\\\codex.exe") || codex.includes("Programs\\OpenAI\\Codex\\bin\\codex.exe"), "checks the install folder, not the stale PATH");
+  for (const tool of ["claude", "muse"] as const) assert.ok(!terminalScript(tool, "install", null).includes("pwsh"), tool);
 });
 
 test("terminal messages are plain ASCII (a non-Thai console code page would garble Thai)", () => {

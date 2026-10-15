@@ -8,6 +8,7 @@ import { getProject } from "@/lib/projects";
 import type { EgsProject } from "@/types/db";
 import { changeSummary, classifyFiles, type CodeFile, type FileClass } from "./merge";
 import { fromShareFiles, ShareRefusal } from "./payload";
+import { call, siteOrigin } from "./remote-core";
 import { fetchShare, fetchShareVersion, issuesRemote, proposalsRemote, proposeRemote, setIssueRemote, setProposalRemote, ShareApiError } from "./remote";
 import { cleanText } from "./report";
 import { baseFilesOf, takeFiles, type TakeResult } from "./source";
@@ -123,5 +124,22 @@ export async function proposeToParent(projectId: string, title: string, summary:
   } catch (e) {
     if (e instanceof ShareApiError && e.code === "not_found") throw new ShareRefusal("เว็บไซต์ยังไม่รองรับการเสนอให้ต้นฉบับ หรือต้นฉบับถูกลบไปแล้ว");
     throw e;
+  }
+}
+
+/**
+ * "ดูกระทู้ในเว็บบอร์ด": a link (an hour) that opens the share's thread on the website as its poster — edit the post,
+ * add pictures, answer as คนแชร์. The owner token goes in the request body, never a URL; an older website without
+ * the endpoint gets the plain thread link.
+ */
+export async function boardLink(projectId: string): Promise<string> {
+  const project = await getProject(projectId);
+  sharedOrThrow(project);
+  const plain = `${siteOrigin()}/s/${project.share.slug}/board`;
+  try {
+    const r = (await call(`/api/share/${project.share.slug}/board-link`, { method: "POST", body: { token: project.share.token }, timeoutMs: 10_000 })) as { url?: unknown };
+    return typeof r.url === "string" && r.url.startsWith(siteOrigin() + "/") ? r.url : plain;
+  } catch {
+    return plain;
   }
 }

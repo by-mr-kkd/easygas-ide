@@ -9,14 +9,14 @@ import { HUB_IMAGE_ACCEPT, shrinkHubImage } from "./hub-image";
 import { SWATCHES } from "./HubLinks";
 
 /** a small picture of each theme (the website's lib/hub-theme.ts holds the real colours) */
-const THEME_SWATCH: Record<HubTheme, { bg: string; card: string; text: string }> = {
+export const THEME_SWATCH: Record<HubTheme, { bg: string; card: string; text: string }> = {
   school: { bg: "linear-gradient(180deg,#e0f2fe,#ffffff)", card: "#ffffff", text: "#0f172a" },
   minimal: { bg: "#ffffff", card: "#f9fafb", text: "#111827" },
   pastel: { bg: "linear-gradient(160deg,#fdf2f8,#f5f3ff,#ecfeff)", card: "#ffffffd9", text: "#3b0764" },
   dark: { bg: "#0b1120", card: "#111827", text: "#f1f5f9" },
   corporate: { bg: "linear-gradient(180deg,#0b2545 40%,#f1f5f9 40%)", card: "#ffffff", text: "#0b2545" },
 };
-const FONT_FAMILY: Record<string, string> = {
+export const FONT_FAMILY: Record<string, string> = {
   plex: "'IBM Plex Sans Thai', sans-serif",
   sarabun: "Sarabun, sans-serif",
   prompt: "Prompt, sans-serif",

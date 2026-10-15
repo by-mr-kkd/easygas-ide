@@ -18,6 +18,8 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { backendAuthAction, pagesStateAction, publishPagesAction, type BackendAuth, type PagesState } from "@/app/pages/actions";
 import { pullRemoteAction } from "@/app/projects/import-actions";
+import { publishStateAction } from "@/app/projects/actions";
+import { PUBLISHED_EVENT } from "./publish-event";
 import { AuthOpenButton } from "./AuthOpenButton";
 import { AppLinks } from "./AppLinks";
 
@@ -69,6 +71,23 @@ export function DeployedUrlBar({ url: execUrl, projectId, googleEmail = null, sh
   const router = useRouter();
   const actionRequest = useProjectStore((s) => s.actionRequest);
   const clearActionRequest = useProjectStore((s) => s.clearActionRequest);
+  const requestAction = useProjectStore((s) => s.requestAction);
+  // the code changed since the last publish (lib/deploy publishState): the band turns amber and asks for a republish —
+  // the home list already says so, the code screen must too. Re-read after every file change and every publish.
+  const files = useProjectStore((s) => s.files);
+  const [stale, setStale] = useState(false);
+  useEffect(() => {
+    if (githubHosting) return;
+    let live = true;
+    const read = () => publishStateAction(projectId).then((r) => live && setStale(r.state === "changed")).catch(() => {});
+    const t = setTimeout(read, 700); // after a burst of edits, not on each keystroke
+    window.addEventListener(PUBLISHED_EVENT, read);
+    return () => {
+      live = false;
+      clearTimeout(t);
+      window.removeEventListener(PUBLISHED_EVENT, read);
+    };
+  }, [projectId, files, githubHosting]);
 
   // command palette → "เปิด /dev" / "deploy ใหม่" (the latter still routes through the confirm modal)
   useEffect(() => {
@@ -168,26 +187,11 @@ export function DeployedUrlBar({ url: execUrl, projectId, googleEmail = null, sh
       }
       return;
     }
-    try {
-      const r = await fetch(`/api/deploy/${projectId}`, { method: "POST" });
-      const data = await r.json();
-      if (r.ok)
-        // server short-circuits when files are identical → tell the user nothing needed deploying
-        setNote(data.unchanged ? "โค้ดไม่ได้เปลี่ยน แอปเป็นเวอร์ชันล่าสุดอยู่แล้ว" : "อัปเดตแล้ว (ลิงก์เดิม)");
-      else if (data.error === "USER_SETTINGS_DISABLED")
-        setNote("ต้องเปิด Apps Script API ก่อน");
-      else if (data.error === "rate_limited") setNote(data.message ?? "เผยแพร่ถี่เกินไป รอสักครู่");
-      else if (data.error === "REMOTE_CHANGED") {
-        setNote("ยังไม่ได้เผยแพร่");
-        setRemoteChanged(data.message ?? "มีคนแก้สคริปต์นี้บน script.google.com หลังจากที่ดึงมา");
-      }
-      else setNote("เผยแพร่ใหม่ไม่สำเร็จ ลองอีกครั้ง");
-    } catch {
-      setNote("เผยแพร่ใหม่ไม่สำเร็จ");
-    } finally {
-      setDeployBusy(false);
-      setConfirmOpen(false);
-    }
+    // Google hosting: the publish button runs it (confirmed here already) and shows the same step-by-step dialog
+    // and result as a first publish — the steps, "nothing changed", the trigger / permission notes, a failure
+    setDeployBusy(false);
+    setConfirmOpen(false);
+    requestAction("deploy-now");
   }
 
   async function pullLatest() {
@@ -204,15 +208,15 @@ export function DeployedUrlBar({ url: execUrl, projectId, googleEmail = null, sh
   return (
     <>
     {/* a green band (not another grey bar): "this app is live". One row on a phone — the actions are icons there. */}
-    <div className="flex flex-none items-center gap-1 border-b border-accent/25 bg-accent-soft px-2 py-1 sm:gap-1.5 sm:px-3 [@media(max-height:520px)]:hidden">
+    <div className={`flex flex-none items-center gap-1 border-b px-2 py-1 sm:gap-1.5 sm:px-3 [@media(max-height:520px)]:hidden ${stale ? "border-warn-line bg-warn-soft" : "border-accent/25 bg-accent-soft"}`}>
       {/* one group that shrinks, so a long /exec url is cut with … instead of pushing the buttons down */}
       <div className="flex min-w-0 flex-1 items-center gap-1.5">
         <span className="relative flex h-2 w-2 shrink-0" aria-hidden>
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-40 motion-reduce:hidden" />
-          <span className="relative inline-flex h-2 w-2 rounded-full bg-accent" />
+          {!stale && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-40 motion-reduce:hidden" />}
+          <span className={`relative inline-flex h-2 w-2 rounded-full ${stale ? "bg-warn-line" : "bg-accent"}`} />
         </span>
-        <span className="truncate text-[13px] font-semibold text-accent-text">
-          {githubHosting && pagesState?.pages ? "ออนไลน์บน GitHub Pages" : "แอปออนไลน์แล้ว"}
+        <span className={`truncate text-[13px] font-semibold ${stale ? "text-warn-text" : "text-accent-text"}`}>
+          {stale ? "แก้โค้ดแล้ว ยังไม่ได้เผยแพร่ · แอปที่ใช้อยู่ยังเป็นเวอร์ชันก่อน" : githubHosting && pagesState?.pages ? "ออนไลน์บน GitHub Pages" : "แอปออนไลน์แล้ว"}
         </span>
         <span className="hidden min-w-0 truncate font-mono text-xs text-muted md:block">{url}</span>
         {note && <span className="min-w-0 truncate text-xs text-muted">· {note}</span>}
@@ -229,7 +233,7 @@ export function DeployedUrlBar({ url: execUrl, projectId, googleEmail = null, sh
         </button>
       </Tooltip>
       <Tooltip label="เผยแพร่โค้ดล่าสุดทับเวอร์ชันเดิม ลิงก์ไม่เปลี่ยน" placement="bottom" className="shrink-0">
-        <button onClick={() => setConfirmOpen(true)} disabled={deployBusy} aria-label="เผยแพร่ใหม่" className="btn btn-ghost btn-sm max-sm:w-[1.875rem] max-sm:px-0">
+        <button onClick={() => setConfirmOpen(true)} disabled={deployBusy} aria-label="เผยแพร่ใหม่" className={`btn btn-sm max-sm:w-[1.875rem] max-sm:px-0 ${stale ? "btn-primary" : "btn-ghost"}`}>
           <ArrowPathIcon className={`h-4 w-4 ${deployBusy ? "animate-spin" : ""}`} />
           <span className="max-sm:hidden">{deployBusy ? "กำลังเผยแพร่…" : "เผยแพร่ใหม่"}</span>
         </button>

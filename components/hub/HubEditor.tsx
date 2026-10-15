@@ -12,6 +12,7 @@ import {
   LinkIcon,
   PaintBrushIcon,
   ShareIcon,
+  Squares2X2Icon,
   XMarkIcon,
 } from "@heroicons/react/24/outline";
 import { hubGetAction, hubSaveAction } from "@/app/projects/hub-actions";
@@ -21,10 +22,12 @@ import { HubLinks } from "./HubLinks";
 import { HubLook } from "./HubLook";
 import { HubShare } from "./HubShare";
 import { HubStats } from "./HubStats";
+import { HubTemplates } from "./HubTemplates";
 
-type Tab = "links" | "look" | "share" | "stats";
+type Tab = "links" | "templates" | "look" | "share" | "stats";
 const TABS: { id: Tab; label: string; Icon: typeof LinkIcon }[] = [
   { id: "links", label: "ลิงก์", Icon: LinkIcon },
+  { id: "templates", label: "เทมเพลต", Icon: Squares2X2Icon },
   { id: "look", label: "หน้าตา", Icon: PaintBrushIcon },
   { id: "share", label: "แชร์และตั้งค่า", Icon: ShareIcon },
   { id: "stats", label: "สถิติ", Icon: ChartBarIcon },
@@ -185,6 +188,7 @@ export function HubEditor({ id, onBack, onDeleted }: { id: string; onBack: () =>
           </div>
           <fieldset disabled={readOnly} className="min-w-0">
             {tab === "links" && <HubLinks hubId={hub.id} doc={doc} onChange={change} pro={hub.proActive} />}
+            {tab === "templates" && <HubTemplates doc={doc} onChange={change} onApplied={() => setTab("links")} />}
             {tab === "look" && <HubLook hubId={hub.id} doc={doc} onChange={change} />}
             {tab === "share" && (
               <HubShare

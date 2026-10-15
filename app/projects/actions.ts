@@ -228,12 +228,13 @@ export async function saveProFeaturesAction(id: string, input: unknown): Promise
 }
 
 /** Chat next steps: published already, and is that copy up to date? (lib/deploy.ts publishState) */
-export async function publishStateAction(id: string): Promise<{ state: "none" | "current" | "changed"; url: string | null }> {
+export async function publishStateAction(id: string): Promise<{ state: "none" | "current" | "changed"; url: string | null; shared: boolean }> {
   const project = await getProject(id);
-  if (!project) return { state: "none", url: null };
+  if (!project) return { state: "none", url: null, shared: false };
   const exec = project.deployment?.exec_url ?? null;
   const manifest = (await getFiles(id).catch(() => [])).find((f) => f.path === "appsscript.json")?.content;
   // before the owner's first Allow the sharing link only shows Google's error: open Google's own link (the consent screen)
   const authorized = !!project.backend_authorized_at || project.hosting === "github";
-  return { state: await publishState(project), url: authorized ? runUrlFor(exec, manifest) ?? exec : exec };
+  // `shared` = a share link exists (the chat's overview strip counts it as the last step)
+  return { state: await publishState(project), url: authorized ? runUrlFor(exec, manifest) ?? exec : exec, shared: !!project.share?.slug };
 }

@@ -28,7 +28,7 @@ export async function restoreVersionAction(versionId: string): Promise<{ ok: boo
   if (!projectId) return { ok: false };
   const project = await getProject(projectId); // RLS ownership check
   if (!project) return { ok: false };
-  const lock = await acquireProjectRun(projectId);
+  const lock = await acquireProjectRun(projectId, "sync");
   if (!lock) return { ok: false }; // an AI turn / deploy is running — never swap files underneath it
   try {
     return { ok: (await restoreVersion(versionId)) !== null };

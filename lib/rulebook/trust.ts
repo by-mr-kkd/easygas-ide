@@ -5,10 +5,14 @@
  * is installed ONLY when signed by a key listed here (lib/rulebook/format.verifyAndParsePack). The
  * matching private key never lives in this repository — see docs/RULEBOOK.md. To rotate: add the new
  * public key, release the app, then remove the old one in a later release.
+ *
+ * 2026-10-15: the first key's private half was lost with a Windows reinstall (it lived under the user profile),
+ * so it is replaced outright — nothing signed by it can ever be re-issued. Apps older than 1.3.0 (the first release with this key; 1.2.1 was never released) keep trusting
+ * the old key and so take no rulebook release after v1.2.1 until they update the app.
  */
 export const RULEBOOK_PUBLIC_KEYS: string[] = [
   `-----BEGIN PUBLIC KEY-----
-MCowBQYDK2VwAyEANiyYX3no5sPD+2QZR5DyfM7aTlPnBqUcp1AHCbLfwEM=
+MCowBQYDK2VwAyEAd39rJ9jbIZlj4Cfsi4Wd1RsqwYwuQIxhfVmbobxtjAg=
 -----END PUBLIC KEY-----`,
 ];
 
