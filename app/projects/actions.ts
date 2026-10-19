@@ -6,12 +6,12 @@ import { LLM_PROVIDERS } from "@/lib/llm/catalog";
 import { providerWithKey } from "@/lib/llm/provider";
 import { listedModels } from "@/lib/llm/model-list";
 import { orderModels, pickModel, recommendModel } from "@/lib/llm/model-pick";
-import { getSettings } from "@/lib/settings";
+import { getSettings, updateAppSettings } from "@/lib/settings";
 import { detectCapabilityNeeds, routeTarget } from "@/lib/deployment-targets/router";
 import { briefToMessage, isEmptyBrief, sanitizeBrief } from "@/lib/brief";
 import { sanitizePrefs, type StylePrefs } from "@/lib/preferences";
 import { busyProjectIds, isProjectBusy } from "@/lib/agent-lock";
-import { latestAnnouncement, type Announcement } from "@/lib/announcement";
+import { ANNOUNCE_ID, DISMISSED_KEY, addDismissed, latestAnnouncements, readDismissed, type Announcement } from "@/lib/announcement";
 import { createProject, getProject, listProjects, mutateProject, softDeleteProject } from "@/lib/projects";
 import { premiumStatus } from "@/lib/premium/status";
 import { sanitizeProFeatures } from "@/lib/pro-features";
@@ -118,9 +118,18 @@ export async function startFromBriefAction(
 }
 
 /** This project's own look & feel choices as stored now (the AI may have saved one during the chat). */
-/** The home screen's news banner (lib/announcement.ts); asked from a client effect, never at render time. */
-export async function appAnnouncementAction(): Promise<Announcement | null> {
-  return latestAnnouncement();
+/** The home screen's notices bar (lib/announcement.ts) minus the ones the user closed; asked from a client effect, never at render time. */
+export async function appAnnouncementAction(): Promise<Announcement[]> {
+  const [all, settings] = await Promise.all([latestAnnouncements(), getSettings()]);
+  const closed = new Set(readDismissed(settings.app[DISMISSED_KEY]));
+  return all.filter((a) => !closed.has(a.id));
+}
+
+/** Closing a notice hides it on this computer until the website posts a new one (a new id). */
+export async function dismissAnnouncementAction(id: string): Promise<void> {
+  if (typeof id !== "string" || !ANNOUNCE_ID.test(id)) return;
+  const settings = await getSettings();
+  await updateAppSettings({ [DISMISSED_KEY]: addDismissed(settings.app[DISMISSED_KEY], id) });
 }
 
 /** Whether an AI turn (or deploy / verify) is running on the project — the chat polls it after a reload. */

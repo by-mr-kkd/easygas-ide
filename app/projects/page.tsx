@@ -78,6 +78,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
 
         <section className="relative min-w-0 flex-1 md:min-h-0 md:overflow-y-auto md:bg-main">
           <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-5 md:px-8 md:py-7">
+            <AnnouncementBanner />
             {appNudge && <AppNudge />}
             {(!setup.engineReady || !setup.google.loggedIn) && <SetupChecklist setup={setup} />}
 
@@ -108,7 +109,6 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
               ) : null}
             </ProjectTable>
 
-            <AnnouncementBanner />
             <div className="md:hidden">
               <PoweredBy />
             </div>
